@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>カートを始めるには — 福岡キッズカートアカデミー Stories</title>
+<meta name="description" content="福岡キッズカートアカデミーです。 今日はカートレースを始めるにはどの様にしたらいいの？という質問にお答えしていきたいと思います。 基本的な流れは、 カート体験教室 ↓ サーキット走行 ↓ チャレンジクラス参加 ↓ カート購入（チームに加入） です。 まずは、カートレースの説明から…">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#3aa9e8;--sky-deep:#1a7fb8;--sky-light:#cae7f7;--sky-mist:#eef7fc;
+    --lime:#a4d65e;--sun:#ffc943;--orange:#ff8a3d;--orange-deep:#e5631a;
+    --ink:#163048;--ink-2:#3d556f;--ink-3:#7d8fa0;
+    --bg:#fff;--bg-2:#f4f9fc;--bg-3:#e8f1f8;--line:#d8e6f0;--line-2:#bcd3e3;
+    --jp:'M PLUS Rounded 1c','Zen Kaku Gothic New',sans-serif;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:var(--jp);font-weight:500;line-height:1.85;-webkit-font-smoothing:antialiased}
+  img{max-width:100%;height:auto;display:block;border-radius:14px;margin:1.4rem auto;box-shadow:0 6px 22px rgba(22,48,72,.10)}
+  a{color:var(--sky-deep)}
+  nav.top{position:sticky;top:0;z-index:10;padding:.9rem 1.4rem;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  nav.top a{text-decoration:none;color:var(--ink);font-weight:800;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem}
+  nav.top a.home{color:var(--ink)}
+  nav.top a.archive{color:var(--sky-deep)}
+  nav.top .badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--sky);color:#fff;border-radius:50%;font-weight:800;font-size:.8rem}
+  .wrap{max-width:720px;margin:0 auto;padding:3rem 1.4rem 5rem}
+  .meta{display:flex;gap:.7rem;align-items:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.18em;color:var(--ink-3);text-transform:uppercase;margin-bottom:1rem}
+  .meta .yearchip{background:var(--sun);color:var(--ink);padding:.25rem .6rem;border-radius:999px;font-weight:800;letter-spacing:.05em}
+  h1.post-h1{font-family:var(--jp);font-weight:900;font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.3;margin:.4rem 0 2rem;color:var(--ink)}
+  .post-body{font-size:1.02rem;color:var(--ink-2)}
+  .post-body p{margin:1.1rem 0}
+  .post-body strong{color:var(--ink);font-weight:800}
+  .post-body h1,.post-body h2,.post-body h3,.post-body h4{font-family:var(--jp);color:var(--ink);font-weight:800;margin:2.2rem 0 .8rem;line-height:1.4}
+  .post-body h3{font-size:1.2rem;border-left:4px solid var(--sky);padding-left:.7rem}
+  .post-body ul,.post-body ol{padding-left:1.6rem;margin:1.1rem 0}
+  .post-body li{margin:.4rem 0}
+  .post-body blockquote{margin:1.4rem 0;padding:1rem 1.2rem;background:var(--bg-2);border-left:4px solid var(--sky);border-radius:0 12px 12px 0;color:var(--ink-2)}
+  .post-body a{color:var(--sky-deep);text-decoration:underline;text-underline-offset:3px}
+  .post-body .alignnone, .post-body .alignleft, .post-body .alignright, .post-body .aligncenter{display:block;margin:1.4rem auto}
+  .archive-note{margin-top:2.5rem;padding:1.2rem 1.4rem;background:var(--bg-2);border-radius:14px;border:1px solid var(--line);color:var(--ink-3);font-size:.85rem;line-height:1.7}
+  .archive-note strong{color:var(--ink-2)}
+  .post-nav{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-top:3rem;padding-top:2rem;border-top:1px solid var(--line)}
+  .post-nav a{display:inline-flex;align-items:center;gap:.5rem;font-weight:800;text-decoration:none;color:var(--sky-deep);padding:.7rem 1.1rem;border-radius:999px;background:var(--sky-mist);font-size:.9rem;transition:all .2s}
+  .post-nav a:hover{background:var(--sky-light);transform:translateY(-1px)}
+  .post-nav a.book{background:var(--orange);color:#fff;box-shadow:0 6px 18px rgba(255,138,61,.4)}
+  .post-nav a.book:hover{background:var(--orange-deep)}
+  footer.bottom{margin-top:5rem;padding:2.5rem 1.4rem;text-align:center;background:var(--bg-3);color:var(--ink-3);font-size:.78rem;letter-spacing:.05em;font-family:var(--mono)}
+  footer.bottom a{color:var(--ink-2);text-decoration:none;font-weight:700;margin:0 .6rem}
+</style>
+</head>
+<body>
+<nav class="top">
+  <a href="/" class="home"><span class="badge">K</span><span>福岡キッズカートアカデミー</span></a>
+  <a href="/stories/" class="archive">← Stories 一覧</a>
+</nav>
+<main class="wrap">
+  <div class="meta">
+    <span class="yearchip">2019</span>
+    <span>2019年2月11日</span>
+  </div>
+  <h1 class="post-h1">カートを始めるには</h1>
+  <article class="post-body">
+<p><a href="https://kidskart.org" target="_blank" rel="noopener noreferrer">福岡キッズカートアカデミー</a>です。</p>
+
+<p>今日はカートレースを始めるにはどの様にしたらいいの？という質問にお答えしていきたいと思います。</p>
+
+<p>基本的な流れは、
+<strong>カート体験教室</strong>
+<strong>　　　↓</strong>
+<strong>サーキット走行</strong>
+<strong>　　　↓</strong>
+<strong>チャレンジクラス参加</strong>
+<strong>　　　↓</strong>
+<strong>カート購入（チームに加入）
+</strong>です。</p>
+
+<p><strong><span style="color: #0000ff;">まずは、カートレースの説明から。。。</span></strong>
+カートレースは年齢によって参加クラスが変わってきます。
+<strong>・4歳〜小学低学年（キッズカート）</strong>
+<strong>・小学２年生〜中学１年生（マイクロ）</strong>
+<strong>・小学４年生〜中学２年生（ミニ）</strong>
+<strong>・小学６年生〜17歳（ジュニア）</strong>
+<strong>・14歳〜(シニア)</strong>
+<strong>・25歳〜(マスターズ)</strong>
+使用するエンジンやフレーム（車体）も変わってきます。（詳しくはお尋ねください）</p>
+
+<p>レースの開催場所は全国各地のサーキットでシリーズ戦が開催されています。
+勿論、福岡キッズカートアカデミーの拠点でもあるエーワンサーキットでもシリーズ戦が開催されています。</p>
+
+<p><a href="https://wp.kidskart.org/archives/4272/img_0708" rel="attachment wp-att-4273"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4273" src="https://wp.kidskart.org/wp-content/uploads/2019/02/IMG_0708.jpg" alt="" width="4032" height="3024" /></a></p>
+
+<p>シリーズ入賞者は表彰パーティへ招待、表彰を行います。</p>
+
+<p><a href="https://wp.kidskart.org/archives/4272/aone7" rel="attachment wp-att-4274"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4274" src="https://wp.kidskart.org/wp-content/uploads/2019/02/aone7.jpg" alt="" width="1920" height="1080" /></a></p>
+
+<p><strong><span style="color: #0000ff;">次はカートレースに出るには。。。</span></strong>
+レースに参加するにあたり準備するものが有ります。
+・ライセンス
+・ウエア（レーシングスーツ、ヘルメット、プロテクター等）
+・マシン
+基本はマシンは参加クラスに適したカート購入して参加いたしますが、小学生のクラスはレンタルマシンで参加できるパックもご用意して有ります。
+<a href="http://aaa-ms.com/aaa%E3%83%AC%E3%83%BC%E3%82%B7%E3%83%B3%E3%82%B0%E3%82%A2%E3%82%AB%E3%83%87%E3%83%9F%E3%83%BC/">（レーシングアカデミー）</a>
+<strong>カートの販売も行なっておりますので、ご相談ください。</strong></p>
+
+<p><strong><span style="color: #0000ff;">気になる、コストは。。。</span></strong>
+カートを始めるにあたり一番気になるのは費用についてだと思います。
+<strong>カート購入費用</strong>
+<strong>（新車）</strong>マシン代：約650000円〜</p>
+
+<p><strong>（中古車）</strong>マシン代：約50000円〜
+(程度にもより金額が違いますが20−30万円のカートが多いいです)</p>
+
+<p>ウエア一式：50000円〜150000円</p>
+
+<p><strong>ランニングコスト</strong>（チーム加入の場合）
+・月謝：5000円
+・走行料：3000円（午前）4000円（午後）
+・レースエントリー費：8,000円〜
+・ガレージ保管の場合：5000円/月
+・タイヤ：28,000（1set）〜
+・その他、消耗品：走行回数やレースの頻度によって違いますが、１レース、３〜７万円くらいです。</p>
+
+<p>他のスポーツに比べ、お金のかかるスポーツなのは間違い有りませんが、それぞれの予算ないで行なっていただける様にご提案させていただきます。</p>
+
+<p><strong>「カートを始めようかなぁ」とご検討の方は、</strong>
+<strong>年齢などを踏まえて、ご提案させていただきますので、</strong>
+<strong><span style="color: #ff0000;">まずはご相談ください。</span></strong></p>
+
+<p>インスタグラム始めました。<a class="ig-b- ig-b-48" href="https://www.instagram.com/fukuoka_kidskart"><img loading="lazy" onerror="this.style.display='none'" src="//badges.instagram.com/static/images/ig-badge-48.png" alt="Instagram" /></a></p>
+
+<p>&nbsp;</p>
+  </article>
+  <div class="archive-note">
+    <strong>📌 アーカイブ記事</strong> — この記事は 2019年2月11日 に旧公式ブログで公開されたものです。当時のままアーカイブとして残しています。最新情報は <a href="/">トップページ</a> をご覧ください。
+  </div>
+  <nav class="post-nav">
+    <a href="/stories/">← 一覧へ戻る</a>
+    <a href="https://reserva.be/kidskart/reserve" target="_blank" class="book">体験予約 →</a>
+  </nav>
+</main>
+<footer class="bottom">
+  © 福岡キッズカートアカデミー　·　<a href="/">トップ</a>·<a href="/stories/">Stories 一覧</a>·<a href="https://reserva.be/kidskart/reserve" target="_blank">体験予約</a>
+</footer>
+</body>
+</html>

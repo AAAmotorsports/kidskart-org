@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stories — 福岡キッズカートアカデミー</title>
+<meta name="description" content="2013年から続く福岡キッズカートアカデミーの活動記録。福岡トヨペット様とのスポンサー契約、小林可夢偉カート教室、サーキットの日常まで。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Fraunces:ital,opsz,wght@0,9..144,300..700&family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#3aa9e8;--sky-deep:#1a7fb8;--sky-light:#cae7f7;--sky-mist:#eef7fc;
+    --lime:#a4d65e;--sun:#ffc943;--orange:#ff8a3d;--orange-deep:#e5631a;
+    --ink:#163048;--ink-2:#3d556f;--ink-3:#7d8fa0;
+    --bg:#fff;--bg-2:#f4f9fc;--bg-3:#e8f1f8;--line:#d8e6f0;--line-2:#bcd3e3;
+    --display:'Anton',sans-serif;
+    --jp:'M PLUS Rounded 1c','Zen Kaku Gothic New',sans-serif;
+    --editorial:'Fraunces',serif;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:linear-gradient(180deg,#eef7fc 0%,#fff 380px);color:var(--ink);font-family:var(--jp);font-weight:500;line-height:1.7;-webkit-font-smoothing:antialiased;min-height:100vh}
+  a{color:inherit;text-decoration:none}
+  nav.top{position:sticky;top:0;z-index:10;padding:.9rem 1.4rem;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  nav.top a{font-weight:800;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--ink)}
+  nav.top a.home{color:var(--ink)}
+  nav.top a.book{background:var(--orange);color:#fff;padding:.55rem .9rem;border-radius:999px;font-size:.8rem;box-shadow:0 4px 14px rgba(255,138,61,.4)}
+  nav.top .badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--sky);color:#fff;border-radius:50%;font-weight:800;font-size:.8rem}
+  header.hero{max-width:1100px;margin:0 auto;padding:4.5rem 1.4rem 3rem;text-align:center}
+  header.hero .eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.25em;color:var(--sky-deep);font-weight:700;text-transform:uppercase;margin-bottom:1rem}
+  header.hero h1{font-family:var(--jp);font-weight:900;font-size:clamp(2rem,5vw,3.4rem);line-height:1.2;color:var(--ink);margin-bottom:1rem}
+  header.hero h1 .hl{position:relative;display:inline-block}
+  header.hero h1 .hl::after{content:'';position:absolute;bottom:-2px;left:0;right:0;height:8px;background:var(--sun);opacity:.45;border-radius:6px;z-index:-1}
+  header.hero p.lede{font-family:var(--editorial);font-style:italic;font-size:1.05rem;color:var(--ink-2);max-width:600px;margin:0 auto;line-height:1.85}
+  main.list{max-width:1100px;margin:0 auto;padding:2rem 1.4rem 5rem}
+  .yearblock{margin-bottom:3rem}
+  .year-h{display:flex;align-items:center;gap:.9rem;margin-bottom:1.4rem;padding:0 .3rem}
+  .year-h .yr{font-family:var(--display);font-size:1.8rem;color:var(--sky-deep);letter-spacing:.02em}
+  .year-h .yrcount{font-family:var(--mono);font-size:.75rem;color:var(--ink-3);letter-spacing:.18em;font-weight:700}
+  .year-h .yrline{flex:1;height:2px;background:var(--line)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
+  .card{background:#fff;border:2px solid var(--line);border-radius:18px;padding:1.4rem 1.4rem 1.6rem;transition:all .2s;display:flex;flex-direction:column;gap:.6rem;color:var(--ink)}
+  .card:hover{border-color:var(--sky);transform:translateY(-2px);box-shadow:0 14px 32px rgba(22,48,72,.10)}
+  .card .date{font-family:var(--mono);font-size:.7rem;letter-spacing:.16em;color:var(--ink-3);font-weight:700}
+  .card h3{font-family:var(--jp);font-weight:800;font-size:1.05rem;line-height:1.5;color:var(--ink)}
+  .card .ex{font-size:.85rem;line-height:1.75;color:var(--ink-2);flex:1}
+  .card .more{font-family:var(--mono);font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:var(--sky-deep);font-weight:700;display:inline-flex;align-items:center;gap:.4rem;margin-top:.4rem}
+  footer.bottom{margin-top:0;padding:2.5rem 1.4rem;text-align:center;background:var(--bg-3);color:var(--ink-3);font-size:.78rem;letter-spacing:.05em;font-family:var(--mono)}
+  footer.bottom a{color:var(--ink-2);text-decoration:none;font-weight:700;margin:0 .6rem}
+</style>
+</head>
+<body>
+<nav class="top">
+  <a href="/" class="home"><span class="badge">K</span><span>福岡キッズカートアカデミー</span></a>
+  <a href="https://reserva.be/kidskart/reserve" target="_blank" class="book">体験予約 →</a>
+</nav>
+<header class="hero">
+  <p class="eyebrow">STORIES · ARCHIVE 2013–2019</p>
+  <h1>サーキットの<span class="hl">日常</span>から、<br>すべては始まった。</h1>
+  <p class="lede">2013年から2019年まで、福岡キッズカートアカデミーが綴ってきた活動記録のアーカイブです。福岡トヨペット様との出会い、小林可夢偉カート教室、たくさんの子供たちの初めての笑顔——当時のままに。</p>
+</header>
+<main class="list">
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2019</span><span class="yrline"></span><span class="yrcount">1 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2019/2019-02-11-カートを始めるには.html">
+        <span class="date">2019年2月11日</span>
+        <h3>カートを始めるには</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 今日はカートレースを始めるにはどの様にしたらいいの？という質問にお答えしていきたいと思います。 基本的な流れは、 カート体験教室 ↓ サーキット走行 ↓ チャレンジクラス参加 ↓ カート購入（チームに加入） です。 まずは、カートレースの説明から…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2018</span><span class="yrline"></span><span class="yrcount">2 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2018/2018-08-08-暑さ対策.html">
+        <span class="date">2018年8月8日</span>
+        <h3>暑さ対策</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 久しぶりの更新です 前回のブログで「夏が待ち遠しい」なんて書いてましたが、毎日暑すぎですね サーキットも暑いです。 が、少しでも涼しく過ごせるように、 大きめの扇風機を用意しました。 カートに乗るお子様も保護者や見学の方も水分補給はお忘れなく 今…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2018/2018-05-09-ゴールデンウィーク.html">
+        <span class="date">2018年5月9日</span>
+        <h3>ゴールデンウィーク♪</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 ゴールデンウイークも終わり、夏が待ちどうしいですね。 今年のGWもキッズカート教室、大盛況でした 初めてカートに乗るお子様やサーキットデビューのお子様も沢山でした。 是非、また遊びに来てください お待ちしております。 &amp;nbsp; お知らせです。…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2017</span><span class="yrline"></span><span class="yrcount">10 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2017/2017-10-03-エーワンシリーズ.html">
+        <span class="date">2017年10月3日</span>
+        <h3>エーワンシリーズ</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 まずは、9/24にマイクロマックスチャレンジクラス（模擬レース）を行いました。 みんな頑張りました 次回は10/29に開催です。 9/30は恒例のチャレンジクラスです。 今回は６名の参加。 最後はお決まり、模擬レース みんな上手になってきました。…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-09-06-９月チャレンジクラス.html">
+        <span class="date">2017年9月6日</span>
+        <h3>９月チャレンジクラス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 夏休みも終わり、少しずつ涼しくなって過ごしやすくなってきました。 今年の夏もキッズカート教室も大盛況でした 初めてカートに乗るお子様やサーキットデビューのお子様も沢山でした。 是非、また遊びに来てください お待ちしております。 お知らせです。 9…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-07-24-イベント.html">
+        <span class="date">2017年7月24日</span>
+        <h3>イベント</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 夏休みが始まったお子様も多いいのではないしょうか？ 毎日暑いですので体調等気をつけてお過ごしください。 7/22は建築マニア様にて出張のカート教室を開催させていただきました。 建築マニア様では定期的にカート教室を開催させていただいてます。 かっこ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-06-05-6月チャレンジクラス.html">
+        <span class="date">2017年6月5日</span>
+        <h3>6月チャレンジクラス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 今週末6/10（土）はチャレンジクラス開催です まだ、ご予約に空きがございますのでご予約いただけます 6月10日チャレンジクラス予約ページ 暖かい日が続いてますね &amp;nbsp; 今月のチャレンジクラスは11日と24日に開催いたします。 18日（日…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-04-21-もうすぐゴールデンウィーク.html">
+        <span class="date">2017年4月21日</span>
+        <h3>もうすぐゴールデンウィーク♫</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 今週末4/22（土）はチャレンジクラス開催です まだ、ご予約に空きがございますのでご予約いただけます 4月22日チャレンジクラス予約ページ &amp;nbsp; &amp;nbsp; もうすぐ、ゴールデンウイークですね みなさん、予定はもうお決まりでしょうか？ …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-04-05-VR画像.html">
+        <span class="date">2017年4月5日</span>
+        <h3>VR画像</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 先日のチャレンジクラスの模擬レーススタート時のVR画像 今週末4/8（土）はチャレンジクラス開催です 3/8（土） チャレンジクラス 場所：エーワンサーキット 参加費：8500円 対象：サーキット走行が出来るお子様 時間:9:00~12:00 参…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-03-22-レーシングアカデミー.html">
+        <span class="date">2017年3月22日</span>
+        <h3>レーシングアカデミー</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 お知らせです。 今回はキッズカートからステップアップを検討されている方やカートレースを始めたいけど始め方が分からない方へのお知らせです。 5月よりキッズカートで上手に運転できるようになったお子様にはレンタルマシンでレースに参加していただけるように…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-02-27-チャレンジクラス2月26日.html">
+        <span class="date">2017年2月27日</span>
+        <h3>チャレンジクラス2月26日</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 2月26日のチャレンジクラスは久々の晴れ 沢山のお子様が参加してくれました コースのラインどりをお勉強 &amp;nbsp; 普段カートで走ってるコースを実際に自分の足で歩いてみよう 何か発見があったかな &amp;nbsp; 最後は模擬レース お疲れ様でした …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-02-03-チャレンジクラス.html">
+        <span class="date">2017年2月3日</span>
+        <h3>チャレンジクラス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 1月29日のチャレンジクラスはあいにくの雨模様 そんな中でも 沢山のお子様が参加してくれました 次回は2/11に開催です。 2/11（土） チャレンジクラス 場所：エーワンサーキット 参加費：8500円 対象：サーキット走行が出来るお子様 時間:…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-01-13-２０１７年1月.html">
+        <span class="date">2017年1月13日</span>
+        <h3>２０１７年1月</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 今年もよろしくお願いいたします。 &amp;nbsp; 1月9日にチャレンジクラスを開催いたしました！ &amp;nbsp; 今回は写真が少ないですが。。。 &amp;nbsp; &amp;nbsp; 最後はおきまりのみんなで表彰台 今回も、たくさんのお子様に参加していただきま…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2016</span><span class="yrline"></span><span class="yrcount">12 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2016/2016-12-30-２０１６年-お世話になりました.html">
+        <span class="date">2016年12月30日</span>
+        <h3>２０１６年、お世話になりました！</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 早いもので、今年最後の営業日になりました。 今年もたくさんのお子様にカートを体験、楽しんでいただけました。 ありがとうございます。 年明けは２日から営業の予定です。 来年も変わらず、よろしくお願いいたします。 12月23日チャレンジクラスの模様で…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-11-04-キッズカートチャレンジクラス.html">
+        <span class="date">2016年11月4日</span>
+        <h3>キッズカートチャレンジクラス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 11月3日チャレンジクラスの模様です。 ラインどりなどのお勉強 模擬レース 最後は記念撮影 今回も、たくさんのお子様に参加していただきました。 次回は11/23に開催です。 11/23（祝） チャレ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-10-27-11月の予定.html">
+        <span class="date">2016年10月27日</span>
+        <h3>11月の予定</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 早いもので、もうすぐ11月 朝晩は冷える様になってきました 11月の予定です。 &amp;nbsp; 11/3(祝)・23（祝） チャレンジクラス 場所：エーワンサーキット 参加費：8500円 対象：サーキ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-10-05-チャレンジクラス開催.html">
+        <span class="date">2016年10月5日</span>
+        <h3>チャレンジクラス開催</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 台風の被害は大丈夫でしたでしょうか？？ お知らせです 今週末の10/8-9日はRMC九州に参戦のサポートの為、 カート教室はおやすみをさせていただきます。 翌日の10月10日(祝)の午前中は チャレ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-09-10-鈴鹿サーキット.html">
+        <span class="date">2016年9月10日</span>
+        <h3>鈴鹿サーキット</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ &amp;nbsp; 今週はカート教室はお休みをいただいて、鈴鹿サーキットで開催される RotaxMaxfフェスティバルのレースサポートに来ています。 いつものレースは日曜日に行われることがほとんどですが、…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-08-23-建築マニア-キッズカートスクール.html">
+        <span class="date">2016年8月23日</span>
+        <h3>「建築マニア」キッズカートスクール</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 8月20日(土)に福岡市西区女原の『建築マニア』様でカート教室のイベントを開催していただきました。 初めてカートに触れるお子様ばかりでしたが、たくさんのお子様に楽しんでいただけました。 今後は毎月〜…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-08-13-イベント開催のお知らせ.html">
+        <span class="date">2016年8月13日</span>
+        <h3>イベント開催のお知らせ</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 8月20日(土)に無料のカート体験教室のイベントを開催させていただきます。 場所は福岡市西区女原の『ポリゴンファクトリー』での開催です。 詳しくは建築マニアさまのWEBをご覧ください。 &amp;nbsp;…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-07-19-子供カート教室チャレンジクラス.html">
+        <span class="date">2016年7月19日</span>
+        <h3>子供カート教室チャレンジクラス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ &amp;nbsp; 7月18日の午前中は チャレンジクラス。 たくさんの参加者が集まりました！ まずはウォームアップをしてライン取りの確認など 最後は模擬レース×2 リバースグリットあり、などで楽しめたと…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-07-01-7月の予定.html">
+        <span class="date">2016年7月1日</span>
+        <h3>7月の予定</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 5月〜6月のカート教室の模様です。 ☆お知らせ☆ 7/18に9:00~12:00でカートトレーニング教室を開催いたします。 参加メンバーの走行状況などによっては模擬レースを開催したいと考えてます。 …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-07-01-福岡トヨペットカート教室.html">
+        <span class="date">2016年7月1日</span>
+        <h3>福岡トヨペットカート教室</h3>
+        <p class="ex"></p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-04-28-福岡トヨペット株式会社とのスポンサー契約締結のお知らせ.html">
+        <span class="date">2016年4月28日</span>
+        <h3>福岡トヨペット株式会社とのスポンサー契約締結のお知らせ</h3>
+        <p class="ex">この度、福岡キッズカートアカデミーは福岡トヨペット株式会社とオフィシャルスポンサー契約を締結いたしましたのでお知らせいたします。 福岡トヨペット様にはモータースポーツや車の運転の楽しさを多くのお子様に知っていただく活動のご協力をしていただけることとなりました。 2016年度は「福…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2016/2016-04-27-ゴールデンウイーク.html">
+        <span class="date">2016年4月27日</span>
+        <h3>ゴールデンウイーク</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ ☆お知らせ☆ 今年も、 5月5日のこどもの日に、 キッズカートのイベントを行います。 イベントの内容は 練習走行 タイムアタック 模擬レース1 模擬レース2 （参加人数によって変更あり） 時間は９：…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2015</span><span class="yrline"></span><span class="yrcount">14 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2015/2015-10-22-Alpinestars商品-入荷しました.html">
+        <span class="date">2015年10月22日</span>
+        <h3>Alpinestars商品　入荷しました！</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ アルパインスターズのレーシングスーツ、シューズ、グローブが入荷いたしました！ 子供用はもちろん、大人サイズもありますので、 サイズ等確かめたい方はご来店ください。 在庫がない商品に関してもお取り寄せ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-10-21-おやこフェスタ2015-in海の中道海浜公園.html">
+        <span class="date">2015年10月21日</span>
+        <h3>「おやこフェスタ2015」in海の中道海浜公園</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 10月17日（土）に海の中道海浜公園にて行われた「おやこフェスタ2015」の 福岡トヨペット様のブースにてカート教室を開催させていただきました！ 当日は晴天でイベントにはお子様連れのご家族がたくさん…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-10-02-10月イベント.html">
+        <span class="date">2015年10月2日</span>
+        <h3>10月イベント</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 10月はイベントやレースの関係でカート教室を 開催できない日が多くなっています。 ご迷惑をおかけいたしますが、 スケジュールをご確認の上ご予約をお願いいたします。 10月の予定です 3日（土） 11…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-09-18-シルバーウイーク.html">
+        <span class="date">2015年9月18日</span>
+        <h3>シルバーウイーク</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 涼しくなってすごしやすい季節になりました 明日からはシルバーウイークですね♪ お天気もいいみたいでお出かけ日和みたいです カート教室もご予約お待ちしております 9月の予定です 19日（土） 11:0…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-08-11-ソニックパーク安心院シリーズ-第４戦.html">
+        <span class="date">2015年8月11日</span>
+        <h3>ソニックパーク安心院シリーズ 第４戦</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ ８月に入って暑い日が続きますね 体調など崩さないように気をつけてください 先週(8月9日)はソニックパーク安心院さんで 開催されたレースに参戦してきました 今年はカート教室の卒業生が３名レースに参加…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-07-17-夏休み.html">
+        <span class="date">2015年7月17日</span>
+        <h3>夏休み〜</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 夏休みが始まりましたね どんな夏休みを予定してますか？？ ところで、LINE@のお友達登録はお済みですか？ LINE@のタイムラインにお得な情報を更新してますので、 チェックしてみてください。 まだ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-07-03-７月の予定.html">
+        <span class="date">2015年7月3日</span>
+        <h3>７月の予定</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ もうすぐ夏休みですね あと３週間頑張りましょう 大分のソニックパーク安心院でおこなわれた、レースの表彰式です みんな、頑張りました 応援に来ていただいた方々ありがとうございました 次回は7月19日に…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-06-19-今週末の予定.html">
+        <span class="date">2015年6月19日</span>
+        <h3>今週末の予定</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 今週末もお天気ですよね？ お知らせです。 今週末は、 20日（土）は12:00~サーキット体験教室 16:00~体験教室 17:00~トレーニング教室 21日（日）は12：00~サーキット体験教室 …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-05-22-５月のレース.html">
+        <span class="date">2015年5月22日</span>
+        <h3>５月のレース</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ まずは、お知らせです。 今週末は、 23日（土）は11:00~体験教室 12：00~14:00サーキット体験教室、トレーニング教室 24日（日）は12：00~サーキット体験教室 16:00~体験教室…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-05-08-こどもの日.html">
+        <span class="date">2015年5月8日</span>
+        <h3>こどもの日</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ まずは、お知らせです。 今週末は、 ９日（土）は12：00~,17：00~サーキット体験教室 10日（日）は17:00~サーキット体験教室の開催となっております。 体験教室は開催されませんので、ご注…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-04-22-ゴールデンウイーク.html">
+        <span class="date">2015年4月22日</span>
+        <h3>ゴールデンウイーク</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ 新学期も始まり、新しい学校やクラスにも慣れてきましたか？ もうすぐ、ゴールデンウイークがやってきますね ☆お知らせ☆ 5月5日のこどもの日に、 キッズカートのイベントを行います。 イベントの内容は当…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-03-16-出張イベント開催.html">
+        <span class="date">2015年3月16日</span>
+        <h3>出張イベント開催！！</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも、たくさんのご参加ありがとうございます！ まずは、14日に開催いたしましたトレーニング教室の模様から＾＾ 朝は雨は止んだものの、レインコンディションからスタートでした！ 濡れた路面でもスキあらば、バトル！！ 後半はレース形式で練習♪♪ 路面…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-02-26-小林可夢偉カート教室.html">
+        <span class="date">2015年2月26日</span>
+        <h3>小林可夢偉カート教室</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 先日、ソニックパーク安心院さんにレースの事前練習に行ってきました！ タイムはまだまだですが、思ったより皆んな上手に走れていました。 今週末はシーズンが開幕する前のプレシーズンレースです。 まずは、楽しんでレースをしてもらいたいと思います！！ 先週…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2015/2015-01-26-サーキットトレーニング教室.html">
+        <span class="date">2015年1月26日</span>
+        <h3>サーキットトレーニング教室</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 １月２６日は午前中にトレーニング教室を行いました いつも行っている、サーキットのお昼休みや夕方のトレーニング教室とは違って、 午前中の３時間でカート教室を行いました！ 時間があるので、沢山走れるのはもちろ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2014</span><span class="yrline"></span><span class="yrcount">9 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2014/2014-12-22-クリスマス.html">
+        <span class="date">2014年12月22日</span>
+        <h3>クリスマス</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 もうすぐクリスマスですね サンタさんにお願いは、しましたか？ 12月は31日がお休みとなっています。 その他の日はご予約可能となっています！！ 1月は2日から営業となっています。 早めのご予約をお願いいた…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-10-31-Happy-Halloween.html">
+        <span class="date">2014年10月31日</span>
+        <h3>Happy Halloween !!</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 早いもので１０月も今日で終わり。明日から１１月が始まります １１月２日（日）はジュニアカートの走行会（模擬レースイベント）を予定しておりますが、お天気が心配ですね ご参加ご希望の方は前日まで受付できますの…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-10-03-F1鈴鹿グランプリ2014.html">
+        <span class="date">2014年10月3日</span>
+        <h3>F1鈴鹿グランプリ2014</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 今週末はいろんなレースがあります！ もちろん、鈴鹿サーキットでは「F１」。 小林可夢偉 選手頑張ってもらいたいですね タイではスーパーGT 初めてのサーキットでどんなレースになるのか楽しみです カートのレ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-09-19-９月イベント.html">
+        <span class="date">2014年9月19日</span>
+        <h3>９月イベント</h3>
+        <p class="ex">第３回 ジュニアカートチャレンジ 9月7日</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-09-19-ジュニアカートイベント９月.html">
+        <span class="date">2014年9月19日</span>
+        <h3>ジュニアカートイベント９月</h3>
+        <p class="ex">またまた、お久しぶりでございます。 福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 夏休みが終わったと思ったら、あっという間に９月も後半戦です 朝晩は冷える様になってきたので風邪引かない様にお気をつけ下さい といってもカートに乗るには良い季節ですね さ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-08-07-夏休み.html">
+        <span class="date">2014年8月7日</span>
+        <h3>夏休み♪♪</h3>
+        <p class="ex">お久しぶりでございます。 福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 夏休み満喫してますか〜 ８月１０日にキッズカートのイベントを行います 台風が心配ですが、、、 当日の予定は、 スクール形式で模擬レースを行います。 本格的なレースを出る為の練習レ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-02-17-HIT住宅展示場-様-大野城会場.html">
+        <span class="date">2014年2月17日</span>
+        <h3>HIT住宅展示場 様　大野城会場</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 2月22日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-01-21-小林可夢偉選手.html">
+        <span class="date">2014年1月21日</span>
+        <h3>小林可夢偉選手</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 2月15日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2014/2014-01-16-2014年.html">
+        <span class="date">2014年1月16日</span>
+        <h3>2014年</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 1月18日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+  <div class="yearblock">
+    <div class="year-h"><span class="yr">2013</span><span class="yrline"></span><span class="yrcount">36 STORIES</span></div>
+    <div class="cards">
+      <a class="card" href="/stories/2013/2013-12-31-2013年もお世話になりました.html">
+        <span class="date">2013年12月31日</span>
+        <h3>2013年もお世話になりました。</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 1月18日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-12-06-勤労感謝の日.html">
+        <span class="date">2013年12月6日</span>
+        <h3>勤労感謝の日</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 12月23日（祝）トレーニング教室のご予約をお待…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-10-25-ジュニアカート.html">
+        <span class="date">2013年10月25日</span>
+        <h3>ジュニアカート</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② トレーニング教室のご予約をお待ちしております。 …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-10-15-福岡チャレンジャークラブ様-①.html">
+        <span class="date">2013年10月15日</span>
+        <h3>福岡チャレンジャークラブ様　①</h3>
+        <p class="ex">10月14日 福岡チャレンジャークラブ様 カート体験 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-10-15-福岡チャレンジャークラブ様-②.html">
+        <span class="date">2013年10月15日</span>
+        <h3>福岡チャレンジャークラブ様　②</h3>
+        <p class="ex">10月14日 福岡チャレンジャークラブ様 カート体験 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-10-15-上原田公園-開園.html">
+        <span class="date">2013年10月15日</span>
+        <h3>上原田公園　開園</h3>
+        <p class="ex">こんにちは。 待ちに待った！？ 上原田公園が10月１日に開園しましたので、行ってきました！ &amp;nbsp; &amp;nbsp; &amp;nbsp; ゲートの奥にも駐車場がたくさん。 &amp;nbsp; たくさん、遊具もあるし、グラウンドもバッチリです &amp;nbsp; ちびっこ達がたくさんあそんでました…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-09-15-ウエア-キッズカート.html">
+        <span class="date">2013年9月15日</span>
+        <h3>ウエア[キッズカート]</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ 大量に更新したので間違いがあるかもしれませんが。。笑 写真がない子も…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-09-10-東京オリンピック.html">
+        <span class="date">2013年9月10日</span>
+        <h3>東京オリンピック</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ 大量に更新したので間違いがあるかもしれませんが。。笑 写真がない子も…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-08-17-夏休み本番.html">
+        <span class="date">2013年8月17日</span>
+        <h3>夏休み本番！！</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① トレーニング教室のご予約をお待ちしております。 ※子供カート体験教室受講者もしくは、カート経…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-08-05-筑後川花火大会.html">
+        <span class="date">2013年8月5日</span>
+        <h3>筑後川花火大会！</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレー…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-07-23-ライダーandドライバー.html">
+        <span class="date">2013年7月23日</span>
+        <h3>ライダーandドライバー</h3>
+        <p class="ex">----------------------------------------------------------------------------------- ☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレー…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-07-15-佐藤公哉選手.html">
+        <span class="date">2013年7月15日</span>
+        <h3>佐藤公哉選手</h3>
+        <p class="ex">☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレーニング教室は8月11日（日）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズカートの走行も出来ます☆ ※子供カート体験教…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-07-10-上原田公園.html">
+        <span class="date">2013年7月10日</span>
+        <h3>上原田公園</h3>
+        <p class="ex">☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレーニング教室は8月11日（日）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズカートの走行も出来ます☆ ※子供カート体験教…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-07-09-7月7日-トレーニング教室.html">
+        <span class="date">2013年7月9日</span>
+        <h3>7月7日　トレーニング教室</h3>
+        <p class="ex">７月７日 子供カート教室 トレーニング教室 参加 たくみ君。 梅雨真っ只中、豪雨でした！ たくみ君、雨の日たくさん走行しました☆ 風邪引かない様にね♪ ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-06-27-雨.html">
+        <span class="date">2013年6月27日</span>
+        <h3>雨</h3>
+        <p class="ex">☆おしらせ☆その① 土曜日、日曜日の午後５時〜からトレーニング教室を先着２名で受け付けます。 ☆お知らせ☆その② 7月のトレーニング教室は7月6日（土）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズカートの走行も出来ます☆ ※子供…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-06-14-6月２日-トレーニング教室.html">
+        <span class="date">2013年6月14日</span>
+        <h3>6月２日　トレーニング教室</h3>
+        <p class="ex">６月２日 子供カート教室 トレーニング教室 参加 たいち君、たける君。 あいにくの天気でしたが、なんとか小雨程度でした！ 二人とも雨の中、頑張りました！！ ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-06-14-梅雨.html">
+        <span class="date">2013年6月14日</span>
+        <h3>梅雨</h3>
+        <p class="ex">☆おしらせ☆その① 最近は日も長くなってきたので、 土曜日、日曜日の午後５時〜からトレーニング教室を先着２名で受け付けます。 ☆お知らせ☆その② 7月のトレーニング教室は7月6日（土）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-05-18-駄菓子屋さん.html">
+        <span class="date">2013年5月18日</span>
+        <h3>駄菓子屋さん</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 駄菓子屋さんはじめます♪ じゃ、なくて。 カート教室に参加してくれたみんなへのプレゼントです。 &amp;nbsp; 写真館更新してます☆ ☆おしらせ☆その① 最近は日も長くなってきたので、 土曜日、日曜日の午後５時〜からサーキット教室を先…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-05-05-5月５日-サーキット教室.html">
+        <span class="date">2013年5月5日</span>
+        <h3>5月５日　サーキット教室</h3>
+        <p class="ex">5月5日 子供カート教室 サーキット教室 参加 よしと君、こうせい君、せな君、やまと君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-05-05-こどもの日.html">
+        <span class="date">2013年5月5日</span>
+        <h3>こどもの日♪</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 きょうはこどもの日でしたね 天気もすごく良くて最高でしたー みなさん、どこかにお出かけしましたか サーキットも子供達の笑顔であふれてましたよー ５月３日、4日、５日の写真館 ５月５日 サーキット教室の写真館 ※次回のサーキット教室は…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-05-01-ゴールデン〇〇.html">
+        <span class="date">2013年5月1日</span>
+        <h3>ゴールデン〇〇</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 皆さん、ゴールデンウイークは満喫していますかー ゴールデンウイーク前半は子供カート教室が大人気！でした &amp;nbsp; 楽しんでもらえもらえましたか？？ その他の写真はこちら ゴールデンウイーク後半の５月５日こどもの日は、 子供カート…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-04-12-出張イベント.html">
+        <span class="date">2013年4月12日</span>
+        <h3>出張イベント</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 4月7日に開催のトヨタ自動車九州スプリングフェスタ2013で開催させて頂きました、 子供カート教室は盛況のうちに終える事が出来ました。 ご参加の皆様ならびにご協賛、ご協力企業様、スタッフの皆様、関係者の方々へお礼を申し上げます。 イ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-29-春休み子供カート教室-３月２８日.html">
+        <span class="date">2013年3月29日</span>
+        <h3>春休み子供カート教室　３月２８日</h3>
+        <p class="ex">３月28日 春休み子供カート教室 サーキット体験教室参加 けんた君、 ３月28日 春休み子供カート教室 サーキット教室参加 藍翔君 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-26-春休み子供カート教室-３月２６日.html">
+        <span class="date">2013年3月26日</span>
+        <h3>春休み子供カート教室　３月２６日</h3>
+        <p class="ex">３月26日 春休み子供カート教室 サーキット教室 ひろあき君、しょうご君、ちとせチャン ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-25-３月２３日-サーキット教室.html">
+        <span class="date">2013年3月25日</span>
+        <h3>３月２３日　サーキット教室</h3>
+        <p class="ex">３月２３日 子供カート教室 サーキット教室 &amp;nbsp; &amp;nbsp; ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-19-出張イベント開催予定.html">
+        <span class="date">2013年3月19日</span>
+        <h3>出張イベント開催予定</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 トヨタ自動車九州（株）様が主催する、トヨタ自動車九州スプリングフェスタ２０１３にキッズカート体験教室を開催させて頂く事が決まりました。 &amp;nbsp; 4月7日（日）開催で雨天決行です。雨天時は屋根付きのスペースで開催させて頂けるそう…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-17-３月１７日.html">
+        <span class="date">2013年3月17日</span>
+        <h3>３月１７日</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 昨日の子供カート教室はカート経験者のたつや君がサーキット体験に参加してくれました！ 写真は、コチラ。 今日は、昨日に引き続き、たつや君と先週カート教室に参加してくれた、こうのすけ君も再び参加 二人とも結構上手に乗れています &amp;nbs…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-02-３月２日.html">
+        <span class="date">2013年3月2日</span>
+        <h3>３月２日</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 ３月に入り、暖かいのかな〜と期待をしてましたが、エーワンサーキットは風邪が強い１日でした。 今日の子供カート教室は１名、ゆうさく君が参加してくれました 写真はコチラ 上手に乗れました たくさん練習すれば速くなるかもしれませんね 明日…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-26-春休み.html">
+        <span class="date">2013年2月26日</span>
+        <h3>春休み〜♪</h3>
+        <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 もうすぐ、春休みですね ちょっと、気が早いかなー いつも、ブログをご覧の皆さん、ありがとうございます。 そんな皆さんに、先着でお知らせです。 春休みカート教室 平日限定ですが、春休みにカートを楽しみましょー コチラは土曜日（月に１〜…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-24-子供カート体験教室.html">
+        <span class="date">2013年2月24日</span>
+        <h3>子供カート体験教室</h3>
+        <p class="ex">こんばんは＾＾ 天気は良かったけど寒かったですね 風邪には気をつけて 今週末のカート教室は はるや君。 体験教室のみの参加でしたがのみ込みが早く上手でした お知らせ ３月２３日に子供カートサーキット教室を開催いたします。 時間は9時〜12時で沢山走れるので、今でのサーキット体験教…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-18-サーキット体験教室.html">
+        <span class="date">2013年2月18日</span>
+        <h3>サーキット体験教室</h3>
+        <p class="ex">こんばんはo(^▽^)o 17日のカート教室は3名の参加でした！ 初参加のナイト君。 サーキット体験も！ 上手に乗れてましたよ！ 2回目のサーキット体験教室参加のあやのちゃん、ゆうと君。 二人とも上手になりました！ &amp;nbsp; &amp;nbsp; &amp;nbsp; 福岡県のキッズカート、…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-12-カート教室でカート初体験.html">
+        <span class="date">2013年2月12日</span>
+        <h3>カート教室でカート初体験！</h3>
+        <p class="ex">今日は、 連休は暇かなーって、看板立ててみました！ 基山paの出口から見えるはず^o^ 効果があったのか、 最終日、4名のお子様が体験教室に参加してくれました！(^^) 楽しんでもらえましたか？ 次回はサーキット体験にもチャレンジですね^o^ &amp;nbsp; &amp;nbsp; &amp;nbs…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-07-2012年7月.html">
+        <span class="date">2013年2月7日</span>
+        <h3>2012年7月</h3>
+        <p class="ex">７月２９日 子供カート教室参加 らいあんクン・ときクン &amp;nbsp; &amp;nbsp; &amp;nbsp; ７月２６日 子供カートサーキット体験教室参加 しゅうまクン &amp;nbsp; &amp;nbsp; ７月１５日 子供カート体験教室参加 りんかチャン・もかチャン・かえでチャン &amp;nbsp; &amp;n…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-07-2012年8月.html">
+        <span class="date">2013年2月7日</span>
+        <h3>2012年8月</h3>
+        <p class="ex">8月１８日 子供カート体験教室・サーキット体験教室 参加 そうたクン 8月１８日 子供カート体験教室 参加 すずねチャン 8月１２日 ライセンス教室 参加 みらいクン ８月９日 子供カート体験教室・サーキット体験教室参加 てっぺいクン ８月５日 サーキット教室参加 みらいクン ８…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-07-2012年9月.html">
+        <span class="date">2013年2月7日</span>
+        <h3>2012年9月</h3>
+        <p class="ex">９月２２日 子供カート体験教室・サーキット体験教室 参加 ちゃん ９月１５日 子供カート体験教室 参加 あおいクン &amp;nbsp; &amp;nbsp; ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-07-2012年10月.html">
+        <span class="date">2013年2月7日</span>
+        <h3>2012年10月</h3>
+        <p class="ex">10月29日 子供カート体験教室・サーキット体験教室参加 ゆうすけクン 10月14日 子供カート教室 体験教室 参加 ことチャン 10月14日 子供カート教室 体験教室 参加 けいとクン 10月14日 子供カート教室 サーキット体験教室 参加 たかひろクン 10月14日 子供カー…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+    </div>
+  </div>
+</main>
+<footer class="bottom">
+  © 福岡キッズカートアカデミー　·　<a href="/">トップ</a>·<a href="https://reserva.be/kidskart/reserve" target="_blank">体験予約</a>
+</footer>
+</body>
+</html>

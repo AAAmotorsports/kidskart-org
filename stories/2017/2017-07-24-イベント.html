@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>イベント — 福岡キッズカートアカデミー Stories</title>
+<meta name="description" content="福岡キッズカートアカデミーです。 夏休みが始まったお子様も多いいのではないしょうか？ 毎日暑いですので体調等気をつけてお過ごしください。 7/22は建築マニア様にて出張のカート教室を開催させていただきました。 建築マニア様では定期的にカート教室を開催させていただいてます。 かっこ…">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#3aa9e8;--sky-deep:#1a7fb8;--sky-light:#cae7f7;--sky-mist:#eef7fc;
+    --lime:#a4d65e;--sun:#ffc943;--orange:#ff8a3d;--orange-deep:#e5631a;
+    --ink:#163048;--ink-2:#3d556f;--ink-3:#7d8fa0;
+    --bg:#fff;--bg-2:#f4f9fc;--bg-3:#e8f1f8;--line:#d8e6f0;--line-2:#bcd3e3;
+    --jp:'M PLUS Rounded 1c','Zen Kaku Gothic New',sans-serif;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:var(--jp);font-weight:500;line-height:1.85;-webkit-font-smoothing:antialiased}
+  img{max-width:100%;height:auto;display:block;border-radius:14px;margin:1.4rem auto;box-shadow:0 6px 22px rgba(22,48,72,.10)}
+  a{color:var(--sky-deep)}
+  nav.top{position:sticky;top:0;z-index:10;padding:.9rem 1.4rem;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  nav.top a{text-decoration:none;color:var(--ink);font-weight:800;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem}
+  nav.top a.home{color:var(--ink)}
+  nav.top a.archive{color:var(--sky-deep)}
+  nav.top .badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--sky);color:#fff;border-radius:50%;font-weight:800;font-size:.8rem}
+  .wrap{max-width:720px;margin:0 auto;padding:3rem 1.4rem 5rem}
+  .meta{display:flex;gap:.7rem;align-items:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.18em;color:var(--ink-3);text-transform:uppercase;margin-bottom:1rem}
+  .meta .yearchip{background:var(--sun);color:var(--ink);padding:.25rem .6rem;border-radius:999px;font-weight:800;letter-spacing:.05em}
+  h1.post-h1{font-family:var(--jp);font-weight:900;font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.3;margin:.4rem 0 2rem;color:var(--ink)}
+  .post-body{font-size:1.02rem;color:var(--ink-2)}
+  .post-body p{margin:1.1rem 0}
+  .post-body strong{color:var(--ink);font-weight:800}
+  .post-body h1,.post-body h2,.post-body h3,.post-body h4{font-family:var(--jp);color:var(--ink);font-weight:800;margin:2.2rem 0 .8rem;line-height:1.4}
+  .post-body h3{font-size:1.2rem;border-left:4px solid var(--sky);padding-left:.7rem}
+  .post-body ul,.post-body ol{padding-left:1.6rem;margin:1.1rem 0}
+  .post-body li{margin:.4rem 0}
+  .post-body blockquote{margin:1.4rem 0;padding:1rem 1.2rem;background:var(--bg-2);border-left:4px solid var(--sky);border-radius:0 12px 12px 0;color:var(--ink-2)}
+  .post-body a{color:var(--sky-deep);text-decoration:underline;text-underline-offset:3px}
+  .post-body .alignnone, .post-body .alignleft, .post-body .alignright, .post-body .aligncenter{display:block;margin:1.4rem auto}
+  .archive-note{margin-top:2.5rem;padding:1.2rem 1.4rem;background:var(--bg-2);border-radius:14px;border:1px solid var(--line);color:var(--ink-3);font-size:.85rem;line-height:1.7}
+  .archive-note strong{color:var(--ink-2)}
+  .post-nav{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-top:3rem;padding-top:2rem;border-top:1px solid var(--line)}
+  .post-nav a{display:inline-flex;align-items:center;gap:.5rem;font-weight:800;text-decoration:none;color:var(--sky-deep);padding:.7rem 1.1rem;border-radius:999px;background:var(--sky-mist);font-size:.9rem;transition:all .2s}
+  .post-nav a:hover{background:var(--sky-light);transform:translateY(-1px)}
+  .post-nav a.book{background:var(--orange);color:#fff;box-shadow:0 6px 18px rgba(255,138,61,.4)}
+  .post-nav a.book:hover{background:var(--orange-deep)}
+  footer.bottom{margin-top:5rem;padding:2.5rem 1.4rem;text-align:center;background:var(--bg-3);color:var(--ink-3);font-size:.78rem;letter-spacing:.05em;font-family:var(--mono)}
+  footer.bottom a{color:var(--ink-2);text-decoration:none;font-weight:700;margin:0 .6rem}
+</style>
+</head>
+<body>
+<nav class="top">
+  <a href="/" class="home"><span class="badge">K</span><span>福岡キッズカートアカデミー</span></a>
+  <a href="/stories/" class="archive">← Stories 一覧</a>
+</nav>
+<main class="wrap">
+  <div class="meta">
+    <span class="yearchip">2017</span>
+    <span>2017年7月24日</span>
+  </div>
+  <h1 class="post-h1">イベント</h1>
+  <article class="post-body">
+<p><a href="https://kidskart.org" target="_blank" rel="noopener noreferrer">福岡キッズカートアカデミー</a>です。</p>
+
+<p>夏休みが始まったお子様も多いいのではないしょうか？
+毎日暑いですので体調等気をつけてお過ごしください。</p>
+
+<p>7/22は建築マニア様にて出張のカート教室を開催させていただきました。</p>
+
+<p><iframe src="https://vr.entapano.com/movies/e5a89af5-2ab4-41d6-b05f-3761b949a98f/content" width="640" height="320" allowfullscreen="allowfullscreen"></iframe></p>
+
+<p><a href="http://www.kenchikumania.com/kids/kids.html">建築マニア様</a>では定期的にカート教室を開催させていただいてます。
+かっこいい車やGTカーなども展示してあってカート以外でも楽しめそうでした</p>
+
+<p><a href="https://wp.kidskart.org/archives/4217/img_8699" rel="attachment wp-att-4218"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4218" src="https://wp.kidskart.org/wp-content/uploads/2017/07/IMG_8699-e1500895842427.jpg" alt="" width="4032" height="3024" /></a> <a href="https://wp.kidskart.org/archives/4217/img_8701" rel="attachment wp-att-4219"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4219" src="https://wp.kidskart.org/wp-content/uploads/2017/07/IMG_8701-e1500895863840.jpg" alt="" width="4032" height="3024" /></a> <a href="https://wp.kidskart.org/archives/4217/img_8703" rel="attachment wp-att-4220"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4220" src="https://wp.kidskart.org/wp-content/uploads/2017/07/IMG_8703-e1500895896129.jpg" alt="" width="4032" height="3024" /></a> <a href="https://wp.kidskart.org/archives/4217/img_8704" rel="attachment wp-att-4221"><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4221" src="https://wp.kidskart.org/wp-content/uploads/2017/07/IMG_8704-e1500895915405.jpg" alt="" width="4032" height="3024" /></a></p>
+
+<p>今回はプールも用意されて子供達は気持ち良さそうでした
+興味がある方は是非行ってみてください。</p>
+
+<p>&nbsp;
+お知らせです。</p>
+
+<p>レーシングアカデミー参加体験を行います
+・日時/夏休みの平日限定（希望日の１週間前までにご予約ください。）
+・時間/9:00~12:00
+・参加費/20,000円（走行代込み）
+・参加者の条件
+１〜３年生　キッズカートで走行が3回以上＆55秒以下で走れたことがある。
+４年生〜　　キッズカートもしくはレンタルカートの走行経験あり。
+・装備品はレンタルいたします。</p>
+
+<p>詳しくは、お問い合わせください。</p>
+
+<p><img loading="lazy" onerror="this.style.display='none'" class="alignnone size-full wp-image-4032" src="https://wp.kidskart.org/wp-content/uploads/2017/04/132ea4b86f48cbd4412a707899e04256.png" alt="スクリーンショット 2017-04-21 11.26.44" width="399" height="686" /></p>
+
+<p><a href="https://wp.kidskart.org/wp-content/uploads/2017/01/959f5f3cb06b2bb2e6c78a6fc9d6993f.pdf">レーシングアカデミーPDF</a></p>
+
+<p>詳しいこと、分からないことが有ましたら、お気軽にお尋ねください。</p>
+
+<p>&nbsp;</p>
+
+<p>8/13(日),20(日),26(土)
+チャレンジクラス
+場所：エーワンサーキット
+参加費：8500円
+対象：サーキット走行が出来るお子様
+時間:9:00~12:00
+参加予約の受付はこちらから
+<a href="https://reserva.be/kidskart/reserve?mode=service_staff&amp;search_evt_no=38eJwzNjSzMAQAAwsBBA" target="_blank" rel="noopener noreferrer"><img loading="lazy" onerror="this.style.display='none'" src="https://reserva.be/reserva/images/btn_reserve_1.png" alt="RESERVA予約システムから予約する" width="120" /></a>
+まだ、カートを運転したことのないお子様は、
+ぜひ体験教室からご参加ください。</p>
+
+<p>8月のおやすみ
+4,5,6,31日</p>
+
+<p>&nbsp;</p>
+
+<p><span style="color: #333333; font-style: normal; line-height: 24.375px;"> その他、スケジュールの確認・ご予約はこちらから
+</span><a href="https://reserva.be/kidskart/reserve" target="_blank" rel="noopener noreferrer"><img loading="lazy" onerror="this.style.display='none'" src="https://reserva.be/reserva/images/btn_reserve_2.png" alt="RESERVA予約システムから予約する" width="120" /></a></p>
+
+<p><span style="color: #333333; font-style: normal; line-height: 24.375px;">平日は随時、ご予約受付中です。
+</span>
+お休みなど開催不可能な日時がありますので、
+お問い合わせしていただいてご来場ください。</p>
+
+<p>ご予約は<a href="https://www.itsuaki.com/yoyaku/webreserve/staffsel?str_id=3786" target="_blank" rel="noopener noreferrer">ホームページ</a>から、もしくはお電話でお願い致します。</p>
+
+<p>０９２−９２７−１１７７</p>
+
+<p>福岡キッズカートアカデミーのLINE@始めました！
+@kidskartでお友達検索、もしくは下のリンクよりお友達になってください♪♪</p>
+
+<p><a href="http://line.naver.jp/ti/p/%40kidskart"><img loading="lazy" onerror="this.style.display='none'" src="http://biz.line.naver.jp/line_business/img/btn/addfriends_ja.png" alt="友だち追加数" height="36" border="0" /></a><img loading="lazy" onerror="this.style.display='none'" src="http://qr-official.line.me/sid/L/kidskart.png" alt="" width="78" height="78" /></p>
+
+<p>FaceBookもチェックして下さいね。
+コメント、シェアどしどしお願いします！！
+<div class="fb-like" data-href="https://www.facebook.com/juniorkart.org" data-send="false" data-width="450" data-show-faces="true" data-font="arial"></div>
+<h3>福岡県のキッズカート、ジュニアカート、カートスクールは<a href="https://kidskart.org">福岡キッズカートアカデミー</a>。</h3></p>
+  </article>
+  <div class="archive-note">
+    <strong>📌 アーカイブ記事</strong> — この記事は 2017年7月24日 に旧公式ブログで公開されたものです。当時のままアーカイブとして残しています。最新情報は <a href="/">トップページ</a> をご覧ください。
+  </div>
+  <nav class="post-nav">
+    <a href="/stories/">← 一覧へ戻る</a>
+    <a href="https://reserva.be/kidskart/reserve" target="_blank" class="book">体験予約 →</a>
+  </nav>
+</main>
+<footer class="bottom">
+  © 福岡キッズカートアカデミー　·　<a href="/">トップ</a>·<a href="/stories/">Stories 一覧</a>·<a href="https://reserva.be/kidskart/reserve" target="_blank">体験予約</a>
+</footer>
+</body>
+</html>
