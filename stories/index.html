@@ -25,7 +25,6 @@
   a{color:inherit;text-decoration:none}
   nav.top{position:sticky;top:0;z-index:10;padding:.9rem 1.4rem;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
   nav.top a{font-weight:800;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--ink)}
-  nav.top a.home{color:var(--ink)}
   nav.top a.book{background:var(--orange);color:#fff;padding:.55rem .9rem;border-radius:999px;font-size:.8rem;box-shadow:0 4px 14px rgba(255,138,61,.4)}
   nav.top .badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--sky);color:#fff;border-radius:50%;font-weight:800;font-size:.8rem}
   header.hero{max-width:1100px;margin:0 auto;padding:4.5rem 1.4rem 3rem;text-align:center}
@@ -47,6 +46,8 @@
   .card h3{font-family:var(--jp);font-weight:800;font-size:1.05rem;line-height:1.5;color:var(--ink)}
   .card .ex{font-size:.85rem;line-height:1.75;color:var(--ink-2);flex:1}
   .card .more{font-family:var(--mono);font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:var(--sky-deep);font-weight:700;display:inline-flex;align-items:center;gap:.4rem;margin-top:.4rem}
+  .card.photo{border-color:var(--sky-mist);background:linear-gradient(180deg,#fff 0%,#fafdff 100%)}
+  .card.photo h3::before{content:'📸 ';opacity:.6;font-size:.85em}
   footer.bottom{margin-top:0;padding:2.5rem 1.4rem;text-align:center;background:var(--bg-3);color:var(--ink-3);font-size:.78rem;letter-spacing:.05em;font-family:var(--mono)}
   footer.bottom a{color:var(--ink-2);text-decoration:none;font-weight:700;margin:0 .6rem}
 </style>
@@ -91,7 +92,7 @@
     </div>
   </div>
   <div class="yearblock">
-    <div class="year-h"><span class="yr">2017</span><span class="yrline"></span><span class="yrcount">10 STORIES</span></div>
+    <div class="year-h"><span class="yr">2017</span><span class="yrline"></span><span class="yrcount">12 STORIES</span></div>
     <div class="cards">
       <a class="card" href="/stories/2017/2017-10-03-エーワンシリーズ.html">
         <span class="date">2017年10月3日</span>
@@ -105,10 +106,22 @@
         <p class="ex">福岡キッズカートアカデミーです。 夏休みも終わり、少しずつ涼しくなって過ごしやすくなってきました。 今年の夏もキッズカート教室も大盛況でした 初めてカートに乗るお子様やサーキットデビューのお子様も沢山でした。 是非、また遊びに来てください お待ちしております。 お知らせです。 9…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card" href="/stories/2017/2017-07-24-大雨災害について.html">
+        <span class="date">2017年7月24日</span>
+        <h3>大雨災害について</h3>
+        <p class="ex">この度は九州地方の大雨により被災・避難の皆さまに心よりお見舞い申し上げます。 一刻も早い復旧をされますよう心よりお祈り申し上げます。 福岡キッズカートアカデミー &amp;nbsp;</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2017/2017-07-24-イベント.html">
         <span class="date">2017年7月24日</span>
         <h3>イベント</h3>
         <p class="ex">福岡キッズカートアカデミーです。 夏休みが始まったお子様も多いいのではないしょうか？ 毎日暑いですので体調等気をつけてお過ごしください。 7/22は建築マニア様にて出張のカート教室を開催させていただきました。 建築マニア様では定期的にカート教室を開催させていただいてます。 かっこ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2017/2017-07-06-記事-2017-07-06.html">
+        <span class="date">2017年7月6日</span>
+        <h3>記事 (2017-07-06)</h3>
+        <p class="ex">福岡キッズカートアカデミーです。 6/25にはエーワンサーキットで模擬レースを開催いたしました。 全員、完走 優勝のシューマ選手もおめでとう &amp;nbsp; 翌週はRMC九州第③戦が長崎県の大村湾サーキットで開催 そら選手RMC初優勝おめでとう &amp;nbsp; &amp;nbsp; お知らせ…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2017/2017-06-05-6月チャレンジクラス.html">
@@ -215,7 +228,7 @@
       <a class="card" href="/stories/2016/2016-07-01-福岡トヨペットカート教室.html">
         <span class="date">2016年7月1日</span>
         <h3>福岡トヨペットカート教室</h3>
-        <p class="ex"></p>
+        <p class="ex">（写真記事）</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2016/2016-04-28-福岡トヨペット株式会社とのスポンサー契約締結のお知らせ.html">
@@ -322,7 +335,7 @@
     </div>
   </div>
   <div class="yearblock">
-    <div class="year-h"><span class="yr">2014</span><span class="yrline"></span><span class="yrcount">9 STORIES</span></div>
+    <div class="year-h"><span class="yr">2014</span><span class="yrline"></span><span class="yrcount">15 STORIES</span></div>
     <div class="cards">
       <a class="card" href="/stories/2014/2014-12-22-クリスマス.html">
         <span class="date">2014年12月22日</span>
@@ -340,6 +353,12 @@
         <span class="date">2014年10月3日</span>
         <h3>F1鈴鹿グランプリ2014</h3>
         <p class="ex">福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 今週末はいろんなレースがあります！ もちろん、鈴鹿サーキットでは「F１」。 小林可夢偉 選手頑張ってもらいたいですね タイではスーパーGT 初めてのサーキットでどんなレースになるのか楽しみです カートのレ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2014/2014-09-19-８月写真館.html">
+        <span class="date">2014年9月19日</span>
+        <h3>８月写真館</h3>
+        <p class="ex">（写真記事）</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2014/2014-09-19-９月イベント.html">
@@ -360,16 +379,46 @@
         <p class="ex">お久しぶりでございます。 福岡キッズカートアカデミーです。 いつも沢山のご参加ありがとうございます。 夏休み満喫してますか〜 ８月１０日にキッズカートのイベントを行います 台風が心配ですが、、、 当日の予定は、 スクール形式で模擬レースを行います。 本格的なレースを出る為の練習レ…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2014/2014-02-17-Hit住宅展場ジュニアレーサー教室-写真館-2-11.html">
+        <span class="date">2014年2月17日</span>
+        <h3>Hit住宅展場ジュニアレーサー教室　写真館 2/11</h3>
+        <p class="ex">（写真記事）</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2014/2014-02-17-1月写真館.html">
+        <span class="date">2014年2月17日</span>
+        <h3>1月写真館</h3>
+        <p class="ex">１月１８日 サーキット教室 参加 みつき君、ゆうだい君。 &amp;nbsp; &amp;nbsp; １月１８日 体験教室、サーキット体験教室 参加 えんぞう君。 &amp;nbsp; &amp;nbsp; １月２５日 サーキット教室 参加 えんぞう君。 &amp;nbsp; &amp;nbsp; &amp;nbsp; １月２６日 サ…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2014/2014-02-17-２月写真館-2-1-2-16.html">
+        <span class="date">2014年2月17日</span>
+        <h3>２月写真館　2/1~2/16</h3>
+        <p class="ex">２月１日 トレーニング教室 しゅういちろう君。 &amp;nbsp; &amp;nbsp; ２月２日 サーキット教室 えんぞう君。 ２月２日 体験教室、サーキット体験教室 がくと君。 &amp;nbsp; &amp;nbsp; ２月３日 体験教室、サーキット体験教室 れいかちゃん。 &amp;nbsp; &amp;nbsp; …</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2014/2014-02-17-HIT住宅展示場-様-大野城会場.html">
         <span class="date">2014年2月17日</span>
         <h3>HIT住宅展示場 様　大野城会場</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 2月22日（土）トレーニング教室のご予約をお待ち…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2014/2014-01-21-Hit住宅展場ジュニアレーサー教室-写真館.html">
+        <span class="date">2014年1月21日</span>
+        <h3>Hit住宅展場ジュニアレーサー教室　写真館</h3>
+        <p class="ex">1月13日（祝）Hit住宅展示場 様 マリナ通り会場 &amp;nbsp; &amp;nbsp; 1月19日（日）Hit住宅展示場 様 香椎浜会場</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2014/2014-01-21-小林可夢偉選手.html">
         <span class="date">2014年1月21日</span>
         <h3>小林可夢偉選手</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 2月15日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2014/2014-01-16-１月写真館.html">
+        <span class="date">2014年1月16日</span>
+        <h3>１月写真館</h3>
+        <p class="ex">1月３日 サーキット体験教室 参加 つかさ君。 &amp;nbsp; &amp;nbsp; 1月４日 こどもカート体験教室、サーキット体験教室 参加 けいた君、こはく君。 &amp;nbsp; &amp;nbsp; 1月５日 こどもカート体験教室 参加 しゅうま君。 こどもカート体験教室、サーキット体験教室 参…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2014/2014-01-16-2014年.html">
@@ -381,12 +430,36 @@
     </div>
   </div>
   <div class="yearblock">
-    <div class="year-h"><span class="yr">2013</span><span class="yrline"></span><span class="yrcount">36 STORIES</span></div>
+    <div class="year-h"><span class="yr">2013</span><span class="yrline"></span><span class="yrcount">103 STORIES</span></div>
     <div class="cards">
+      <a class="card photo" href="/stories/2013/2013-12-31-12月写真館.html">
+        <span class="date">2013年12月31日</span>
+        <h3>12月写真館</h3>
+        <p class="ex">12月15日 こどもカート体験教室、サーキット体験教室 参加 ゆうかちゃん、まさたか君。 &amp;nbsp; &amp;nbsp; &amp;nbsp; &amp;nbsp; 12月22日 トレーニング教室 参加 こたろう君、そうたろう君。 &amp;nbsp; &amp;nbsp; &amp;nbsp; &amp;nbsp; &amp;nbsp;…</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-12-31-2013年もお世話になりました.html">
         <span class="date">2013年12月31日</span>
         <h3>2013年もお世話になりました。</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 1月18日（土）トレーニング教室のご予約をお待ち…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-12-06-10月26日-写真館.html">
+        <span class="date">2013年12月6日</span>
+        <h3>10月26日　写真館</h3>
+        <p class="ex">10月26日 こどもカート体験教室参加 つかさ君、まさと君、たいき君。 &amp;nbsp; ご参加ありがとうございました！</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-12-06-10月27日-28日写真館.html">
+        <span class="date">2013年12月6日</span>
+        <h3>10月27日、28日写真館</h3>
+        <p class="ex">10月27日 トレーニング教室 10月28日 こどもカート体験教室参加 りょうた君 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-12-06-11月写真館.html">
+        <span class="date">2013年12月6日</span>
+        <h3>11月写真館</h3>
+        <p class="ex">11月2日 こどもカート体験教室、サーキット体験教室 参加 なると君。 11月4日 こどもカート体験教室、サーキット体験教室 参加 つかさ君。みつきちゃん、ひろと君。 11月9日 こどもカート体験教室、サーキット体験教室 参加 そうたろう君。 11月10日 サーキット体験教室 参…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-12-06-勤労感謝の日.html">
@@ -395,10 +468,58 @@
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② 12月23日（祝）トレーニング教室のご予約をお待…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-10-25-10月16日-写真館.html">
+        <span class="date">2013年10月25日</span>
+        <h3>10月16日　写真館</h3>
+        <p class="ex">10月16日 こどもカート体験教室、サーキット体験教室 参加 あつし君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-25-10月19日-写真館.html">
+        <span class="date">2013年10月25日</span>
+        <h3>10月19日　写真館</h3>
+        <p class="ex">10月19日 こどもカート、サーキット体験教室 参加 ゆうだい君、あつし君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-25-10月20日-写真館.html">
+        <span class="date">2013年10月25日</span>
+        <h3>10月20日　写真館</h3>
+        <p class="ex">10月20日 こどもカート体験教室、サーキット体験教室、トレーニング教室 参加 こたろう君、りゅうま君、ゆうのすけ君、いつき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-10-25-ジュニアカート.html">
         <span class="date">2013年10月25日</span>
         <h3>ジュニアカート</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ ☆お知らせ☆その② トレーニング教室のご予約をお待ちしております。 …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-15-10月6日-写真館.html">
+        <span class="date">2013年10月15日</span>
+        <h3>10月6日　写真館</h3>
+        <p class="ex">10月6日 子供カート サーキット体験教室 参加 こうき君、 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-15-10月7日-写真館.html">
+        <span class="date">2013年10月15日</span>
+        <h3>10月7日　写真館</h3>
+        <p class="ex">10月7日 子供カート こどもカート体験教室 参加 りなちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-15-10月12日-写真館.html">
+        <span class="date">2013年10月15日</span>
+        <h3>10月12日　写真館</h3>
+        <p class="ex">10月12日 子供カート サーキット体験教室、体験教室 参加 ちさと君、たいき君、ゆうだい君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-15-10月13日-写真館.html">
+        <span class="date">2013年10月15日</span>
+        <h3>10月13日　写真館</h3>
+        <p class="ex">10月13日 子供カート 体験教室、サーキット体験教室 参加 しんのすけ君、さくらこチャン、りおんチャン、りゅうせい君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-15-10月14日-写真館.html">
+        <span class="date">2013年10月15日</span>
+        <h3>10月14日　写真館</h3>
+        <p class="ex">10月14日 こどもカート体験教室、サーキット体験教室 参加 さきちゃん、ゆきと君、みゅう君、みいなちゃん。 ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-10-15-福岡チャレンジャークラブ様-①.html">
@@ -419,10 +540,100 @@
         <p class="ex">こんにちは。 待ちに待った！？ 上原田公園が10月１日に開園しましたので、行ってきました！ &amp;nbsp; &amp;nbsp; &amp;nbsp; ゲートの奥にも駐車場がたくさん。 &amp;nbsp; たくさん、遊具もあるし、グラウンドもバッチリです &amp;nbsp; ちびっこ達がたくさんあそんでました…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-10-05-9月１６日-写真館.html">
+        <span class="date">2013年10月5日</span>
+        <h3>9月１６日　写真館</h3>
+        <p class="ex">９月16日 子供カート サーキット体験教室 参加 みつき君、 体験教室 参加 ゆうと君、こうき君 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-05-9月２１日-写真館.html">
+        <span class="date">2013年10月5日</span>
+        <h3>9月２１日　写真館</h3>
+        <p class="ex">９月２１日 子供カート トレーニング教室 参加 たいき君、りゅうま君 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-05-9月22日-写真館.html">
+        <span class="date">2013年10月5日</span>
+        <h3>9月22日　写真館</h3>
+        <p class="ex">９月22日 子供カート 体験教室 参加 はると君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-10-05-9月23日-写真館.html">
+        <span class="date">2013年10月5日</span>
+        <h3>9月23日　写真館</h3>
+        <p class="ex">９月16日 子供カート 体験教室 参加 はくえい君、おうぎょく君、たいせい君、こうき君、 こうのすけ君、あおいちゃん、げんたろう君、りゅうま君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-15-9月14日-写真館.html">
+        <span class="date">2013年9月15日</span>
+        <h3>9月14日　写真館</h3>
+        <p class="ex">９月14日 子供カート 体験教室、サーキット体験教室 参加 たいき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-15-9月15日-写真館.html">
+        <span class="date">2013年9月15日</span>
+        <h3>9月15日　写真館</h3>
+        <p class="ex">９月15日 子供カート トレーニング教室 参加 りゅうしん君 サーキット体験教室 参加 はるく君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-09-15-ウエア-キッズカート.html">
         <span class="date">2013年9月15日</span>
         <h3>ウエア[キッズカート]</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ 大量に更新したので間違いがあるかもしれませんが。。笑 写真がない子も…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月１８日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月１８日　写真館</h3>
+        <p class="ex">８月１８日 子供カート 体験教室 参加 さく君、はるく君。 トレーニング教室 とらのすけ君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月２０日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月２０日　写真館</h3>
+        <p class="ex">８月２０日 子供カート サーキット体験教室 参加 あさひ君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月２３日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月２３日　写真館</h3>
+        <p class="ex">８月２３日 子供カート サーキット体験教室 参加 ゆうり君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月２５日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月２５日　写真館</h3>
+        <p class="ex">８月１７日 子供カート 体験教室、サーキット体験教室 参加 りゅうま君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月２７日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月２７日　写真館</h3>
+        <p class="ex">８月２７日 子供カート 体験教室、サーキット体験教室 参加 かずひこ君、たつき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-８月２８日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>８月２８日　写真館</h3>
+        <p class="ex">８月２８日 子供カート 体験教室、サーキット体験教室 参加 いろはちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-9月１日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>9月１日　写真館</h3>
+        <p class="ex">９月１日 子供カート 体験教室、サーキット体験教室 参加 だいも君、ゆうも君、しんぺい君、げんたろう君、りゅうま君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-9月5日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>9月5日　写真館</h3>
+        <p class="ex">９月５日 子供カート サーキット体験教室 参加 はる君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-09-10-9月８日-写真館.html">
+        <span class="date">2013年9月10日</span>
+        <h3>9月８日　写真館</h3>
+        <p class="ex">９月８日 子供カート 体験教室、サーキット体験教室 参加 しいなちゃん、ともたろう君、ゆうだい君。 ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-09-10-東京オリンピック.html">
@@ -431,10 +642,70 @@
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① 写真館更新しました。☆ 大量に更新したので間違いがあるかもしれませんが。。笑 写真がない子も…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月-写真館-6日-１０日.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月　写真館（6日、１０日）</h3>
+        <p class="ex">８月１０日 子供カート サーキット体験教室 参加 あさひ君。 ８月６日 子供カート 体験教室、サーキット体験教室 参加 まさき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１１日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１１日　写真館</h3>
+        <p class="ex">８月１１日 子供カート 体験教室、サーキット体験教室 参加 りゅうな君、はる君。 ８月１１日 子供カート 体験教室、サーキット体験教室 参加 らいく君、ゆうく君、シューマ君、そうた君、しほちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１２日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１２日　写真館</h3>
+        <p class="ex">８月１２日 子供カート 体験教室、サーキット体験教室 参加 りく君、はやと君、ゆうき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１３日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１３日　写真館</h3>
+        <p class="ex">８月１１日 子供カート 体験教室 参加 こはく君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１４日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１４日　写真館</h3>
+        <p class="ex">８月１４日 トレーニング教室 参加 はれみちゃん、たくま君。 &amp;nbsp; &amp;nbsp; ８月１４日 子供カート 体験教室、サーキット体験教室 参加 ゆうま君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１５日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１５日　写真館</h3>
+        <p class="ex">８月１５日 子供カート 体験教室、サーキット体験教室 参加 りょう君、まひろちゃん、りょうき君、ゆうき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１６日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１６日　写真館</h3>
+        <p class="ex">８月１６日 子供カート 体験教室、サーキット体験教室 参加 まほちゃん、こたろう君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-17-８月１７日-写真館.html">
+        <span class="date">2013年8月17日</span>
+        <h3>８月１７日　写真館</h3>
+        <p class="ex">８月１７日 子供カート サーキット体験教室 参加 こはく君、ともき君、としき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-08-17-夏休み本番.html">
         <span class="date">2013年8月17日</span>
         <h3>夏休み本番！！</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆お知らせ☆その① トレーニング教室のご予約をお待ちしております。 ※子供カート体験教室受講者もしくは、カート経…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-05-7月写真館.html">
+        <span class="date">2013年8月5日</span>
+        <h3>7月写真館</h3>
+        <p class="ex">７月３０日 子供カート 体験教室、サーキット体験教室 参加 しょうえい君、あおいちゃん。 ７月２８日 子供カート教室 トレーニング教室 参加 とらのすけ君、ゆきと君。 ７月２６日 子供カート教室 トレーニング教室 参加 たくみ君。 ７月２３日 子供カート教室 サーキット体験教室 …</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-08-05-８月写真館.html">
+        <span class="date">2013年8月5日</span>
+        <h3>８月写真館</h3>
+        <p class="ex">８月４日 子供カート 体験教室 参加 けいた君。 ８月３日 子供カート 体験教室、サーキット体験教室 参加 りんき君。 ８月２日 子供カート 体験教室、サーキット体験教室 参加 はじめ君、あかりちゃん。 ８月１日 子供カート 体験教室、サーキット体験教室 参加 きよただ君。 ご参…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-08-05-筑後川花火大会.html">
@@ -443,10 +714,22 @@
         <p class="ex">----------------------------------------------------------------------------------- ☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレー…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-07-23-7月写真館.html">
+        <span class="date">2013年7月23日</span>
+        <h3>7月写真館</h3>
+        <p class="ex">７月２１日 子供カート教室 トレーニング教室、サーキット体験教室 参加 たくみ君、とらのすけ君。 ７月２１日 子供カート教室 子供カート体験教室 参加 りんチャン、ひびき君。 ７月２０日 子供カート教室 サーキット体験教室 参加 ちさと君。 ７月２０日 子供カート教室 トレーニン…</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-07-23-ライダーandドライバー.html">
         <span class="date">2013年7月23日</span>
         <h3>ライダーandドライバー</h3>
         <p class="ex">----------------------------------------------------------------------------------- ☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレー…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-07-15-7月写真館.html">
+        <span class="date">2013年7月15日</span>
+        <h3>7月写真館。</h3>
+        <p class="ex">７月１４日 子供カート教室 サーキット体験教室 参加 しょうた君、あさひ君。 ７月１４日 子供カート教室 体験教室、サーキット体験教室 参加 とらのすけ君。 ７月１４日 子供カート教室 体験教室 参加 たいき君。 ７月１２日 子供カート教室 トレーニング教室 参加 しん君。 ※し…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-07-15-佐藤公哉選手.html">
@@ -461,10 +744,28 @@
         <p class="ex">☆おしらせ☆その① フリーパスを設定しました♪ お得なので是非ご活用ください。 ☆お知らせ☆その② 8月のトレーニング教室は8月11日（日）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズカートの走行も出来ます☆ ※子供カート体験教…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-07-09-６月写真館.html">
+        <span class="date">2013年7月9日</span>
+        <h3>６月写真館</h3>
+        <p class="ex">6月29日 子供カート体験教室 参加 サムエル君。 6月30日 子供カート体験教室 参加 れい君、じゅんぺい君、かずはちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-07-09-７月写真館.html">
+        <span class="date">2013年7月9日</span>
+        <h3>７月写真館</h3>
+        <p class="ex">7月4日 子供カート体験教室 サーキット体験 参加 しん君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-07-09-7月7日-トレーニング教室.html">
         <span class="date">2013年7月9日</span>
         <h3>7月7日　トレーニング教室</h3>
         <p class="ex">７月７日 子供カート教室 トレーニング教室 参加 たくみ君。 梅雨真っ只中、豪雨でした！ たくみ君、雨の日たくさん走行しました☆ 風邪引かない様にね♪ ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-06-27-６月写真館.html">
+        <span class="date">2013年6月27日</span>
+        <h3>６月写真館</h3>
+        <p class="ex">6月15日 体験教室、サーキット教室 参加 ゆきなちゃん、りょうが君。 6月16日 子供カート教室 体験教室 参加 ゆきと君、けいた君。 6月22日 子供カート教室 体験教室 参加 しょう君、るい君、たくと君。 6月23日 子供カート教室 体験教室、サーキット教室 参加 たくみ君…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-06-27-雨.html">
@@ -479,16 +780,52 @@
         <p class="ex">６月２日 子供カート教室 トレーニング教室 参加 たいち君、たける君。 あいにくの天気でしたが、なんとか小雨程度でした！ 二人とも雨の中、頑張りました！！ ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-06-14-6月-写真館.html">
+        <span class="date">2013年6月14日</span>
+        <h3>6月　写真館</h3>
+        <p class="ex">6月3日 子供カート教室 サーキット教室 参加 じゅんいち君。 6月4日 子供カート教室 サーキット教室 参加 とうや君。 6月8日 子供カート教室 トレーニング教室 参加 たける君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-06-14-梅雨.html">
         <span class="date">2013年6月14日</span>
         <h3>梅雨</h3>
         <p class="ex">☆おしらせ☆その① 最近は日も長くなってきたので、 土曜日、日曜日の午後５時〜からトレーニング教室を先着２名で受け付けます。 ☆お知らせ☆その② 7月のトレーニング教室は7月6日（土）となります。 先着4名様のご予約をお待ちしております。 ※持ち込みの初心者ジュニアカート、キッズ…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-05-29-5月写真館.html">
+        <span class="date">2013年5月29日</span>
+        <h3>5月写真館</h3>
+        <p class="ex">5月19日 子供カート教室 サーキット教室 参加 じゅんいち君。 5月25日 子供カート教室 体験サーキット教室 参加 たける君。 5月26日 子供カート教室 サーキット教室 参加 りんかちゃん、かずなり君。 5月26日 子供カート教室 体験教室 参加 あさひ君。 5月27日 子…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-05-18-５月写真館.html">
+        <span class="date">2013年5月18日</span>
+        <h3>５月写真館</h3>
+        <p class="ex">5月11日 子供カート教室 体験教室・サーキット体験教室 参加 けんと君、りょうせい君。 5月12日 子供カート教室 体験教室・サーキット体験教室 参加 げんさい君、ななちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-05-18-5月写真館.html">
+        <span class="date">2013年5月18日</span>
+        <h3>5月写真館</h3>
+        <p class="ex">5月17日 子供カート教室 サーキット教室 参加 ゆうと君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-05-18-駄菓子屋さん.html">
         <span class="date">2013年5月18日</span>
         <h3>駄菓子屋さん</h3>
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 駄菓子屋さんはじめます♪ じゃ、なくて。 カート教室に参加してくれたみんなへのプレゼントです。 &amp;nbsp; 写真館更新してます☆ ☆おしらせ☆その① 最近は日も長くなってきたので、 土曜日、日曜日の午後５時〜からサーキット教室を先…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-05-11-５月写真館.html">
+        <span class="date">2013年5月11日</span>
+        <h3>５月写真館</h3>
+        <p class="ex">5月6日 子供カート教室 体験教室・サーキット体験教室 参加 ゆうり君、なおちゃん、しょうた君、りょうかちゃん。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-05-05-５月写真館.html">
+        <span class="date">2013年5月5日</span>
+        <h3>５月写真館</h3>
+        <p class="ex">5月5日 子供カート教室 体験教室 参加 ゆうき君、こうへい君。 5月5日 子供カート教室 サーキット体験教室 参加 じゅんいち君、りょうき君。 5月4日 子供カート教室 体験教室、サーキット体験教室 参加 じゅんいち君、ゆきなちゃん、ひのきちゃん。 5月3日 子供カート教室 体…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-05-05-5月５日-サーキット教室.html">
@@ -503,10 +840,34 @@
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 きょうはこどもの日でしたね 天気もすごく良くて最高でしたー みなさん、どこかにお出かけしましたか サーキットも子供達の笑顔であふれてましたよー ５月３日、4日、５日の写真館 ５月５日 サーキット教室の写真館 ※次回のサーキット教室は…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-05-01-4月写真館.html">
+        <span class="date">2013年5月1日</span>
+        <h3>4月写真館</h3>
+        <p class="ex">4月20日 子供カート教室 サーキット体験教室 参加 はやと君。 4月29日 子供カート教室 体験教室・サーキット体験教室 参加 さねあつ君、なりたつ君、せな君、かずま君、太一君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-05-01-ゴールデン〇〇.html">
         <span class="date">2013年5月1日</span>
         <h3>ゴールデン〇〇</h3>
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 皆さん、ゴールデンウイークは満喫していますかー ゴールデンウイーク前半は子供カート教室が大人気！でした &amp;nbsp; 楽しんでもらえもらえましたか？？ その他の写真はこちら ゴールデンウイーク後半の５月５日こどもの日は、 子供カート…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-04-15-4月写真館.html">
+        <span class="date">2013年4月15日</span>
+        <h3>4月写真館</h3>
+        <p class="ex">4月13日 子供カート教室 サーキット体験教室 参加 よしと君。 4月13日 子供カート教室 体験教室・サーキット体験教室 参加 けいご君。 4月13日 子供カート教室 サーキット体験教室 参加 ぐん君。 4月3日 子供カート教室 体験教室・サーキット体験教室 参加 りん君。 4…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-04-12-3月写真館.html">
+        <span class="date">2013年4月12日</span>
+        <h3>3月写真館</h3>
+        <p class="ex">3月30日 子供カート教室 体験教室 参加 あさひ君。 3月31日 子供カート教室 体験教室 参加 れんや君 れのんちゃん かいや君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-04-12-4月写真館.html">
+        <span class="date">2013年4月12日</span>
+        <h3>4月写真館</h3>
+        <p class="ex">4月3日 子供カート教室 体験教室・サーキット体験教室 参加 けんすけ君 こうた君。 4月4日 子供カート教室 体験教室・サーキット体験教室 参加 ほまれ君 いさな君 こうせい君。 4月9日 子供カート教室 体験教室・サーキット体験教室 参加 はるき君。 4月10日 子供カート教…</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-04-12-出張イベント.html">
@@ -515,10 +876,28 @@
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 4月7日に開催のトヨタ自動車九州スプリングフェスタ2013で開催させて頂きました、 子供カート教室は盛況のうちに終える事が出来ました。 ご参加の皆様ならびにご協賛、ご協力企業様、スタッフの皆様、関係者の方々へお礼を申し上げます。 イ…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-04-08-2013-4-7-トヨタ自動車九州スプリングフェスタ写真館①.html">
+        <span class="date">2013年4月8日</span>
+        <h3>2013/4/7　トヨタ自動車九州スプリングフェスタ写真館①</h3>
+        <p class="ex">（写真記事）</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-04-08-2013-4-7-トヨタ自動車九州スプリングフェスタ写真館②.html">
+        <span class="date">2013年4月8日</span>
+        <h3>2013/4/7　トヨタ自動車九州スプリングフェスタ写真館②</h3>
+        <p class="ex">（写真記事）</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-03-29-春休み子供カート教室-３月２８日.html">
         <span class="date">2013年3月29日</span>
         <h3>春休み子供カート教室　３月２８日</h3>
         <p class="ex">３月28日 春休み子供カート教室 サーキット体験教室参加 けんた君、 ３月28日 春休み子供カート教室 サーキット教室参加 藍翔君 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-03-29-春休み子供カート教室-3月２９日.html">
+        <span class="date">2013年3月29日</span>
+        <h3>春休み子供カート教室 3月２９日</h3>
+        <p class="ex">３月29日 春休み子供カート教室 サーキット教室 ちとせチャン ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-03-26-春休み子供カート教室-３月２６日.html">
@@ -533,16 +912,52 @@
         <p class="ex">３月２３日 子供カート教室 サーキット教室 &amp;nbsp; &amp;nbsp; ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-03-21-3月写真館.html">
+        <span class="date">2013年3月21日</span>
+        <h3>3月写真館</h3>
+        <p class="ex">３月１７日 子供カート教室 体験教室・サーキット体験教室 参加 だいき君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-03-19-出張イベント開催予定.html">
         <span class="date">2013年3月19日</span>
         <h3>出張イベント開催予定</h3>
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 トヨタ自動車九州（株）様が主催する、トヨタ自動車九州スプリングフェスタ２０１３にキッズカート体験教室を開催させて頂く事が決まりました。 &amp;nbsp; 4月7日（日）開催で雨天決行です。雨天時は屋根付きのスペースで開催させて頂けるそう…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-03-17-３月写真館.html">
+        <span class="date">2013年3月17日</span>
+        <h3>３月写真館</h3>
+        <p class="ex">３月１６日 子供カート教室 サーキット体験教室 参加 たつや君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-03-17-3月写真館.html">
+        <span class="date">2013年3月17日</span>
+        <h3>3月写真館</h3>
+        <p class="ex">３月１７日 子供カート教室 サーキット体験教室 参加 たつや君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-03-17-３月１７日.html">
         <span class="date">2013年3月17日</span>
         <h3>３月１７日</h3>
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 昨日の子供カート教室はカート経験者のたつや君がサーキット体験に参加してくれました！ 写真は、コチラ。 今日は、昨日に引き続き、たつや君と先週カート教室に参加してくれた、こうのすけ君も再び参加 二人とも結構上手に乗れています &amp;nbs…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-03-09-３月写真館.html">
+        <span class="date">2013年3月9日</span>
+        <h3>３月写真館</h3>
+        <p class="ex">３月９日 子供カート教室 サーキット体験教室 参加 こうのすけ君。 ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-03-06-３月写真館.html">
+        <span class="date">2013年3月6日</span>
+        <h3>３月写真館</h3>
+        <p class="ex">３月５日 子供カート教室 サーキット体験教室 参加 あやのちゃん、ゆうと君。 &amp;nbsp; ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-03-02-３月写真館.html">
+        <span class="date">2013年3月2日</span>
+        <h3>３月写真館</h3>
+        <p class="ex">３月２日 子供カート体験教室・サーキット体験教室 参加 ゆうさく君 ご参加ありがとうございました。</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-03-02-３月２日.html">
@@ -557,6 +972,12 @@
         <p class="ex">こんにちは。 福岡キッズカートアカデミーです。 もうすぐ、春休みですね ちょっと、気が早いかなー いつも、ブログをご覧の皆さん、ありがとうございます。 そんな皆さんに、先着でお知らせです。 春休みカート教室 平日限定ですが、春休みにカートを楽しみましょー コチラは土曜日（月に１〜…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-02-24-２月写真館.html">
+        <span class="date">2013年2月24日</span>
+        <h3>２月写真館</h3>
+        <p class="ex">２月２３日 子供カート体験教室 参加 はるやクン &amp;nbsp; ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-02-24-子供カート体験教室.html">
         <span class="date">2013年2月24日</span>
         <h3>子供カート体験教室</h3>
@@ -569,10 +990,34 @@
         <p class="ex">こんばんはo(^▽^)o 17日のカート教室は3名の参加でした！ 初参加のナイト君。 サーキット体験も！ 上手に乗れてましたよ！ 2回目のサーキット体験教室参加のあやのちゃん、ゆうと君。 二人とも上手になりました！ &amp;nbsp; &amp;nbsp; &amp;nbsp; 福岡県のキッズカート、…</p>
         <span class="more">続きを読む →</span>
       </a>
+      <a class="card photo" href="/stories/2013/2013-02-18-2月写真館.html">
+        <span class="date">2013年2月18日</span>
+        <h3>2月写真館</h3>
+        <p class="ex">2月3日 子供カートサーキット体験教室参加 ゆあらちゃん 2月3日 体験教室、サーキット体験教室参加 あやのちゃん、ゆうとくん 2月11日 子供カート体験教室 2月16日 子供カート体験教室参加 れんくん ご参加ありがとうございました。</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-16-4才でカート初体験.html">
+        <span class="date">2013年2月16日</span>
+        <h3>4才でカート初体験！</h3>
+        <p class="ex">今日は4才のお子さんが体験教室に参加してくれましまた！ カート初体験でエンジンの音にビックリしてましたが、上手にカートを運転しました(^_^) 明日はライセンス教室のご予約のみです。サーキットも、ゆっくりしてそうなんで、当日のご予約もOKです。 お待ちしております。(&amp;gt;_&amp;…</p>
+        <span class="more">続きを読む →</span>
+      </a>
       <a class="card" href="/stories/2013/2013-02-12-カート教室でカート初体験.html">
         <span class="date">2013年2月12日</span>
         <h3>カート教室でカート初体験！</h3>
         <p class="ex">今日は、 連休は暇かなーって、看板立ててみました！ 基山paの出口から見えるはず^o^ 効果があったのか、 最終日、4名のお子様が体験教室に参加してくれました！(^^) 楽しんでもらえましたか？ 次回はサーキット体験にもチャレンジですね^o^ &amp;nbsp; &amp;nbsp; &amp;nbs…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-08-ホームページ開設.html">
+        <span class="date">2013年2月8日</span>
+        <h3>ホームページ開設！</h3>
+        <p class="ex">福岡キッズカートアカデミーのホームページがオープンです。^_^ そんな今日は、天気もお祝いをしてくれたのか？！ これから、ブログも更新していきますのでよろしくお願いします。(^^) &amp;nbsp; &amp;nbsp; &amp;nbsp; 福岡県のキッズカート、ジュニアカート、カートスクールは福…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card" href="/stories/2013/2013-02-07-サーキット体験教室の動画.html">
+        <span class="date">2013年2月7日</span>
+        <h3>サーキット体験教室の動画。</h3>
+        <p class="ex">（写真記事）</p>
         <span class="more">続きを読む →</span>
       </a>
       <a class="card" href="/stories/2013/2013-02-07-2012年7月.html">
@@ -597,6 +1042,12 @@
         <span class="date">2013年2月7日</span>
         <h3>2012年10月</h3>
         <p class="ex">10月29日 子供カート体験教室・サーキット体験教室参加 ゆうすけクン 10月14日 子供カート教室 体験教室 参加 ことチャン 10月14日 子供カート教室 体験教室 参加 けいとクン 10月14日 子供カート教室 サーキット体験教室 参加 たかひろクン 10月14日 子供カー…</p>
+        <span class="more">続きを読む →</span>
+      </a>
+      <a class="card photo" href="/stories/2013/2013-01-31-１月写真館.html">
+        <span class="date">2013年1月31日</span>
+        <h3>１月写真館</h3>
+        <p class="ex">（写真記事）</p>
         <span class="more">続きを読む →</span>
       </a>
     </div>
