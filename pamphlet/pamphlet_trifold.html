@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>福岡キッズカートアカデミー 3つ折りパンフレット</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "IPAPGothic", "IPAGothic", sans-serif;
+    color: #1a1a2e;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body { margin: 0; padding: 0; }
+
+  /* ===== SHEET / PANEL STRUCTURE ===== */
+  .sheet {
+    width: 297mm;
+    height: 210mm;
+    display: flex;
+    flex-direction: row;
+    position: relative;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .sheet:last-of-type { page-break-after: auto; }
+  .panel {
+    width: 99mm;
+    height: 210mm;
+    padding: 8mm 7mm;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* Fold guide hairlines (printable; light gray) */
+  .sheet::before, .sheet::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 0;
+    border-left: .15mm dashed #d0d4dc;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .sheet::before { left: 99mm; }
+  .sheet::after  { left: 198mm; }
+
+  /* ============================
+     COMMON COMPONENTS
+     ============================ */
+  .eyebrow {
+    display: inline-block;
+    background: #e9531f;
+    color: #fff;
+    font-size: 2.6mm;
+    font-weight: 900;
+    padding: 1mm 2.5mm;
+    border-radius: 1mm;
+    letter-spacing: .5mm;
+    margin-bottom: 3mm;
+  }
+  .eyebrow.blue { background: #0b3b8c; }
+  .eyebrow.gold { background: #b85a00; }
+  .section-h {
+    font-size: 6.2mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.2;
+    margin-bottom: 2.5mm;
+  }
+  .section-h .hl { color: #e9531f; }
+  .section-sub {
+    font-size: 2.8mm;
+    color: #5a6378;
+    line-height: 1.55;
+    margin-bottom: 4mm;
+  }
+
+  /* ============================
+     COVER (P1L)
+     ============================ */
+  .cover {
+    background: linear-gradient(150deg, #0b3b8c 0%, #1e6fd9 55%, #4caee0 100%);
+    color: #fff;
+    padding: 9mm 8mm;
+  }
+  .cover-mark {
+    display: flex;
+    align-items: center;
+    gap: 2.5mm;
+    margin-bottom: 5mm;
+  }
+  .cover-mark .badge {
+    width: 11mm; height: 11mm;
+    background: #fff;
+    color: #0b3b8c;
+    border-radius: 2mm;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8mm; font-weight: 900;
+  }
+  .cover-mark .brand-name {
+    font-size: 3.4mm;
+    font-weight: 900;
+    line-height: 1.15;
+  }
+  .cover-mark .brand-name small {
+    display: block;
+    font-size: 2mm;
+    font-weight: 700;
+    opacity: .8;
+    letter-spacing: .6mm;
+    margin-top: .8mm;
+  }
+  .cover-tag {
+    display: inline-block;
+    background: #ffe55c;
+    color: #0b3b8c;
+    font-size: 2.8mm;
+    font-weight: 900;
+    padding: 1mm 2.5mm;
+    border-radius: 1.2mm;
+    letter-spacing: .3mm;
+    margin-bottom: 4mm;
+  }
+  .cover h1 {
+    font-size: 8.5mm;
+    font-weight: 900;
+    line-height: 1.2;
+    margin-bottom: 4mm;
+    letter-spacing: -.2mm;
+  }
+  .cover h1 .accent {
+    color: #ffe55c;
+    display: block;
+  }
+  .cover .sub {
+    font-size: 3mm;
+    line-height: 1.55;
+    opacity: .95;
+    margin-bottom: 5mm;
+  }
+  .cover-photo {
+    width: 100%;
+    border-radius: 3mm;
+    overflow: hidden;
+    margin-bottom: 4mm;
+    box-shadow: 0 1mm 3mm rgba(0,0,0,.2);
+    line-height: 0;
+    aspect-ratio: 5 / 4;
+  }
+  .cover-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .cover-cta {
+    background: #e9531f;
+    color: #fff;
+    border-radius: 2mm;
+    padding: 2.5mm 3mm;
+    text-align: center;
+    font-size: 3mm;
+    font-weight: 900;
+    line-height: 1.3;
+    box-shadow: 0 .8mm 2mm rgba(0,0,0,.2);
+  }
+  .cover-cta strong {
+    font-size: 5.5mm;
+    color: #ffe55c;
+    display: block;
+    margin-top: .5mm;
+  }
+  .cover-cta small {
+    display: block;
+    font-size: 2.2mm;
+    font-weight: 700;
+    opacity: .9;
+    margin-top: .8mm;
+  }
+  .cover-foot {
+    position: absolute;
+    bottom: 5mm;
+    left: 8mm; right: 8mm;
+    font-size: 2.2mm;
+    color: rgba(255,255,255,.8);
+    text-align: center;
+    letter-spacing: .3mm;
+  }
+  .cover-foot strong { color: #ffe55c; }
+
+  /* ============================
+     BACK COVER (P1M) — 料金・アクセス・QR
+     ============================ */
+  .back {
+    background: #f4f7fc;
+  }
+  .back-header {
+    background: #0b3b8c;
+    color: #fff;
+    padding: 4mm 5mm;
+    border-radius: 2mm;
+    margin-bottom: 4mm;
+  }
+  .back-header .title {
+    font-size: 4.2mm;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+  .back-header .title small {
+    display: block;
+    font-size: 2.3mm;
+    color: #ffe55c;
+    font-weight: 700;
+    margin-top: .8mm;
+    letter-spacing: .3mm;
+  }
+  .price-block {
+    background: #fff;
+    border-radius: 2mm;
+    padding: 3mm 4mm;
+    margin-bottom: 4mm;
+  }
+  .price-block .ph {
+    font-size: 2.8mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 2mm;
+    padding-bottom: 1.5mm;
+    border-bottom: .3mm solid #d6deeb;
+    letter-spacing: .3mm;
+  }
+  .price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 1.2mm 0;
+    border-bottom: .15mm dashed #c5d0e0;
+    font-size: 2.6mm;
+  }
+  .price-row:last-child { border-bottom: none; }
+  .price-row .pn { font-weight: 700; }
+  .price-row .pa { font-weight: 900; color: #e9531f; font-size: 3mm; }
+  .price-row .pa small { font-size: 2mm; color: #5a6378; font-weight: 700; }
+  .price-row.option .pn { color: #5a6378; font-weight: 700; }
+  .price-row.option .pa { color: #5a6378; }
+  .price-row .opt-badge {
+    display: inline-block;
+    background: #fff0c4;
+    color: #b85a00;
+    font-size: 1.9mm;
+    font-weight: 900;
+    padding: .3mm 1.2mm;
+    border-radius: .8mm;
+    margin-right: 1.2mm;
+    vertical-align: middle;
+  }
+  .price-foot {
+    margin-top: 2mm;
+    font-size: 2.1mm;
+    color: #5a6378;
+    line-height: 1.5;
+  }
+  .price-foot strong { color: #0b3b8c; }
+
+  .access-block {
+    background: #fff;
+    border-radius: 2mm;
+    padding: 3mm 4mm;
+    margin-bottom: 4mm;
+  }
+  .access-block .ph {
+    font-size: 2.8mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 2mm;
+    letter-spacing: .3mm;
+  }
+  .access-block .place {
+    font-size: 4mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 1mm;
+  }
+  .access-block .addr {
+    font-size: 2.4mm;
+    color: #444;
+    line-height: 1.5;
+    margin-bottom: 1.5mm;
+  }
+  .access-block .tel {
+    font-size: 4.2mm;
+    font-weight: 900;
+    color: #e9531f;
+    letter-spacing: .3mm;
+  }
+  .access-block .tel small {
+    display: block;
+    font-size: 2.2mm;
+    color: #5a6378;
+    font-weight: 700;
+    margin-top: .5mm;
+  }
+
+  .qr-block {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 2mm;
+    margin-bottom: 3mm;
+  }
+  .qr-item {
+    background: #fff;
+    border-radius: 2mm;
+    padding: 2mm 1.5mm;
+    text-align: center;
+  }
+  .qr-item img {
+    width: 100%;
+    max-width: 22mm;
+    height: auto;
+    display: block;
+    margin: 0 auto 1mm;
+  }
+  .qr-item .qr-l {
+    font-size: 2.3mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.2;
+  }
+  .qr-item .qr-s {
+    font-size: 1.8mm;
+    color: #5a6378;
+    font-weight: 700;
+    margin-top: .3mm;
+  }
+  .back-sponsor {
+    text-align: center;
+    font-size: 2.1mm;
+    color: #5a6378;
+    line-height: 1.5;
+    padding-top: 2mm;
+    border-top: .2mm dashed #c5d0e0;
+  }
+  .back-sponsor strong { color: #0b3b8c; font-weight: 900; }
+
+  /* ============================
+     INNER FLAP (P1R) — 保護者の声 + 実績
+     ============================ */
+  .flap {
+    background: #fff;
+    border-left: 2mm solid #0b3b8c;
+  }
+  .flap-eyebrow {
+    color: #e9531f;
+    font-size: 2.4mm;
+    font-weight: 900;
+    letter-spacing: .6mm;
+    margin-bottom: 2mm;
+  }
+  .flap h2 {
+    font-size: 5.6mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.2;
+    margin-bottom: 5mm;
+  }
+  .flap h2 .hl { color: #e9531f; }
+  .voice {
+    background: #f4f7fc;
+    border-radius: 2.5mm;
+    padding: 3mm 3.5mm;
+    margin-bottom: 3mm;
+    position: relative;
+  }
+  .voice::before {
+    content: "“";
+    position: absolute;
+    top: 1mm;
+    left: 2mm;
+    font-size: 12mm;
+    color: #0b3b8c;
+    line-height: 1;
+    opacity: .2;
+    font-family: serif;
+  }
+  .voice .body {
+    font-size: 2.8mm;
+    color: #1a1a2e;
+    line-height: 1.6;
+    font-weight: 500;
+    margin-bottom: 1.5mm;
+    position: relative;
+    z-index: 2;
+  }
+  .voice .body strong { color: #0b3b8c; font-weight: 800; }
+  .voice .meta {
+    font-size: 2.2mm;
+    color: #5a6378;
+    font-weight: 700;
+    text-align: right;
+    letter-spacing: .3mm;
+  }
+  .achievements {
+    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
+    color: #fff;
+    border-radius: 2.5mm;
+    padding: 4mm;
+    margin-top: 4mm;
+  }
+  .achievements .ah {
+    font-size: 3mm;
+    font-weight: 900;
+    color: #ffe55c;
+    margin-bottom: 2.5mm;
+    letter-spacing: .5mm;
+  }
+  .achievements ul {
+    list-style: none;
+    padding: 0;
+  }
+  .achievements li {
+    font-size: 2.6mm;
+    line-height: 1.45;
+    padding: 1.2mm 0;
+    padding-left: 4mm;
+    position: relative;
+    border-bottom: .2mm dashed rgba(255,255,255,.25);
+  }
+  .achievements li:last-child { border-bottom: none; }
+  .achievements li::before {
+    content: "★";
+    position: absolute;
+    left: 0;
+    color: #ffe55c;
+    font-size: 3mm;
+  }
+  .achievements li strong { color: #ffe55c; font-weight: 900; }
+
+  /* ============================
+     INSIDE LEFT (P2L) — なぜカート？
+     ============================ */
+  .why {
+    background: #fff;
+    padding-top: 9mm;
+  }
+  .why-lead {
+    font-size: 3.2mm;
+    line-height: 1.7;
+    color: #1a1a2e;
+    margin-bottom: 4mm;
+    font-weight: 500;
+  }
+  .why-lead strong { color: #e9531f; font-weight: 900; }
+  .why-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3mm;
+    margin-bottom: 4mm;
+  }
+  .why-card {
+    background: #f4f7fc;
+    border-top: 1.2mm solid #0b3b8c;
+    border-radius: 0 0 2mm 2mm;
+    padding: 3mm 3mm 3mm;
+    text-align: center;
+  }
+  .why-card .icon {
+    font-size: 6mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 1.5mm;
+    font-family: "IPAGothic", serif;
+  }
+  .why-card .ttl {
+    font-size: 3.4mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 1.5mm;
+    line-height: 1.25;
+  }
+  .why-card .desc {
+    font-size: 2.4mm;
+    color: #444;
+    line-height: 1.5;
+  }
+  .why-quote {
+    background: #fff8e6;
+    border-left: 1mm solid #f5c542;
+    padding: 3mm 4mm;
+    font-size: 2.8mm;
+    color: #1a1a2e;
+    line-height: 1.6;
+    border-radius: 0 1.5mm 1.5mm 0;
+  }
+  .why-quote strong { color: #b85a00; font-weight: 900; }
+
+  /* ============================
+     INSIDE MIDDLE (P2M) — 初めてでも安心
+     ============================ */
+  .safe {
+    background: linear-gradient(180deg, #eaf3ff 0%, #ffffff 60%);
+    padding-top: 9mm;
+  }
+  .safe .section-h { font-size: 7.5mm; }
+  .safe-photo {
+    width: 100%;
+    border-radius: 2.5mm;
+    overflow: hidden;
+    margin-bottom: 4mm;
+    line-height: 0;
+    aspect-ratio: 4 / 3;
+    box-shadow: 0 1mm 2mm rgba(11,59,140,.15);
+  }
+  .safe-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .safe-list { padding: 0; list-style: none; }
+  .safe-item {
+    display: flex;
+    gap: 3mm;
+    padding: 2.5mm 0;
+    border-bottom: .2mm solid #d6deeb;
+    align-items: flex-start;
+  }
+  .safe-item:last-child { border-bottom: none; }
+  .safe-item .num {
+    flex-shrink: 0;
+    width: 7mm; height: 7mm;
+    background: #e9531f;
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3.4mm; font-weight: 900;
+    margin-top: .5mm;
+  }
+  .safe-item .body { flex: 1; line-height: 1.3; }
+  .safe-item .ttl {
+    font-size: 3.4mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: .8mm;
+  }
+  .safe-item .desc {
+    font-size: 2.5mm;
+    color: #444;
+    line-height: 1.5;
+  }
+  .safe-item .desc strong { color: #0b3b8c; font-weight: 800; }
+
+  /* ============================
+     INSIDE RIGHT (P2R) — 4 STEP UP
+     ============================ */
+  .step {
+    background: #fff;
+    padding-top: 9mm;
+  }
+  .step-flow {
+    margin-top: 3mm;
+  }
+  .step-card {
+    background: #f4f7fc;
+    border-radius: 2.5mm;
+    padding: 3.5mm 4mm;
+    margin-bottom: 2.5mm;
+    display: grid;
+    grid-template-columns: 9mm 1fr auto;
+    gap: 3mm;
+    align-items: center;
+    position: relative;
+  }
+  .step-card.final {
+    background: linear-gradient(135deg, #fff8e6, #fff3c4);
+    border: .5mm solid #f5c542;
+  }
+  .step-card .stnum {
+    width: 9mm; height: 9mm;
+    background: #0b3b8c;
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 5mm; font-weight: 900;
+  }
+  .step-card.final .stnum { background: #e9531f; }
+  .step-card .stbody { line-height: 1.25; }
+  .step-card .stttl {
+    font-size: 3.6mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: .5mm;
+  }
+  .step-card .stdesc {
+    font-size: 2.3mm;
+    color: #444;
+    line-height: 1.4;
+  }
+  .step-card .stprice {
+    text-align: right;
+    line-height: 1.1;
+  }
+  .step-card .stprice .yen {
+    font-size: 5mm;
+    font-weight: 900;
+    color: #e9531f;
+  }
+  .step-card .stprice .yen .small { font-size: 2.5mm; }
+  .step-card .stprice .ptag {
+    font-size: 1.9mm;
+    color: #5a6378;
+    font-weight: 700;
+    margin-top: .3mm;
+  }
+  .step-arrow {
+    text-align: center;
+    color: #0b3b8c;
+    font-size: 5mm;
+    margin: -1mm 0 1mm;
+    font-weight: 900;
+    opacity: .5;
+  }
+  .step-cta {
+    background: #e9531f;
+    color: #fff;
+    border-radius: 2mm;
+    padding: 3mm 4mm;
+    text-align: center;
+    margin-top: 3mm;
+  }
+  .step-cta .l {
+    font-size: 2.6mm;
+    font-weight: 800;
+    color: #ffe55c;
+    letter-spacing: .5mm;
+    margin-bottom: 1mm;
+  }
+  .step-cta .b {
+    font-size: 4.5mm;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ SHEET 1: OUTSIDE ============ -->
+  <!-- Layout: [COVER] [BACK COVER] [INNER FLAP] -->
+  <div class="sheet">
+
+    <!-- COVER -->
+    <div class="panel cover">
+      <div class="cover-mark">
+        <div class="badge">K</div>
+        <div class="brand-name">
+          福岡キッズカートアカデミー
+          <small>FUKUOKA KIDS KART ACADEMY · SINCE 2013</small>
+        </div>
+      </div>
+
+      <div class="cover-tag">4歳・100cmから始められる</div>
+
+      <h1>
+        4歳から始める、
+        <span class="accent">本物のレース体験。</span>
+      </h1>
+
+      <div class="sub">
+        プロチームのコーチが、安全な環境で<br>「速く・楽しく・正しく」を教えます。<br>
+        道具はすべて貸出。スニーカーだけご持参ください。
+      </div>
+
+      <div class="cover-photo">
+        <img src="photos/photo_4.jpg" alt="カートを楽しむ子供たち">
+      </div>
+
+      <div class="cover-cta">
+        まずは1回、体験から
+        <strong>体験教室 ¥4,500</strong>
+        <small>約60分・道具一式レンタル込・税込</small>
+      </div>
+
+      <div class="cover-foot">
+        Main Sponsor : <strong>福岡トヨペット株式会社</strong>
+      </div>
+    </div>
+
+    <!-- BACK COVER -->
+    <div class="panel back">
+      <div class="back-header">
+        <div class="title">
+          料金・アクセス・お問い合わせ
+          <small>PRICING · ACCESS · CONTACT</small>
+        </div>
+      </div>
+
+      <div class="price-block">
+        <div class="ph">▼ 料金一覧（すべて税込・道具レンタル込み）</div>
+        <div class="price-row">
+          <span class="pn">① 体験教室（約60分）</span>
+          <span class="pa">¥4,500<small>/回</small></span>
+        </div>
+        <div class="price-row">
+          <span class="pn">② リピート練習 30分</span>
+          <span class="pa">¥3,000<small>/回</small></span>
+        </div>
+        <div class="price-row">
+          <span class="pn">② リピート練習 60分</span>
+          <span class="pa">¥4,500<small>/回</small></span>
+        </div>
+        <div class="price-row">
+          <span class="pn">③ チャレンジクラス（走行料込）</span>
+          <span class="pa">¥15,500<small>/回</small></span>
+        </div>
+        <div class="price-row option">
+          <span class="pn"><span class="opt-badge">オプション</span>レース用マシン（Rotax micro）レンタル</span>
+          <span class="pa">¥24,500<small>/回</small></span>
+        </div>
+        <div class="price-row">
+          <span class="pn">④ AAAレーシングアカデミー所属</span>
+          <span class="pa">¥6,600<small>/月</small></span>
+        </div>
+        <div class="price-row">
+          <span class="pn">マイカートでの参加</span>
+          <span class="pa" style="font-size:2.6mm;">ご相談ください</span>
+        </div>
+        <div class="price-foot">
+          ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップ</strong> による割引適用済。<br>
+          ※ サーキット走行の際はスポーツ安全保険の加入を推奨。走行には <strong>運動靴</strong> が必要です。
+        </div>
+      </div>
+
+      <div class="access-block">
+        <div class="ph">▼ アクセス</div>
+        <div class="place">エーワンサーキット</div>
+        <div class="addr">
+          〒818-0024 福岡県筑紫野市大字原田1338<br>
+          九州自動車道・筑紫野ICから車で約15分／無料駐車場あり
+        </div>
+        <div class="tel">TEL：092-927-1177<small>受付：開催日（土・日）</small></div>
+      </div>
+
+      <div class="qr-block">
+        <div class="qr-item">
+          <img src="qr_reserve.png" alt="予約QR">
+          <div class="qr-l">体験予約</div>
+          <div class="qr-s">Reserva</div>
+        </div>
+        <div class="qr-item">
+          <img src="qr_line.png" alt="LINE QR">
+          <div class="qr-l">LINE相談</div>
+          <div class="qr-s">@kidskart</div>
+        </div>
+        <div class="qr-item">
+          <img src="qr_web.png" alt="Web QR">
+          <div class="qr-l">公式サイト</div>
+          <div class="qr-s">kidskart.org</div>
+        </div>
+      </div>
+
+      <div class="back-sponsor">
+        Operated by <strong>AAA Motor Sports</strong><br>
+        Main Sponsor : <strong>福岡トヨペット株式会社</strong>
+      </div>
+    </div>
+
+    <!-- INNER FLAP -->
+    <div class="panel flap">
+      <div class="flap-eyebrow">REAL VOICES</div>
+      <h2>始めた家族の<span class="hl">リアルな声。</span></h2>
+
+      <div class="voice">
+        <div class="body">
+          最初は事故が心配で迷っていましたが、コーチが装備からマンツーマンで教えてくれて、<strong>親の私が一番安心しました</strong>。今では毎週土曜が楽しみで、学校での集中力も上がった気がします。
+        </div>
+        <div class="meta">— 6歳男児の母（筑紫野市）</div>
+      </div>
+
+      <div class="voice">
+        <div class="body">
+          ゲームばかりだった息子が、<strong>「次はあのコーナーで攻めたい」</strong>と自分で考えて練習するように。負けて泣いて、次は勝ちに来る。スポーツとして本当に良い経験になっています。
+        </div>
+        <div class="meta">— 8歳男児の父（福岡市）</div>
+      </div>
+
+      <div class="voice">
+        <div class="body">
+          女の子もたくさん走っています。挨拶や礼儀をコーチがきっちり教えてくれて、<strong>カートに乗っている時より、降りてからの娘の変化に驚いています</strong>。
+        </div>
+        <div class="meta">— 7歳女児の母（大野城市）</div>
+      </div>
+
+      <div class="achievements">
+        <div class="ah">★ AAA RACING ACADEMY 実績</div>
+        <ul>
+          <li>当アカデミー出身者が <strong>世界トップブランドのファクトリードライバー</strong> に</li>
+          <li>欧州 <strong>OKクラス</strong> 参戦・<strong>2027年 F4 ステップアップ</strong> 予定</li>
+          <li>国内ジュニアカート選手権で <strong>上位入賞者多数輩出</strong></li>
+          <li><strong>2013年から</strong> 福岡のキッズカート文化を支える運営実績</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ============ SHEET 2: INSIDE ============ -->
+  <!-- Layout: [INSIDE LEFT] [INSIDE MIDDLE] [INSIDE RIGHT] -->
+  <div class="sheet">
+
+    <!-- INSIDE LEFT: なぜカート？ -->
+    <div class="panel why">
+      <span class="eyebrow">WHY KART?</span>
+      <h2 class="section-h">なぜ、カートが<br><span class="hl">子供を伸ばす</span>のか。</h2>
+      <div class="why-lead">
+        カートは「速く走る競技」ではなく、<strong>判断と集中の連続スポーツ</strong>です。100分の1秒を争う環境で身につく力は、勉強や日常にもつながります。
+      </div>
+
+      <div class="why-grid">
+        <div class="why-card">
+          <div class="icon">集</div>
+          <div class="ttl">集中力</div>
+          <div class="desc">数秒先のコーナーを読み続ける訓練が、自然な集中力を育てます。</div>
+        </div>
+        <div class="why-card">
+          <div class="icon">判</div>
+          <div class="ttl">判断力</div>
+          <div class="desc">攻めるか待つか、自分で決めて走る。失敗から学ぶ場が毎週あります。</div>
+        </div>
+        <div class="why-card">
+          <div class="icon">礼</div>
+          <div class="ttl">礼儀・挨拶</div>
+          <div class="desc">コーチ・チーム・親への挨拶を、走り出す前から徹底します。</div>
+        </div>
+        <div class="why-card">
+          <div class="icon">自</div>
+          <div class="ttl">自信</div>
+          <div class="desc">「ひとりで操れた」体験が、他の挑戦への自信に直結します。</div>
+        </div>
+      </div>
+
+      <div class="why-quote">
+        <strong>カートで身につく力は、教室では教えられない。</strong><br>
+        本物のマシン・本物のサーキットだからこそ、子供の中で何かが変わります。
+      </div>
+    </div>
+
+    <!-- INSIDE MIDDLE: 初めてでも安心 -->
+    <div class="panel safe">
+      <span class="eyebrow blue">SAFETY FIRST</span>
+      <h2 class="section-h">初めてでも、<br><span class="hl">大丈夫。</span></h2>
+
+      <div class="safe-photo">
+        <img src="photos/photo_1.jpg" alt="コーチによる指導">
+      </div>
+
+      <ul class="safe-list">
+        <li class="safe-item">
+          <span class="num">1</span>
+          <div class="body">
+            <div class="ttl">手ぶらでOK</div>
+            <div class="desc">ヘルメット・スーツ・グローブまで <strong>道具一式すべて貸出</strong>。スニーカーだけご持参ください。</div>
+          </div>
+        </li>
+        <li class="safe-item">
+          <span class="num">2</span>
+          <div class="body">
+            <div class="ttl">プロチームのコーチがマンツーマン</div>
+            <div class="desc">座り方・ペダル・ハンドルから <strong>1対1で丁寧にレクチャー</strong>。最初の1周まで付き添います。</div>
+          </div>
+        </li>
+        <li class="safe-item">
+          <span class="num">3</span>
+          <div class="body">
+            <div class="ttl">少人数制・自分のペースで</div>
+            <div class="desc">「もっと走りたい」も「今日は休みたい」も、お子様のペースを最優先します。</div>
+          </div>
+        </li>
+        <li class="safe-item">
+          <span class="num">4</span>
+          <div class="body">
+            <div class="ttl">4歳・100cmから乗れる本物のカート</div>
+            <div class="desc">体格に合わせたキッズ専用カートを使用。<strong>MAX 約50km/h</strong> の安全設計です。</div>
+          </div>
+        </li>
+        <li class="safe-item">
+          <span class="num">5</span>
+          <div class="body">
+            <div class="ttl">勧誘はしません</div>
+            <div class="desc">体験後に「続けるかどうか」は <strong>ご家族で決めて</strong> いただいて構いません。</div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- INSIDE RIGHT: 4 STEP UP -->
+    <div class="panel step">
+      <span class="eyebrow gold">STEP UP</span>
+      <h2 class="section-h">体験から、<br><span class="hl">本気のレース</span>まで。</h2>
+      <div class="section-sub">
+        「やってみたい」から「世界へ」まで、無理なく一段ずつ。お子様のペースで進めます。
+      </div>
+
+      <div class="step-flow">
+        <div class="step-card">
+          <div class="stnum">1</div>
+          <div class="stbody">
+            <div class="stttl">体験教室</div>
+            <div class="stdesc">はじめてのカート。装備からコース1周まで丁寧に。</div>
+          </div>
+          <div class="stprice">
+            <div class="yen">¥4,500</div>
+            <div class="ptag">START HERE</div>
+          </div>
+        </div>
+        <div class="step-arrow">▼</div>
+
+        <div class="step-card">
+          <div class="stnum">2</div>
+          <div class="stbody">
+            <div class="stttl">リピート練習</div>
+            <div class="stdesc">30分・60分から選べる。自分のペースで技術を磨く。</div>
+          </div>
+          <div class="stprice">
+            <div class="yen">¥3,000<span class="small">〜</span></div>
+            <div class="ptag">PRACTICE</div>
+          </div>
+        </div>
+        <div class="step-arrow">▼</div>
+
+        <div class="step-card">
+          <div class="stnum">3</div>
+          <div class="stbody">
+            <div class="stttl">チャレンジクラス</div>
+            <div class="stdesc">サーキット走行料込み。レース参戦への足がかり。</div>
+          </div>
+          <div class="stprice">
+            <div class="yen">¥15,500</div>
+            <div class="ptag">LEVEL UP</div>
+          </div>
+        </div>
+        <div class="step-arrow">▼</div>
+
+        <div class="step-card final">
+          <div class="stnum">4</div>
+          <div class="stbody">
+            <div class="stttl">AAAレーシングアカデミー</div>
+            <div class="stdesc">所属メンバーとしてレース参戦・遠征・育成をフルサポート。</div>
+          </div>
+          <div class="stprice">
+            <div class="yen">¥6,600<span class="small">/月</span></div>
+            <div class="ptag">★ JOIN TEAM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-cta">
+        <div class="l">▼ 最初の1ステップは</div>
+        <div class="b">体験教室 ¥4,500から。</div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
