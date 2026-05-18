@@ -287,8 +287,9 @@
   }
   .karts {
     display: grid;
-    grid-template-rows: 1fr 1fr;
-    gap: 2mm;
+    grid-template-columns: 1fr 1fr;
+    gap: 2.5mm;
+    margin-bottom: 2.8mm;
   }
   .kart {
     background: #fff;
@@ -372,6 +373,47 @@
     font-size: 2mm;
     color: #444;
     line-height: 1.35;
+  }
+
+  /* ===== PHOTO STRIP (4 across) ===== */
+  .photos {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2mm;
+    margin-bottom: 2.8mm;
+  }
+  .photo {
+    border-radius: 2mm;
+    overflow: hidden;
+    position: relative;
+    background: #f4f7fc;
+    aspect-ratio: 4 / 3;
+  }
+  .photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .photo .cap {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to top, rgba(11,59,140,.95) 25%, rgba(11,59,140,0));
+    color: #fff;
+    font-size: 2mm;
+    font-weight: 900;
+    padding: 3.5mm 1.5mm 1mm;
+    text-align: center;
+    letter-spacing: .2mm;
+    line-height: 1.2;
+  }
+  .photo .cap small {
+    display: block;
+    font-size: 1.5mm;
+    color: #ffe55c;
+    margin-top: .3mm;
+    font-weight: 700;
+    letter-spacing: .5mm;
   }
 
   /* ===== CONTACT ===== */
@@ -572,54 +614,42 @@
     </div>
   </div>
 
-  <!-- KARTS + FEATURES -->
-  <div class="info-row">
-    <div class="karts">
-      <div class="kart">
-        <div class="kart-icon"></div>
-        <div class="kart-info">
-          <div class="kart-name">キッズカート</div>
-          <div class="kart-age">4才 〜 小学生</div>
-          <div class="kart-speed">MAX 約 50 km/h</div>
-        </div>
-      </div>
-      <div class="kart junior">
-        <div class="kart-icon"></div>
-        <div class="kart-info">
-          <div class="kart-name">ジュニアカート</div>
-          <div class="kart-age">小学生</div>
-          <div class="kart-speed">MAX 約 80 km/h</div>
-        </div>
+  <!-- PHOTO STRIP -->
+  <div class="photos">
+    <div class="photo">
+      <img src="photos/photo_1.jpg" alt="プロコーチによる指導">
+      <div class="cap">プロコーチが丁寧に指導<small>SAFETY FIRST</small></div>
+    </div>
+    <div class="photo">
+      <img src="photos/photo_4.jpg" alt="体験中の子供たち">
+      <div class="cap">4歳から始められる<small>FIRST STEP</small></div>
+    </div>
+    <div class="photo">
+      <img src="photos/photo_3.jpg" alt="マイカートで本格走行">
+      <div class="cap">本格カートを操る楽しさ<small>REAL RACING</small></div>
+    </div>
+    <div class="photo">
+      <img src="photos/photo_2.jpg" alt="サーキットでのレース">
+      <div class="cap">そして世界へ続く道<small>TO THE WORLD</small></div>
+    </div>
+  </div>
+
+  <!-- KARTS -->
+  <div class="karts">
+    <div class="kart">
+      <div class="kart-icon"></div>
+      <div class="kart-info">
+        <div class="kart-name">キッズカート</div>
+        <div class="kart-age">4才 〜 小学生</div>
+        <div class="kart-speed">MAX 約 50 km/h</div>
       </div>
     </div>
-    <div class="features">
-      <div class="feature">
-        <div class="ico">安</div>
-        <div class="body">
-          <div class="ttl">安全第一</div>
-          <div class="desc">プロコーチが装備からマンツーマン指導</div>
-        </div>
-      </div>
-      <div class="feature">
-        <div class="ico">手</div>
-        <div class="body">
-          <div class="ttl">手ぶらOK</div>
-          <div class="desc">ヘルメット・スーツまで道具一式レンタル</div>
-        </div>
-      </div>
-      <div class="feature">
-        <div class="ico">雨</div>
-        <div class="body">
-          <div class="ttl">小雨開催</div>
-          <div class="desc">荒天時のみ中止／LINE公式で連絡</div>
-        </div>
-      </div>
-      <div class="feature">
-        <div class="ico">★</div>
-        <div class="body">
-          <div class="ttl">世界へ続く道</div>
-          <div class="desc">アカデミー出身者が欧州OK昇格</div>
-        </div>
+    <div class="kart junior">
+      <div class="kart-icon"></div>
+      <div class="kart-info">
+        <div class="kart-name">ジュニアカート</div>
+        <div class="kart-age">小学生</div>
+        <div class="kart-speed">MAX 約 80 km/h</div>
       </div>
     </div>
   </div>
