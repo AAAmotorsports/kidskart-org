@@ -5,7 +5,7 @@
 <title>福岡キッズカートアカデミー パンフレット</title>
 <style>
   @page {
-    size: B5 portrait;
+    size: 182mm 257mm;
     margin: 0;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,7 +19,7 @@
   body {
     width: 182mm;
     height: 257mm;
-    padding: 4mm 5.5mm 3mm;
+    padding: 3.5mm 5.5mm 2.5mm;
     position: relative;
     overflow: hidden;
   }
@@ -81,63 +81,44 @@
 
   /* ===== HERO ===== */
   .hero {
-    background: linear-gradient(135deg, #0b3b8c 0%, #1e6fd9 60%, #4caee0 100%);
-    color: #fff;
-    padding: 3mm 4.5mm;
+    margin-bottom: 2.2mm;
+  }
+  .hero-banner {
+    width: 100%;
+    height: 36mm;
     border-radius: 2.5mm;
-    margin-bottom: 2.5mm;
-    position: relative;
     overflow: hidden;
+    display: block;
+    line-height: 0;
+    box-shadow: 0 .5mm 1.5mm rgba(11,59,140,.15);
   }
-  .hero::before {
-    content: "";
-    position: absolute;
-    right: -8mm; top: -8mm;
-    width: 40mm; height: 40mm;
-    background: rgba(255,255,255,.1);
-    border-radius: 50%;
-  }
-  .hero::after {
-    content: "";
-    position: absolute;
-    right: 18mm; bottom: -10mm;
-    width: 28mm; height: 28mm;
-    background: rgba(255,235,0,.18);
-    border-radius: 50%;
-  }
-  .hero h1 {
-    font-size: 5.8mm;
-    line-height: 1.2;
-    font-weight: 900;
-    position: relative;
-    z-index: 2;
-  }
-  .hero h1 .accent { color: #ffe55c; }
-  .hero p {
-    margin-top: 1.5mm;
-    font-size: 2.8mm;
-    line-height: 1.45;
-    position: relative;
-    z-index: 2;
-    opacity: .95;
-    max-width: 120mm;
+  .hero-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    display: block;
   }
   .hero-stats {
     display: flex;
-    gap: 2mm;
-    margin-top: 2.5mm;
-    position: relative;
-    z-index: 2;
+    gap: 1.8mm;
+    margin-top: 1.8mm;
+    justify-content: center;
+    flex-wrap: nowrap;
   }
   .hero-stat {
-    background: rgba(255,255,255,.18);
-    border: .25mm solid rgba(255,255,255,.4);
-    padding: 1mm 2.2mm;
-    border-radius: 1.2mm;
+    background: #0b3b8c;
+    color: #fff;
+    padding: 1mm 2.5mm;
+    border-radius: 1mm;
     font-size: 2.4mm;
-    font-weight: 700;
+    font-weight: 800;
+    letter-spacing: .3mm;
+    white-space: nowrap;
   }
-  .hero-stat strong { font-size: 2.8mm; color: #ffe55c; }
+  .hero-stat strong { color: #ffe55c; font-size: 2.8mm; font-weight: 900; }
+  .hero-stat.alt { background: #e9531f; }
+  .hero-stat.alt strong { color: #fff; }
 
   /* ===== SECTION TITLE ===== */
   .section-title {
@@ -167,7 +148,7 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 2mm;
-    margin-bottom: 2.8mm;
+    margin-bottom: 2.2mm;
   }
   .step {
     background: #fff;
@@ -210,8 +191,8 @@
     margin-top: 1mm;
     font-size: 2.1mm;
     color: #444;
-    line-height: 1.35;
-    min-height: 9mm;
+    line-height: 1.3;
+    min-height: 8mm;
   }
   .step .tag {
     display: inline-block;
@@ -230,8 +211,8 @@
   .pricing-block {
     background: #f4f7fc;
     border-radius: 2.5mm;
-    padding: 2.5mm 3.5mm;
-    margin-bottom: 2.8mm;
+    padding: 2mm 3.5mm;
+    margin-bottom: 2.2mm;
   }
   .pricing-block h3 {
     font-size: 3.1mm;
@@ -289,7 +270,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2.5mm;
-    margin-bottom: 2.8mm;
+    margin-bottom: 2.2mm;
   }
   .kart {
     background: #fff;
@@ -380,14 +361,14 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 2mm;
-    margin-bottom: 2.8mm;
+    margin-bottom: 2.2mm;
   }
   .photo {
     border-radius: 2mm;
     overflow: hidden;
     position: relative;
     background: #f4f7fc;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 5 / 4;
   }
   .photo img {
     width: 100%;
@@ -533,13 +514,13 @@
 
   <!-- HERO -->
   <div class="hero">
-    <h1>本物のレース体験を、<span class="accent">福岡から。</span></h1>
-    <p>プロチームのコーチが、安全な環境で「速く・楽しく・正しく」を教えます。はじめてでも大丈夫。道具はすべて貸出、スニーカーだけご持参ください。</p>
+    <div class="hero-banner"><img src="toyopet_banner.jpg" alt="福岡トヨペット カート教室開催中"></div>
     <div class="hero-stats">
-      <div class="hero-stat">体験 <strong>¥4,500</strong></div>
+      <div class="hero-stat alt">体験 <strong>¥4,500</strong></div>
       <div class="hero-stat">所要 <strong>約60分</strong></div>
       <div class="hero-stat">道具 <strong>レンタル込</strong></div>
       <div class="hero-stat">開催 <strong>土日</strong></div>
+      <div class="hero-stat alt">4歳・100cm〜<strong>OK</strong></div>
     </div>
   </div>
 
