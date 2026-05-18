@@ -15,6 +15,7 @@
     background: #fff;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    font-feature-settings: "palt" 1;
   }
   body { margin: 0; padding: 0; }
 
@@ -32,225 +33,167 @@
   .panel {
     width: 99mm;
     height: 210mm;
-    padding: 8mm 7mm;
     position: relative;
     overflow: hidden;
     flex-shrink: 0;
     page-break-inside: avoid;
     break-inside: avoid;
   }
-  /* Fold guide hairlines (printable; light gray) */
+  /* Fold guide hairlines */
   .sheet::before, .sheet::after {
     content: "";
     position: absolute;
     top: 0; bottom: 0;
     width: 0;
-    border-left: .15mm dashed #d0d4dc;
-    z-index: 1;
+    border-left: .15mm dashed #d8dbe2;
+    z-index: 50;
     pointer-events: none;
   }
   .sheet::before { left: 99mm; }
   .sheet::after  { left: 198mm; }
 
-  /* ============================
-     COMMON COMPONENTS
-     ============================ */
-  .eyebrow {
-    display: inline-block;
-    background: #e9531f;
-    color: #fff;
-    font-size: 2.6mm;
-    font-weight: 900;
-    padding: 1mm 2.5mm;
-    border-radius: 1mm;
-    letter-spacing: .5mm;
-    margin-bottom: 3mm;
-  }
-  .eyebrow.blue { background: #0b3b8c; }
-  .eyebrow.gold { background: #b85a00; }
-  .section-h {
-    font-size: 6.2mm;
-    font-weight: 900;
-    color: #0b3b8c;
-    line-height: 1.2;
-    margin-bottom: 2.5mm;
-  }
-  .section-h .hl { color: #e9531f; }
-  .section-sub {
-    font-size: 2.8mm;
-    color: #5a6378;
-    line-height: 1.55;
-    margin-bottom: 4mm;
-  }
-
-  /* ============================
-     COVER (P1L)
-     ============================ */
+  /* =========================================
+     COVER (P1L) — Toyopet banner driven
+     ========================================= */
   .cover {
-    background: linear-gradient(150deg, #0b3b8c 0%, #1e6fd9 55%, #4caee0 100%);
-    color: #fff;
-    padding: 9mm 8mm;
+    background: #fffbe6;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .cover-mark {
+  .cover-top {
+    padding: 10mm 9mm 4mm;
     display: flex;
     align-items: center;
     gap: 2.5mm;
-    margin-bottom: 5mm;
   }
-  .cover-mark .badge {
-    width: 11mm; height: 11mm;
-    background: #fff;
-    color: #0b3b8c;
-    border-radius: 2mm;
+  .cover-top .badge {
+    width: 9mm; height: 9mm;
+    background: #0b3b8c;
+    color: #fff;
+    border-radius: 1.8mm;
     display: flex; align-items: center; justify-content: center;
-    font-size: 8mm; font-weight: 900;
+    font-size: 6mm; font-weight: 900;
   }
-  .cover-mark .brand-name {
-    font-size: 3.4mm;
+  .cover-top .brand {
+    font-size: 3mm;
     font-weight: 900;
+    color: #0b3b8c;
     line-height: 1.15;
   }
-  .cover-mark .brand-name small {
+  .cover-top .brand small {
     display: block;
-    font-size: 2mm;
+    font-size: 1.8mm;
+    color: #888;
     font-weight: 700;
-    opacity: .8;
-    letter-spacing: .6mm;
-    margin-top: .8mm;
+    letter-spacing: .5mm;
+    margin-top: .6mm;
   }
-  .cover-tag {
-    display: inline-block;
-    background: #ffe55c;
-    color: #0b3b8c;
-    font-size: 2.8mm;
-    font-weight: 900;
-    padding: 1mm 2.5mm;
-    border-radius: 1.2mm;
-    letter-spacing: .3mm;
-    margin-bottom: 4mm;
-  }
-  .cover h1 {
-    font-size: 8.5mm;
-    font-weight: 900;
-    line-height: 1.2;
-    margin-bottom: 4mm;
-    letter-spacing: -.2mm;
-  }
-  .cover h1 .accent {
-    color: #ffe55c;
-    display: block;
-  }
-  .cover .sub {
-    font-size: 3mm;
-    line-height: 1.55;
-    opacity: .95;
-    margin-bottom: 5mm;
-  }
-  .cover-photo {
+  .cover-hero {
     width: 100%;
-    border-radius: 3mm;
-    overflow: hidden;
-    margin-bottom: 4mm;
-    box-shadow: 0 1mm 3mm rgba(0,0,0,.2);
     line-height: 0;
-    aspect-ratio: 5 / 4;
+    aspect-ratio: 1000 / 300;
+    overflow: hidden;
   }
-  .cover-photo img {
+  .cover-hero img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
   }
-  .cover-cta {
-    background: #e9531f;
-    color: #fff;
-    border-radius: 2mm;
-    padding: 2.5mm 3mm;
-    text-align: center;
-    font-size: 3mm;
+  .cover-copy {
+    padding: 7mm 9mm 4mm;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .cover-copy h1 {
+    font-size: 10mm;
     font-weight: 900;
-    line-height: 1.3;
-    box-shadow: 0 .8mm 2mm rgba(0,0,0,.2);
-  }
-  .cover-cta strong {
-    font-size: 5.5mm;
-    color: #ffe55c;
-    display: block;
-    margin-top: .5mm;
-  }
-  .cover-cta small {
-    display: block;
-    font-size: 2.2mm;
-    font-weight: 700;
-    opacity: .9;
-    margin-top: .8mm;
-  }
-  .cover-foot {
-    position: absolute;
-    bottom: 5mm;
-    left: 8mm; right: 8mm;
-    font-size: 2.2mm;
-    color: rgba(255,255,255,.8);
-    text-align: center;
-    letter-spacing: .3mm;
-  }
-  .cover-foot strong { color: #ffe55c; }
-
-  /* ============================
-     BACK COVER (P1M) — 料金・アクセス・QR
-     ============================ */
-  .back {
-    background: #f4f7fc;
-  }
-  .back-header {
-    background: #0b3b8c;
-    color: #fff;
-    padding: 4mm 5mm;
-    border-radius: 2mm;
+    line-height: 1.25;
+    color: #0b3b8c;
+    letter-spacing: -.3mm;
     margin-bottom: 4mm;
   }
-  .back-header .title {
-    font-size: 4.2mm;
+  .cover-copy h1 .hl {
+    color: #e9531f;
+  }
+  .cover-copy .sub {
+    font-size: 3.2mm;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 500;
+  }
+  .cover-cta {
+    background: #0b3b8c;
+    color: #fff;
+    padding: 4mm 9mm 5mm;
+    margin-top: auto;
+    text-align: center;
+    position: relative;
+  }
+  .cover-cta .l {
+    font-size: 2.4mm;
+    font-weight: 800;
+    color: #ffe55c;
+    letter-spacing: 1mm;
+    margin-bottom: 1.2mm;
+  }
+  .cover-cta .b {
+    font-size: 5.5mm;
     font-weight: 900;
     line-height: 1.2;
   }
-  .back-header .title small {
-    display: block;
-    font-size: 2.3mm;
-    color: #ffe55c;
+  .cover-cta .b strong { color: #ffe55c; font-size: 7mm; }
+  .cover-cta .s {
+    font-size: 2.2mm;
+    color: rgba(255,255,255,.8);
     font-weight: 700;
-    margin-top: .8mm;
-    letter-spacing: .3mm;
+    margin-top: 1mm;
   }
-  .price-block {
-    background: #fff;
-    border-radius: 2mm;
-    padding: 3mm 4mm;
-    margin-bottom: 4mm;
+
+  /* =========================================
+     BACK COVER (P1M) — simplified
+     ========================================= */
+  .back {
+    background: #f7f9fc;
+    padding: 11mm 8mm;
   }
-  .price-block .ph {
-    font-size: 2.8mm;
+  .back-eye {
+    font-size: 2.3mm;
+    font-weight: 900;
+    color: #e9531f;
+    letter-spacing: 1.2mm;
+    margin-bottom: 1.5mm;
+  }
+  .back-h {
+    font-size: 6mm;
     font-weight: 900;
     color: #0b3b8c;
-    margin-bottom: 2mm;
-    padding-bottom: 1.5mm;
-    border-bottom: .3mm solid #d6deeb;
-    letter-spacing: .3mm;
+    line-height: 1.25;
+    margin-bottom: 6mm;
+  }
+  .price-list {
+    margin-bottom: 6mm;
   }
   .price-row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding: 1.2mm 0;
-    border-bottom: .15mm dashed #c5d0e0;
-    font-size: 2.6mm;
+    padding: 2.2mm 0;
+    border-bottom: .2mm solid #e3e8f0;
+    font-size: 2.8mm;
   }
-  .price-row:last-child { border-bottom: none; }
-  .price-row .pn { font-weight: 700; }
-  .price-row .pa { font-weight: 900; color: #e9531f; font-size: 3mm; }
-  .price-row .pa small { font-size: 2mm; color: #5a6378; font-weight: 700; }
-  .price-row.option .pn { color: #5a6378; font-weight: 700; }
-  .price-row.option .pa { color: #5a6378; }
+  .price-row .pn { font-weight: 700; color: #1a1a2e; }
+  .price-row .pa { font-weight: 900; color: #e9531f; font-size: 3.4mm; }
+  .price-row .pa small { font-size: 2.2mm; color: #5a6378; font-weight: 700; }
+  .price-row.opt .pn {
+    color: #5a6378;
+    font-weight: 700;
+    font-size: 2.5mm;
+  }
+  .price-row.opt .pa { color: #5a6378; font-size: 2.9mm; }
   .price-row .opt-badge {
     display: inline-block;
     background: #fff0c4;
@@ -262,71 +205,63 @@
     margin-right: 1.2mm;
     vertical-align: middle;
   }
-  .price-foot {
-    margin-top: 2mm;
+  .price-note {
     font-size: 2.1mm;
     color: #5a6378;
-    line-height: 1.5;
+    line-height: 1.55;
+    margin-bottom: 6mm;
   }
-  .price-foot strong { color: #0b3b8c; }
+  .price-note strong { color: #0b3b8c; }
 
-  .access-block {
-    background: #fff;
-    border-radius: 2mm;
-    padding: 3mm 4mm;
-    margin-bottom: 4mm;
+  .access-section {
+    margin-bottom: 5mm;
   }
-  .access-block .ph {
-    font-size: 2.8mm;
-    font-weight: 900;
-    color: #0b3b8c;
-    margin-bottom: 2mm;
-    letter-spacing: .3mm;
-  }
-  .access-block .place {
+  .access-section .place {
     font-size: 4mm;
     font-weight: 900;
     color: #0b3b8c;
-    margin-bottom: 1mm;
+    margin-bottom: 1.2mm;
   }
-  .access-block .addr {
+  .access-section .addr {
     font-size: 2.4mm;
     color: #444;
-    line-height: 1.5;
-    margin-bottom: 1.5mm;
+    line-height: 1.55;
+    margin-bottom: 1.8mm;
   }
-  .access-block .tel {
-    font-size: 4.2mm;
+  .access-section .tel {
+    font-size: 4.8mm;
     font-weight: 900;
     color: #e9531f;
     letter-spacing: .3mm;
+    line-height: 1.1;
   }
-  .access-block .tel small {
+  .access-section .tel small {
     display: block;
     font-size: 2.2mm;
     color: #5a6378;
     font-weight: 700;
-    margin-top: .5mm;
+    margin-top: .8mm;
   }
-
   .qr-block {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 2mm;
-    margin-bottom: 3mm;
+    display: flex;
+    gap: 2.5mm;
+    justify-content: space-between;
+    margin-bottom: 5mm;
   }
   .qr-item {
-    background: #fff;
-    border-radius: 2mm;
-    padding: 2mm 1.5mm;
+    flex: 1;
     text-align: center;
   }
   .qr-item img {
     width: 100%;
-    max-width: 22mm;
+    max-width: 21mm;
     height: auto;
+    background: #fff;
+    padding: .8mm;
+    border-radius: 1.2mm;
+    border: .2mm solid #e3e8f0;
     display: block;
-    margin: 0 auto 1mm;
+    margin: 0 auto .8mm;
   }
   .qr-item .qr-l {
     font-size: 2.3mm;
@@ -335,432 +270,417 @@
     line-height: 1.2;
   }
   .qr-item .qr-s {
-    font-size: 1.8mm;
+    font-size: 1.7mm;
     color: #5a6378;
     font-weight: 700;
     margin-top: .3mm;
+    letter-spacing: .3mm;
   }
-  .back-sponsor {
+  .back-foot {
+    font-size: 2mm;
+    color: #888;
     text-align: center;
-    font-size: 2.1mm;
-    color: #5a6378;
     line-height: 1.5;
-    padding-top: 2mm;
-    border-top: .2mm dashed #c5d0e0;
+    padding-top: 3mm;
+    border-top: .2mm dashed #d6deeb;
   }
-  .back-sponsor strong { color: #0b3b8c; font-weight: 900; }
+  .back-foot strong { color: #0b3b8c; font-weight: 800; }
 
-  /* ============================
-     INNER FLAP (P1R) — 保護者の声 + 実績
-     ============================ */
+  /* =========================================
+     INNER FLAP (P1R) — voices only, soft
+     ========================================= */
   .flap {
     background: #fff;
-    border-left: 2mm solid #0b3b8c;
+    padding: 11mm 8mm;
+    display: flex;
+    flex-direction: column;
   }
-  .flap-eyebrow {
-    color: #e9531f;
-    font-size: 2.4mm;
+  .flap-eye {
+    font-size: 2.3mm;
     font-weight: 900;
-    letter-spacing: .6mm;
-    margin-bottom: 2mm;
+    color: #e9531f;
+    letter-spacing: 1.2mm;
+    margin-bottom: 1.5mm;
   }
-  .flap h2 {
-    font-size: 5.6mm;
+  .flap-h {
+    font-size: 6mm;
     font-weight: 900;
     color: #0b3b8c;
-    line-height: 1.2;
-    margin-bottom: 5mm;
+    line-height: 1.25;
+    margin-bottom: 7mm;
   }
-  .flap h2 .hl { color: #e9531f; }
+  .flap-h .hl { color: #e9531f; }
   .voice {
-    background: #f4f7fc;
-    border-radius: 2.5mm;
-    padding: 3mm 3.5mm;
-    margin-bottom: 3mm;
+    margin-bottom: 7mm;
     position: relative;
   }
-  .voice::before {
-    content: "“";
+  .voice .mark {
     position: absolute;
-    top: 1mm;
-    left: 2mm;
-    font-size: 12mm;
-    color: #0b3b8c;
-    line-height: 1;
-    opacity: .2;
+    top: -2mm;
+    left: 0;
+    font-size: 14mm;
+    color: #eaf3ff;
     font-family: serif;
+    line-height: 1;
+    z-index: 1;
   }
   .voice .body {
-    font-size: 2.8mm;
+    font-size: 3mm;
     color: #1a1a2e;
-    line-height: 1.6;
+    line-height: 1.75;
     font-weight: 500;
-    margin-bottom: 1.5mm;
+    padding-left: 4mm;
     position: relative;
     z-index: 2;
+    margin-bottom: 2mm;
   }
   .voice .body strong { color: #0b3b8c; font-weight: 800; }
   .voice .meta {
     font-size: 2.2mm;
     color: #5a6378;
     font-weight: 700;
-    text-align: right;
+    padding-left: 4mm;
     letter-spacing: .3mm;
   }
-  .achievements {
-    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
-    color: #fff;
-    border-radius: 2.5mm;
-    padding: 4mm;
-    margin-top: 4mm;
+  .flap-soft {
+    margin-top: auto;
+    background: #f7f9fc;
+    border-left: 1mm solid #0b3b8c;
+    padding: 4mm 5mm;
+    border-radius: 0 1.5mm 1.5mm 0;
   }
-  .achievements .ah {
-    font-size: 3mm;
+  .flap-soft .yr {
+    font-size: 8mm;
     font-weight: 900;
-    color: #ffe55c;
-    margin-bottom: 2.5mm;
-    letter-spacing: .5mm;
+    color: #0b3b8c;
+    line-height: 1;
+    letter-spacing: -.3mm;
   }
-  .achievements ul {
-    list-style: none;
-    padding: 0;
-  }
-  .achievements li {
+  .flap-soft .yr small { font-size: 3mm; color: #5a6378; font-weight: 800; letter-spacing: 0; }
+  .flap-soft .txt {
     font-size: 2.6mm;
-    line-height: 1.45;
-    padding: 1.2mm 0;
-    padding-left: 4mm;
-    position: relative;
-    border-bottom: .2mm dashed rgba(255,255,255,.25);
+    color: #444;
+    line-height: 1.55;
+    margin-top: 2mm;
   }
-  .achievements li:last-child { border-bottom: none; }
-  .achievements li::before {
-    content: "★";
-    position: absolute;
-    left: 0;
-    color: #ffe55c;
-    font-size: 3mm;
-  }
-  .achievements li strong { color: #ffe55c; font-weight: 900; }
 
-  /* ============================
-     INSIDE LEFT (P2L) — なぜカート？
-     ============================ */
+  /* =========================================
+     INSIDE LEFT (P2L) — WHY (softer)
+     ========================================= */
   .why {
     background: #fff;
-    padding-top: 9mm;
+    padding: 11mm 8mm;
   }
+  .why-eye {
+    font-size: 2.3mm;
+    font-weight: 900;
+    color: #e9531f;
+    letter-spacing: 1.2mm;
+    margin-bottom: 1.5mm;
+  }
+  .why-h {
+    font-size: 6.2mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.25;
+    margin-bottom: 5mm;
+  }
+  .why-h .hl { color: #e9531f; }
   .why-lead {
-    font-size: 3.2mm;
-    line-height: 1.7;
-    color: #1a1a2e;
-    margin-bottom: 4mm;
+    font-size: 2.9mm;
+    line-height: 1.75;
+    color: #444;
+    margin-bottom: 6mm;
     font-weight: 500;
   }
-  .why-lead strong { color: #e9531f; font-weight: 900; }
+  .why-lead strong { color: #0b3b8c; font-weight: 800; }
   .why-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 3mm;
-    margin-bottom: 4mm;
+    gap: 4mm 4mm;
   }
   .why-card {
-    background: #f4f7fc;
-    border-top: 1.2mm solid #0b3b8c;
-    border-radius: 0 0 2mm 2mm;
-    padding: 3mm 3mm 3mm;
     text-align: center;
   }
   .why-card .icon {
-    font-size: 6mm;
-    font-weight: 900;
+    width: 11mm; height: 11mm;
+    background: #eaf3ff;
     color: #0b3b8c;
-    margin-bottom: 1.5mm;
-    font-family: "IPAGothic", serif;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 5.5mm;
+    font-weight: 900;
+    margin: 0 auto 2mm;
   }
   .why-card .ttl {
-    font-size: 3.4mm;
+    font-size: 3.2mm;
     font-weight: 900;
     color: #0b3b8c;
-    margin-bottom: 1.5mm;
-    line-height: 1.25;
+    margin-bottom: 1.2mm;
   }
   .why-card .desc {
     font-size: 2.4mm;
-    color: #444;
-    line-height: 1.5;
+    color: #5a6378;
+    line-height: 1.55;
   }
-  .why-quote {
-    background: #fff8e6;
-    border-left: 1mm solid #f5c542;
-    padding: 3mm 4mm;
-    font-size: 2.8mm;
-    color: #1a1a2e;
-    line-height: 1.6;
-    border-radius: 0 1.5mm 1.5mm 0;
-  }
-  .why-quote strong { color: #b85a00; font-weight: 900; }
 
-  /* ============================
-     INSIDE MIDDLE (P2M) — 初めてでも安心
-     ============================ */
+  /* =========================================
+     INSIDE MIDDLE (P2M) — SAFETY (warmer)
+     ========================================= */
   .safe {
-    background: linear-gradient(180deg, #eaf3ff 0%, #ffffff 60%);
-    padding-top: 9mm;
+    background: linear-gradient(180deg, #f7f9fc 0%, #ffffff 50%);
+    padding: 11mm 8mm;
   }
-  .safe .section-h { font-size: 7.5mm; }
+  .safe-eye {
+    font-size: 2.3mm;
+    font-weight: 900;
+    color: #e9531f;
+    letter-spacing: 1.2mm;
+    margin-bottom: 1.5mm;
+  }
+  .safe-h {
+    font-size: 6.2mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.25;
+    margin-bottom: 5mm;
+  }
+  .safe-h .hl { color: #e9531f; }
   .safe-photo {
     width: 100%;
-    border-radius: 2.5mm;
+    border-radius: 2mm;
     overflow: hidden;
-    margin-bottom: 4mm;
+    margin-bottom: 5mm;
+    aspect-ratio: 5 / 3;
     line-height: 0;
-    aspect-ratio: 4 / 3;
-    box-shadow: 0 1mm 2mm rgba(11,59,140,.15);
   }
   .safe-photo img { width: 100%; height: 100%; object-fit: cover; }
-  .safe-list { padding: 0; list-style: none; }
   .safe-item {
     display: flex;
     gap: 3mm;
-    padding: 2.5mm 0;
-    border-bottom: .2mm solid #d6deeb;
+    padding: 2.3mm 0;
     align-items: flex-start;
   }
-  .safe-item:last-child { border-bottom: none; }
-  .safe-item .num {
+  .safe-item .check {
     flex-shrink: 0;
-    width: 7mm; height: 7mm;
+    width: 6mm; height: 6mm;
     background: #e9531f;
     color: #fff;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 3.4mm; font-weight: 900;
-    margin-top: .5mm;
+    font-size: 3.5mm; font-weight: 900;
+    margin-top: .3mm;
   }
   .safe-item .body { flex: 1; line-height: 1.3; }
   .safe-item .ttl {
-    font-size: 3.4mm;
+    font-size: 3mm;
     font-weight: 900;
     color: #0b3b8c;
-    margin-bottom: .8mm;
+    margin-bottom: .3mm;
   }
   .safe-item .desc {
-    font-size: 2.5mm;
-    color: #444;
+    font-size: 2.3mm;
+    color: #5a6378;
     line-height: 1.5;
   }
-  .safe-item .desc strong { color: #0b3b8c; font-weight: 800; }
 
-  /* ============================
-     INSIDE RIGHT (P2R) — 4 STEP UP
-     ============================ */
+  /* =========================================
+     INSIDE RIGHT (P2R) — JOURNEY (lighter)
+     ========================================= */
   .step {
     background: #fff;
-    padding-top: 9mm;
+    padding: 11mm 8mm;
   }
-  .step-flow {
-    margin-top: 3mm;
+  .step-eye {
+    font-size: 2.3mm;
+    font-weight: 900;
+    color: #e9531f;
+    letter-spacing: 1.2mm;
+    margin-bottom: 1.5mm;
+  }
+  .step-h {
+    font-size: 6.2mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    line-height: 1.25;
+    margin-bottom: 3mm;
+  }
+  .step-h .hl { color: #e9531f; }
+  .step-lead {
+    font-size: 2.8mm;
+    color: #5a6378;
+    line-height: 1.7;
+    margin-bottom: 6mm;
   }
   .step-card {
-    background: #f4f7fc;
-    border-radius: 2.5mm;
-    padding: 3.5mm 4mm;
-    margin-bottom: 2.5mm;
-    display: grid;
-    grid-template-columns: 9mm 1fr auto;
-    gap: 3mm;
+    display: flex;
+    gap: 3.5mm;
+    padding: 3.5mm 0;
+    border-bottom: .2mm solid #e3e8f0;
     align-items: center;
-    position: relative;
   }
-  .step-card.final {
-    background: linear-gradient(135deg, #fff8e6, #fff3c4);
-    border: .5mm solid #f5c542;
-  }
-  .step-card .stnum {
-    width: 9mm; height: 9mm;
-    background: #0b3b8c;
-    color: #fff;
+  .step-card:last-of-type { border-bottom: none; }
+  .step-card .num {
+    flex-shrink: 0;
+    width: 10mm; height: 10mm;
+    background: #fff;
+    color: #0b3b8c;
+    border: .5mm solid #0b3b8c;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-size: 5mm; font-weight: 900;
   }
-  .step-card.final .stnum { background: #e9531f; }
-  .step-card .stbody { line-height: 1.25; }
-  .step-card .stttl {
-    font-size: 3.6mm;
+  .step-card.final .num {
+    background: #e9531f;
+    color: #fff;
+    border-color: #e9531f;
+  }
+  .step-card .body { flex: 1; line-height: 1.3; }
+  .step-card .ttl {
+    font-size: 3.3mm;
     font-weight: 900;
     color: #0b3b8c;
     margin-bottom: .5mm;
   }
-  .step-card .stdesc {
-    font-size: 2.3mm;
-    color: #444;
+  .step-card .desc {
+    font-size: 2.2mm;
+    color: #5a6378;
     line-height: 1.4;
   }
-  .step-card .stprice {
+  .step-card .price {
     text-align: right;
+    flex-shrink: 0;
     line-height: 1.1;
   }
-  .step-card .stprice .yen {
-    font-size: 5mm;
+  .step-card .price .y {
+    font-size: 4.2mm;
     font-weight: 900;
     color: #e9531f;
   }
-  .step-card .stprice .yen .small { font-size: 2.5mm; }
-  .step-card .stprice .ptag {
-    font-size: 1.9mm;
-    color: #5a6378;
-    font-weight: 700;
-    margin-top: .3mm;
-  }
-  .step-arrow {
-    text-align: center;
-    color: #0b3b8c;
-    font-size: 5mm;
-    margin: -1mm 0 1mm;
-    font-weight: 900;
-    opacity: .5;
-  }
+  .step-card .price .y .small { font-size: 2.4mm; }
   .step-cta {
-    background: #e9531f;
+    background: linear-gradient(135deg, #e9531f, #f5732f);
     color: #fff;
     border-radius: 2mm;
-    padding: 3mm 4mm;
+    padding: 4mm 5mm;
     text-align: center;
-    margin-top: 3mm;
+    margin-top: 7mm;
+    box-shadow: 0 .8mm 2mm rgba(233,83,31,.25);
   }
   .step-cta .l {
-    font-size: 2.6mm;
+    font-size: 2.4mm;
     font-weight: 800;
     color: #ffe55c;
-    letter-spacing: .5mm;
-    margin-bottom: 1mm;
+    letter-spacing: .8mm;
+    margin-bottom: 1.2mm;
   }
   .step-cta .b {
-    font-size: 4.5mm;
+    font-size: 5mm;
     font-weight: 900;
     line-height: 1.2;
+  }
+  .step-cta .b strong { color: #ffe55c; }
+  .step-cta .s {
+    font-size: 2.1mm;
+    color: rgba(255,255,255,.85);
+    margin-top: 1mm;
   }
 </style>
 </head>
 <body>
 
   <!-- ============ SHEET 1: OUTSIDE ============ -->
-  <!-- Layout: [COVER] [BACK COVER] [INNER FLAP] -->
   <div class="sheet">
 
     <!-- COVER -->
     <div class="panel cover">
-      <div class="cover-mark">
+      <div class="cover-top">
         <div class="badge">K</div>
-        <div class="brand-name">
+        <div class="brand">
           福岡キッズカートアカデミー
-          <small>FUKUOKA KIDS KART ACADEMY · SINCE 2013</small>
+          <small>FUKUOKA KIDS KART ACADEMY</small>
         </div>
       </div>
 
-      <div class="cover-tag">4歳・100cmから始められる</div>
-
-      <h1>
-        4歳から始める、
-        <span class="accent">本物のレース体験。</span>
-      </h1>
-
-      <div class="sub">
-        プロチームのコーチが、安全な環境で<br>「速く・楽しく・正しく」を教えます。<br>
-        道具はすべて貸出。スニーカーだけご持参ください。
+      <div class="cover-hero">
+        <img src="toyopet_banner.jpg" alt="福岡トヨペット カート教室">
       </div>
 
-      <div class="cover-photo">
-        <img src="photos/photo_4.jpg" alt="カートを楽しむ子供たち">
+      <div class="cover-copy">
+        <h1>はじめてでも、<br><span class="hl">夢中になる。</span></h1>
+        <div class="sub">
+          4歳から始める、<br>カートのある毎日。
+        </div>
       </div>
 
       <div class="cover-cta">
-        まずは1回、体験から
-        <strong>体験教室 ¥4,500</strong>
-        <small>約60分・道具一式レンタル込・税込</small>
-      </div>
-
-      <div class="cover-foot">
-        Main Sponsor : <strong>福岡トヨペット株式会社</strong>
+        <div class="l">FIRST EXPERIENCE</div>
+        <div class="b">体験教室 <strong>¥4,500</strong></div>
+        <div class="s">約60分・道具レンタル込・税込</div>
       </div>
     </div>
 
     <!-- BACK COVER -->
     <div class="panel back">
-      <div class="back-header">
-        <div class="title">
-          料金・アクセス・お問い合わせ
-          <small>PRICING · ACCESS · CONTACT</small>
-        </div>
-      </div>
+      <div class="back-eye">PRICING · ACCESS</div>
+      <h2 class="back-h">料金と<br>アクセス。</h2>
 
-      <div class="price-block">
-        <div class="ph">▼ 料金一覧（すべて税込・道具レンタル込み）</div>
+      <div class="price-list">
         <div class="price-row">
-          <span class="pn">① 体験教室（約60分）</span>
+          <span class="pn">体験教室（約60分）</span>
           <span class="pa">¥4,500<small>/回</small></span>
         </div>
         <div class="price-row">
-          <span class="pn">② リピート練習 30分</span>
-          <span class="pa">¥3,000<small>/回</small></span>
+          <span class="pn">リピート練習 30分／60分</span>
+          <span class="pa">¥3,000<small>〜</small></span>
         </div>
         <div class="price-row">
-          <span class="pn">② リピート練習 60分</span>
-          <span class="pa">¥4,500<small>/回</small></span>
-        </div>
-        <div class="price-row">
-          <span class="pn">③ チャレンジクラス（走行料込）</span>
+          <span class="pn">チャレンジクラス（走行料込）</span>
           <span class="pa">¥15,500<small>/回</small></span>
         </div>
-        <div class="price-row option">
-          <span class="pn"><span class="opt-badge">オプション</span>レース用マシン（Rotax micro）レンタル</span>
+        <div class="price-row opt">
+          <span class="pn"><span class="opt-badge">オプション</span>レース用マシン（Rotax micro）</span>
           <span class="pa">¥24,500<small>/回</small></span>
         </div>
         <div class="price-row">
-          <span class="pn">④ AAAレーシングアカデミー所属</span>
+          <span class="pn">AAA レーシングアカデミー所属</span>
           <span class="pa">¥6,600<small>/月</small></span>
-        </div>
-        <div class="price-row">
-          <span class="pn">マイカートでの参加</span>
-          <span class="pa" style="font-size:2.6mm;">ご相談ください</span>
-        </div>
-        <div class="price-foot">
-          ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップ</strong> による割引適用済。<br>
-          ※ サーキット走行の際はスポーツ安全保険の加入を推奨。走行には <strong>運動靴</strong> が必要です。
         </div>
       </div>
 
-      <div class="access-block">
-        <div class="ph">▼ アクセス</div>
+      <div class="price-note">
+        ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップ</strong> による割引適用済。<br>
+        ※ 走行には <strong>運動靴</strong> をご持参ください。
+      </div>
+
+      <div class="access-section">
         <div class="place">エーワンサーキット</div>
         <div class="addr">
           〒818-0024 福岡県筑紫野市大字原田1338<br>
-          九州自動車道・筑紫野ICから車で約15分／無料駐車場あり
+          筑紫野ICから車で約15分／無料駐車場あり
         </div>
-        <div class="tel">TEL：092-927-1177<small>受付：開催日（土・日）</small></div>
+        <div class="tel">092-927-1177<small>受付：開催日（土・日）</small></div>
       </div>
 
       <div class="qr-block">
         <div class="qr-item">
-          <img src="qr_reserve.png" alt="予約QR">
+          <img src="qr_reserve.png" alt="予約">
           <div class="qr-l">体験予約</div>
-          <div class="qr-s">Reserva</div>
+          <div class="qr-s">RESERVA</div>
         </div>
         <div class="qr-item">
-          <img src="qr_line.png" alt="LINE QR">
+          <img src="qr_line.png" alt="LINE">
           <div class="qr-l">LINE相談</div>
           <div class="qr-s">@kidskart</div>
         </div>
         <div class="qr-item">
-          <img src="qr_web.png" alt="Web QR">
+          <img src="qr_web.png" alt="Web">
           <div class="qr-l">公式サイト</div>
           <div class="qr-s">kidskart.org</div>
         </div>
       </div>
 
-      <div class="back-sponsor">
+      <div class="back-foot">
         Operated by <strong>AAA Motor Sports</strong><br>
         Main Sponsor : <strong>福岡トヨペット株式会社</strong>
       </div>
@@ -768,38 +688,38 @@
 
     <!-- INNER FLAP -->
     <div class="panel flap">
-      <div class="flap-eyebrow">REAL VOICES</div>
-      <h2>始めた家族の<span class="hl">リアルな声。</span></h2>
+      <div class="flap-eye">REAL VOICES</div>
+      <h2 class="flap-h">始めた家族の、<br><span class="hl">リアルな声。</span></h2>
 
       <div class="voice">
+        <div class="mark">“</div>
         <div class="body">
-          最初は事故が心配で迷っていましたが、コーチが装備からマンツーマンで教えてくれて、<strong>親の私が一番安心しました</strong>。今では毎週土曜が楽しみで、学校での集中力も上がった気がします。
+          最初は事故が心配で迷っていましたが、コーチが装備からマンツーマンで教えてくれて、<strong>親の私が一番安心しました</strong>。今では毎週土曜が楽しみです。
         </div>
         <div class="meta">— 6歳男児の母（筑紫野市）</div>
       </div>
 
       <div class="voice">
+        <div class="mark">“</div>
         <div class="body">
-          ゲームばかりだった息子が、<strong>「次はあのコーナーで攻めたい」</strong>と自分で考えて練習するように。負けて泣いて、次は勝ちに来る。スポーツとして本当に良い経験になっています。
+          ゲームばかりだった息子が、<strong>「次はあのコーナーで攻めたい」</strong>と自分で考えるように。負けて泣いて、次は勝ちに来る。本当に良い経験になっています。
         </div>
         <div class="meta">— 8歳男児の父（福岡市）</div>
       </div>
 
       <div class="voice">
+        <div class="mark">“</div>
         <div class="body">
-          女の子もたくさん走っています。挨拶や礼儀をコーチがきっちり教えてくれて、<strong>カートに乗っている時より、降りてからの娘の変化に驚いています</strong>。
+          女の子もたくさん走っています。<strong>カートに乗っている時より、降りてからの娘の変化に驚いています</strong>。
         </div>
         <div class="meta">— 7歳女児の母（大野城市）</div>
       </div>
 
-      <div class="achievements">
-        <div class="ah">★ AAA RACING ACADEMY 実績</div>
-        <ul>
-          <li>当アカデミー出身者が <strong>世界トップブランドのファクトリードライバー</strong> に</li>
-          <li>欧州 <strong>OKクラス</strong> 参戦・<strong>2027年 F4 ステップアップ</strong> 予定</li>
-          <li>国内ジュニアカート選手権で <strong>上位入賞者多数輩出</strong></li>
-          <li><strong>2013年から</strong> 福岡のキッズカート文化を支える運営実績</li>
-        </ul>
+      <div class="flap-soft">
+        <div class="yr">2013<small> -</small></div>
+        <div class="txt">
+          福岡の子供たちと、ずっと一緒に。たくさんの家族に通っていただいています。
+        </div>
       </div>
     </div>
 
@@ -807,158 +727,143 @@
 
 
   <!-- ============ SHEET 2: INSIDE ============ -->
-  <!-- Layout: [INSIDE LEFT] [INSIDE MIDDLE] [INSIDE RIGHT] -->
   <div class="sheet">
 
-    <!-- INSIDE LEFT: なぜカート？ -->
+    <!-- INSIDE LEFT: WHY -->
     <div class="panel why">
-      <span class="eyebrow">WHY KART?</span>
-      <h2 class="section-h">なぜ、カートが<br><span class="hl">子供を伸ばす</span>のか。</h2>
+      <div class="why-eye">WHY KART?</div>
+      <h2 class="why-h">カートは、<br>子供を<span class="hl">少しだけ</span><br>大人にする。</h2>
+
       <div class="why-lead">
-        カートは「速く走る競技」ではなく、<strong>判断と集中の連続スポーツ</strong>です。100分の1秒を争う環境で身につく力は、勉強や日常にもつながります。
+        速さを競うスポーツに見えて、本当は<strong>「自分で考えて、自分で決める」</strong>練習です。攻めるか、待つか。失敗から学ぶ。それを毎週繰り返します。
       </div>
 
       <div class="why-grid">
         <div class="why-card">
           <div class="icon">集</div>
-          <div class="ttl">集中力</div>
-          <div class="desc">数秒先のコーナーを読み続ける訓練が、自然な集中力を育てます。</div>
+          <div class="ttl">集中する力</div>
+          <div class="desc">先のコーナーを読み続ける、自然な集中。</div>
         </div>
         <div class="why-card">
           <div class="icon">判</div>
-          <div class="ttl">判断力</div>
-          <div class="desc">攻めるか待つか、自分で決めて走る。失敗から学ぶ場が毎週あります。</div>
+          <div class="ttl">決める力</div>
+          <div class="desc">攻めるか、待つか。毎周、自分で決める。</div>
         </div>
         <div class="why-card">
           <div class="icon">礼</div>
-          <div class="ttl">礼儀・挨拶</div>
-          <div class="desc">コーチ・チーム・親への挨拶を、走り出す前から徹底します。</div>
+          <div class="ttl">礼儀と挨拶</div>
+          <div class="desc">走る前に、まず挨拶。チームの基本です。</div>
         </div>
         <div class="why-card">
-          <div class="icon">自</div>
-          <div class="ttl">自信</div>
-          <div class="desc">「ひとりで操れた」体験が、他の挑戦への自信に直結します。</div>
+          <div class="icon">心</div>
+          <div class="ttl">小さな自信</div>
+          <div class="desc">「ひとりで操れた」が、次の挑戦になる。</div>
         </div>
-      </div>
-
-      <div class="why-quote">
-        <strong>カートで身につく力は、教室では教えられない。</strong><br>
-        本物のマシン・本物のサーキットだからこそ、子供の中で何かが変わります。
       </div>
     </div>
 
-    <!-- INSIDE MIDDLE: 初めてでも安心 -->
+    <!-- INSIDE MIDDLE: SAFETY -->
     <div class="panel safe">
-      <span class="eyebrow blue">SAFETY FIRST</span>
-      <h2 class="section-h">初めてでも、<br><span class="hl">大丈夫。</span></h2>
+      <div class="safe-eye">SAFETY FIRST</div>
+      <h2 class="safe-h">親が、<br><span class="hl">いちばん安心する。</span></h2>
 
       <div class="safe-photo">
         <img src="photos/photo_1.jpg" alt="コーチによる指導">
       </div>
 
-      <ul class="safe-list">
-        <li class="safe-item">
-          <span class="num">1</span>
-          <div class="body">
-            <div class="ttl">手ぶらでOK</div>
-            <div class="desc">ヘルメット・スーツ・グローブまで <strong>道具一式すべて貸出</strong>。スニーカーだけご持参ください。</div>
-          </div>
-        </li>
-        <li class="safe-item">
-          <span class="num">2</span>
-          <div class="body">
-            <div class="ttl">プロチームのコーチがマンツーマン</div>
-            <div class="desc">座り方・ペダル・ハンドルから <strong>1対1で丁寧にレクチャー</strong>。最初の1周まで付き添います。</div>
-          </div>
-        </li>
-        <li class="safe-item">
-          <span class="num">3</span>
-          <div class="body">
-            <div class="ttl">少人数制・自分のペースで</div>
-            <div class="desc">「もっと走りたい」も「今日は休みたい」も、お子様のペースを最優先します。</div>
-          </div>
-        </li>
-        <li class="safe-item">
-          <span class="num">4</span>
-          <div class="body">
-            <div class="ttl">4歳・100cmから乗れる本物のカート</div>
-            <div class="desc">体格に合わせたキッズ専用カートを使用。<strong>MAX 約50km/h</strong> の安全設計です。</div>
-          </div>
-        </li>
-        <li class="safe-item">
-          <span class="num">5</span>
-          <div class="body">
-            <div class="ttl">勧誘はしません</div>
-            <div class="desc">体験後に「続けるかどうか」は <strong>ご家族で決めて</strong> いただいて構いません。</div>
-          </div>
-        </li>
-      </ul>
+      <div class="safe-item">
+        <span class="check">✓</span>
+        <div class="body">
+          <div class="ttl">手ぶらでOK</div>
+          <div class="desc">ヘルメット・スーツまで、すべて貸出。</div>
+        </div>
+      </div>
+      <div class="safe-item">
+        <span class="check">✓</span>
+        <div class="body">
+          <div class="ttl">コーチがマンツーマン</div>
+          <div class="desc">座り方からコース1周まで、1対1で。</div>
+        </div>
+      </div>
+      <div class="safe-item">
+        <span class="check">✓</span>
+        <div class="body">
+          <div class="ttl">少人数で、自分のペースで</div>
+          <div class="desc">お子様のペースを、何より優先します。</div>
+        </div>
+      </div>
+      <div class="safe-item">
+        <span class="check">✓</span>
+        <div class="body">
+          <div class="ttl">4歳・100cmから乗れます</div>
+          <div class="desc">体格に合わせたキッズ専用カートを使用。</div>
+        </div>
+      </div>
+      <div class="safe-item">
+        <span class="check">✓</span>
+        <div class="body">
+          <div class="ttl">勧誘はしません</div>
+          <div class="desc">続けるかは、ご家族で決めてください。</div>
+        </div>
+      </div>
     </div>
 
-    <!-- INSIDE RIGHT: 4 STEP UP -->
+    <!-- INSIDE RIGHT: JOURNEY -->
     <div class="panel step">
-      <span class="eyebrow gold">STEP UP</span>
-      <h2 class="section-h">体験から、<br><span class="hl">本気のレース</span>まで。</h2>
-      <div class="section-sub">
-        「やってみたい」から「世界へ」まで、無理なく一段ずつ。お子様のペースで進めます。
+      <div class="step-eye">STEP UP</div>
+      <h2 class="step-h">ゆっくり、<br><span class="hl">一段ずつ。</span></h2>
+      <div class="step-lead">
+        「やってみたい」から、好きなだけ。<br>続けたくなったら、次の一段へ。
       </div>
 
-      <div class="step-flow">
-        <div class="step-card">
-          <div class="stnum">1</div>
-          <div class="stbody">
-            <div class="stttl">体験教室</div>
-            <div class="stdesc">はじめてのカート。装備からコース1周まで丁寧に。</div>
-          </div>
-          <div class="stprice">
-            <div class="yen">¥4,500</div>
-            <div class="ptag">START HERE</div>
-          </div>
+      <div class="step-card">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="ttl">体験教室</div>
+          <div class="desc">まずは1回、乗ってみる。</div>
         </div>
-        <div class="step-arrow">▼</div>
-
-        <div class="step-card">
-          <div class="stnum">2</div>
-          <div class="stbody">
-            <div class="stttl">リピート練習</div>
-            <div class="stdesc">30分・60分から選べる。自分のペースで技術を磨く。</div>
-          </div>
-          <div class="stprice">
-            <div class="yen">¥3,000<span class="small">〜</span></div>
-            <div class="ptag">PRACTICE</div>
-          </div>
+        <div class="price">
+          <div class="y">¥4,500</div>
         </div>
-        <div class="step-arrow">▼</div>
+      </div>
 
-        <div class="step-card">
-          <div class="stnum">3</div>
-          <div class="stbody">
-            <div class="stttl">チャレンジクラス</div>
-            <div class="stdesc">サーキット走行料込み。レース参戦への足がかり。</div>
-          </div>
-          <div class="stprice">
-            <div class="yen">¥15,500</div>
-            <div class="ptag">LEVEL UP</div>
-          </div>
+      <div class="step-card">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="ttl">リピート練習</div>
+          <div class="desc">「もっと走りたい」が出たら。</div>
         </div>
-        <div class="step-arrow">▼</div>
+        <div class="price">
+          <div class="y">¥3,000<span class="small">〜</span></div>
+        </div>
+      </div>
 
-        <div class="step-card final">
-          <div class="stnum">4</div>
-          <div class="stbody">
-            <div class="stttl">AAAレーシングアカデミー</div>
-            <div class="stdesc">所属メンバーとしてレース参戦・遠征・育成をフルサポート。</div>
-          </div>
-          <div class="stprice">
-            <div class="yen">¥6,600<span class="small">/月</span></div>
-            <div class="ptag">★ JOIN TEAM</div>
-          </div>
+      <div class="step-card">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="ttl">チャレンジクラス</div>
+          <div class="desc">本格サーキット走行に挑戦。</div>
+        </div>
+        <div class="price">
+          <div class="y">¥15,500</div>
+        </div>
+      </div>
+
+      <div class="step-card final">
+        <div class="num">4</div>
+        <div class="body">
+          <div class="ttl">AAA アカデミー</div>
+          <div class="desc">本気のレース活動を、月謝制で。</div>
+        </div>
+        <div class="price">
+          <div class="y">¥6,600<span class="small">/月</span></div>
         </div>
       </div>
 
       <div class="step-cta">
-        <div class="l">▼ 最初の1ステップは</div>
-        <div class="b">体験教室 ¥4,500から。</div>
+        <div class="l">FIRST STEP</div>
+        <div class="b">まずは <strong>¥4,500</strong> から。</div>
+        <div class="s">予約はQRコードから、1分で完了。</div>
       </div>
     </div>
 
