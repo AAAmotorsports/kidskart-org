@@ -307,11 +307,20 @@
     font-weight: 900;
     color: #0b3b8c;
     line-height: 1.25;
-    margin-bottom: 7mm;
+    margin-bottom: 5mm;
   }
   .flap-h .hl { color: #e9531f; }
+  .flap-photo {
+    width: 100%;
+    border-radius: 2mm;
+    overflow: hidden;
+    line-height: 0;
+    aspect-ratio: 4 / 3;
+    margin-bottom: 6mm;
+  }
+  .flap-photo img { width: 100%; height: 100%; object-fit: cover; }
   .voice {
-    margin-bottom: 7mm;
+    margin-bottom: 5mm;
     position: relative;
   }
   .voice .mark {
@@ -398,6 +407,27 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4mm 4mm;
+    margin-bottom: 6mm;
+  }
+  .why-photo {
+    width: 100%;
+    border-radius: 2mm;
+    overflow: hidden;
+    line-height: 0;
+    aspect-ratio: 5 / 3;
+    position: relative;
+  }
+  .why-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .why-photo .pcap {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to top, rgba(11,59,140,.85) 30%, rgba(11,59,140,0));
+    color: #fff;
+    font-size: 2.4mm;
+    font-weight: 800;
+    padding: 6mm 3mm 2mm;
+    text-align: left;
+    letter-spacing: .3mm;
   }
   .why-card {
     text-align: center;
@@ -510,8 +540,17 @@
     font-size: 2.8mm;
     color: #5a6378;
     line-height: 1.7;
-    margin-bottom: 6mm;
+    margin-bottom: 4mm;
   }
+  .step-photo {
+    width: 100%;
+    height: 36mm;
+    border-radius: 2mm;
+    overflow: hidden;
+    line-height: 0;
+    margin-bottom: 5mm;
+  }
+  .step-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
   .step-card {
     display: flex;
     gap: 3.5mm;
@@ -691,6 +730,10 @@
       <div class="flap-eye">REAL VOICES</div>
       <h2 class="flap-h">始めた家族の、<br><span class="hl">リアルな声。</span></h2>
 
+      <div class="flap-photo">
+        <img src="photos/event_blue_sky.jpg" alt="青空の下のカートイベント">
+      </div>
+
       <div class="voice">
         <div class="mark">“</div>
         <div class="body">
@@ -705,14 +748,6 @@
           ゲームばかりだった息子が、<strong>「次はあのコーナーで攻めたい」</strong>と自分で考えるように。負けて泣いて、次は勝ちに来る。本当に良い経験になっています。
         </div>
         <div class="meta">— 8歳男児の父（福岡市）</div>
-      </div>
-
-      <div class="voice">
-        <div class="mark">“</div>
-        <div class="body">
-          女の子もたくさん走っています。<strong>カートに乗っている時より、降りてからの娘の変化に驚いています</strong>。
-        </div>
-        <div class="meta">— 7歳女児の母（大野城市）</div>
       </div>
 
       <div class="flap-soft">
@@ -759,6 +794,11 @@
           <div class="ttl">小さな自信</div>
           <div class="desc">「ひとりで操れた」が、次の挑戦になる。</div>
         </div>
+      </div>
+
+      <div class="why-photo">
+        <img src="photos/team_briefing.jpg" alt="コーチと子供たちのブリーフィング">
+        <div class="pcap">走る前は、まず話を聞く。</div>
       </div>
     </div>
 
@@ -814,6 +854,10 @@
       <h2 class="step-h">ゆっくり、<br><span class="hl">一段ずつ。</span></h2>
       <div class="step-lead">
         「やってみたい」から、好きなだけ。<br>続けたくなったら、次の一段へ。
+      </div>
+
+      <div class="step-photo">
+        <img src="photos/kid_kart_front.jpg" alt="カートに乗る子供">
       </div>
 
       <div class="step-card">
