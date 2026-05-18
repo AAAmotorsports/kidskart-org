@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>福岡キッズカートアカデミー パンフレット</title>
+<style>
+  @page {
+    size: B5 portrait;
+    margin: 0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "IPAPGothic", "IPAGothic", sans-serif;
+    color: #1a1a2e;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    width: 182mm;
+    height: 257mm;
+    padding: 4mm 5.5mm 3mm;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ===== HEADER ===== */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 1.5mm;
+    border-bottom: 1.5px solid #0b3b8c;
+    margin-bottom: 2.5mm;
+  }
+  .brand { display: flex; align-items: center; gap: 2.5mm; }
+  .brand-mark {
+    width: 11mm; height: 11mm;
+    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 2mm;
+    font-size: 7mm;
+    font-weight: 900;
+  }
+  .brand-title { line-height: 1.05; }
+  .brand-title .jp {
+    font-size: 5.5mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    letter-spacing: .2mm;
+    white-space: nowrap;
+  }
+  .brand-title .en {
+    font-size: 2.3mm;
+    color: #5a6378;
+    font-weight: 700;
+    letter-spacing: .6mm;
+    margin-top: .8mm;
+  }
+  .header-tag {
+    text-align: right;
+    line-height: 1.2;
+  }
+  .header-tag .since {
+    display: inline-block;
+    background: #f4f7fc;
+    color: #0b3b8c;
+    font-size: 2.3mm;
+    font-weight: 900;
+    padding: .8mm 2mm;
+    border-radius: 1mm;
+    letter-spacing: .3mm;
+  }
+  .header-tag .age {
+    font-size: 3.2mm; font-weight: 900; color: #e9531f;
+    margin-top: 1.5mm;
+    white-space: nowrap;
+  }
+  .header-tag .age strong { font-size: 4.2mm; }
+
+  /* ===== HERO ===== */
+  .hero {
+    background: linear-gradient(135deg, #0b3b8c 0%, #1e6fd9 60%, #4caee0 100%);
+    color: #fff;
+    padding: 3mm 4.5mm;
+    border-radius: 2.5mm;
+    margin-bottom: 2.5mm;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    right: -8mm; top: -8mm;
+    width: 40mm; height: 40mm;
+    background: rgba(255,255,255,.1);
+    border-radius: 50%;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: 18mm; bottom: -10mm;
+    width: 28mm; height: 28mm;
+    background: rgba(255,235,0,.18);
+    border-radius: 50%;
+  }
+  .hero h1 {
+    font-size: 5.8mm;
+    line-height: 1.2;
+    font-weight: 900;
+    position: relative;
+    z-index: 2;
+  }
+  .hero h1 .accent { color: #ffe55c; }
+  .hero p {
+    margin-top: 1.5mm;
+    font-size: 2.8mm;
+    line-height: 1.45;
+    position: relative;
+    z-index: 2;
+    opacity: .95;
+    max-width: 120mm;
+  }
+  .hero-stats {
+    display: flex;
+    gap: 2mm;
+    margin-top: 2.5mm;
+    position: relative;
+    z-index: 2;
+  }
+  .hero-stat {
+    background: rgba(255,255,255,.18);
+    border: .25mm solid rgba(255,255,255,.4);
+    padding: 1mm 2.2mm;
+    border-radius: 1.2mm;
+    font-size: 2.4mm;
+    font-weight: 700;
+  }
+  .hero-stat strong { font-size: 2.8mm; color: #ffe55c; }
+
+  /* ===== SECTION TITLE ===== */
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 2.5mm;
+    margin-bottom: 2.2mm;
+  }
+  .section-title .badge {
+    background: #e9531f;
+    color: #fff;
+    font-size: 2.3mm;
+    font-weight: 900;
+    padding: .8mm 2mm;
+    border-radius: 1mm;
+    letter-spacing: .4mm;
+  }
+  .section-title h2 {
+    font-size: 4.2mm;
+    font-weight: 900;
+    color: #0b3b8c;
+  }
+  .section-title h2 .hl { color: #e9531f; }
+
+  /* ===== JOURNEY 4 STEPS ===== */
+  .journey {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2mm;
+    margin-bottom: 2.8mm;
+  }
+  .step {
+    background: #fff;
+    border: .35mm solid #d6deeb;
+    border-radius: 2.2mm;
+    padding: 1.8mm 1.8mm;
+    text-align: center;
+    position: relative;
+  }
+  .step.final {
+    background: linear-gradient(135deg, #fff8e6, #fff);
+    border: .5mm solid #f5c542;
+  }
+  .step .num {
+    width: 6.5mm; height: 6.5mm;
+    background: #0b3b8c;
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3.6mm; font-weight: 900;
+    margin: 0 auto 1.2mm;
+  }
+  .step.final .num { background: #e9531f; }
+  .step h3 {
+    font-size: 2.9mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 1.2mm;
+    line-height: 1.2;
+  }
+  .step .price {
+    font-size: 4.5mm;
+    font-weight: 900;
+    color: #e9531f;
+    line-height: 1;
+  }
+  .step .price .yen { font-size: 2.5mm; }
+  .step .price .unit { font-size: 2.1mm; color: #5a6378; font-weight: 700; }
+  .step .desc {
+    margin-top: 1mm;
+    font-size: 2.1mm;
+    color: #444;
+    line-height: 1.35;
+    min-height: 9mm;
+  }
+  .step .tag {
+    display: inline-block;
+    margin-top: 1mm;
+    background: #eaf3ff;
+    color: #0b3b8c;
+    font-size: 1.9mm;
+    font-weight: 800;
+    padding: .4mm 1.5mm;
+    border-radius: .8mm;
+    letter-spacing: .3mm;
+  }
+  .step.final .tag { background: #fff0c4; color: #b85a00; }
+
+  /* ===== PRICING TABLE ===== */
+  .pricing-block {
+    background: #f4f7fc;
+    border-radius: 2.5mm;
+    padding: 2.5mm 3.5mm;
+    margin-bottom: 2.8mm;
+  }
+  .pricing-block h3 {
+    font-size: 3.1mm;
+    font-weight: 900;
+    color: #0b3b8c;
+    margin-bottom: 1.8mm;
+    display: flex;
+    align-items: center;
+    gap: 2mm;
+  }
+  .pricing-block h3 .yen-mark {
+    background: #0b3b8c;
+    color: #fff;
+    width: 5mm; height: 5mm;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3mm; font-weight: 900;
+  }
+  .pricing-table {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1mm 4mm;
+  }
+  .price-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: .8mm 0;
+    border-bottom: .2mm dashed #c5d0e0;
+    font-size: 2.55mm;
+  }
+  .price-item .name { font-weight: 700; color: #1a1a2e; }
+  .price-item .amt {
+    font-weight: 900;
+    color: #e9531f;
+    font-size: 3.1mm;
+  }
+  .price-item .amt small { font-size: 2.1mm; color: #5a6378; font-weight: 700; }
+  .price-note {
+    margin-top: 1.5mm;
+    font-size: 2.1mm;
+    color: #5a6378;
+    line-height: 1.45;
+  }
+  .price-note strong { color: #0b3b8c; }
+
+  /* ===== KARTS + FEATURES (combined row) ===== */
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3mm;
+    margin-bottom: 2.8mm;
+  }
+  .karts {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    gap: 2mm;
+  }
+  .kart {
+    background: #fff;
+    border: .35mm solid #d6deeb;
+    border-radius: 2mm;
+    padding: 1.8mm 2.5mm;
+    display: flex;
+    align-items: center;
+    gap: 2.5mm;
+  }
+  .kart-icon {
+    width: 10mm; height: 10mm;
+    background: linear-gradient(135deg, #0b3b8c, #4caee0);
+    border-radius: 50%;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .kart.junior .kart-icon { background: linear-gradient(135deg, #e9531f, #f5c542); }
+  .kart-icon::before {
+    content: "";
+    width: 5mm; height: 2mm;
+    background: #fff;
+    border-radius: 1mm;
+    position: relative;
+  }
+  .kart-icon::after {
+    content: "";
+    width: 1.4mm; height: 1.4mm;
+    background: #fff;
+    border-radius: 50%;
+    position: absolute;
+    bottom: 2.5mm; left: 2.3mm;
+    box-shadow: 4mm 0 0 #fff;
+  }
+  .kart-info { line-height: 1.2; }
+  .kart-info .kart-name { font-size: 3mm; font-weight: 900; color: #0b3b8c; }
+  .kart-info .kart-age { font-size: 2.3mm; color: #5a6378; margin-top: .7mm; font-weight: 700; }
+  .kart-info .kart-speed {
+    margin-top: 1mm;
+    font-size: 2.7mm; font-weight: 900;
+    color: #e9531f;
+  }
+  .features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 2mm;
+  }
+  .feature {
+    background: #fff;
+    border: .3mm solid #d6deeb;
+    border-radius: 1.8mm;
+    padding: 1.5mm;
+    text-align: left;
+    display: flex;
+    gap: 2mm;
+    align-items: center;
+  }
+  .feature .ico {
+    flex-shrink: 0;
+    width: 7mm; height: 7mm;
+    border-radius: 50%;
+    background: #eaf3ff;
+    color: #0b3b8c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.5mm;
+    font-weight: 900;
+  }
+  .feature .body { line-height: 1.25; }
+  .feature .ttl {
+    font-size: 2.5mm;
+    font-weight: 900;
+    color: #0b3b8c;
+  }
+  .feature .desc {
+    margin-top: .5mm;
+    font-size: 2mm;
+    color: #444;
+    line-height: 1.35;
+  }
+
+  /* ===== CONTACT ===== */
+  .contact {
+    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
+    color: #fff;
+    border-radius: 2.5mm;
+    padding: 2.5mm 3.5mm 1.8mm;
+    position: relative;
+    overflow: hidden;
+  }
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 18mm 18mm 18mm;
+    gap: 2.5mm;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+  }
+  .contact::before {
+    content: "";
+    position: absolute;
+    left: -10mm; bottom: -10mm;
+    width: 40mm; height: 40mm;
+    background: rgba(255,235,0,.1);
+    border-radius: 50%;
+  }
+  .contact-info { position: relative; z-index: 2; }
+  .contact-info .label {
+    font-size: 2.2mm;
+    font-weight: 800;
+    color: #ffe55c;
+    letter-spacing: .5mm;
+    margin-bottom: .8mm;
+  }
+  .contact-info .name {
+    font-size: 3.6mm;
+    font-weight: 900;
+    margin-bottom: .8mm;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .contact-info .addr {
+    font-size: 2.3mm;
+    line-height: 1.45;
+    opacity: .95;
+  }
+  .contact-info .tel {
+    font-size: 3.8mm;
+    font-weight: 900;
+    margin-top: 1mm;
+    letter-spacing: .3mm;
+    line-height: 1.1;
+  }
+  .contact-info .tel small {
+    display: block;
+    font-size: 2.2mm; opacity: .8; font-weight: 700; margin-top: .5mm;
+  }
+  .qr {
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  .qr img {
+    width: 15mm; height: 15mm;
+    background: #fff;
+    padding: .4mm;
+    border-radius: 1.2mm;
+    display: block;
+    margin: 0 auto;
+  }
+  .qr .qr-label {
+    margin-top: 1mm;
+    font-size: 2.2mm;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.2;
+  }
+  .qr .qr-sub {
+    font-size: 1.8mm;
+    color: #ffe55c;
+    margin-top: .3mm;
+    font-weight: 700;
+  }
+
+  /* ===== SPONSOR ===== */
+  .sponsor {
+    text-align: center;
+    font-size: 2.1mm;
+    color: rgba(255,255,255,.8);
+    margin-top: 2mm;
+    padding-top: 1.5mm;
+    border-top: .25mm dashed rgba(255,255,255,.3);
+    position: relative;
+    z-index: 2;
+    letter-spacing: .3mm;
+  }
+  .sponsor strong { color: #ffe55c; font-weight: 900; }
+</style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div class="brand-title">
+        <div class="jp">福岡キッズカートアカデミー</div>
+        <div class="en">FUKUOKA KIDS KART ACADEMY</div>
+      </div>
+    </div>
+    <div class="header-tag">
+      <div class="since">SINCE 2013</div>
+      <div class="age"><strong>4歳・100cm</strong> から始められる</div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero">
+    <h1>本物のレース体験を、<span class="accent">福岡から。</span></h1>
+    <p>プロチームのコーチが、安全な環境で「速く・楽しく・正しく」を教えます。はじめてでも大丈夫。道具はすべて貸出、スニーカーだけご持参ください。</p>
+    <div class="hero-stats">
+      <div class="hero-stat">体験 <strong>¥4,500</strong></div>
+      <div class="hero-stat">所要 <strong>約60分</strong></div>
+      <div class="hero-stat">道具 <strong>レンタル込</strong></div>
+      <div class="hero-stat">開催 <strong>土日</strong></div>
+    </div>
+  </div>
+
+  <!-- 4 STEPS -->
+  <div class="section-title">
+    <span class="badge">STEP</span>
+    <h2>体験から、<span class="hl">本格レース</span>までの4ステップ</h2>
+  </div>
+  <div class="journey">
+    <div class="step">
+      <div class="num">1</div>
+      <h3>体験教室</h3>
+      <div class="price"><span class="yen">¥</span>4,500</div>
+      <div class="desc">はじめてのカート。安全装備の付け方からコース1周まで丁寧にレクチャー。</div>
+      <div class="tag">START HERE</div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <h3>リピート練習</h3>
+      <div class="price"><span class="yen">¥</span>3,000<span class="unit">〜</span></div>
+      <div class="desc">「もっと走りたい」が出てきたら、30分・60分の練習で技術を磨く。</div>
+      <div class="tag">PRACTICE</div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <h3>チャレンジクラス</h3>
+      <div class="price"><span class="yen">¥</span>15,500</div>
+      <div class="desc">サーキット走行料込みの本格クラス。レース参戦への足がかり。</div>
+      <div class="tag">LEVEL UP</div>
+    </div>
+    <div class="step final">
+      <div class="num">4</div>
+      <h3>AAAアカデミー</h3>
+      <div class="price"><span class="yen">¥</span>6,600<span class="unit">/月</span></div>
+      <div class="desc">所属メンバーとしてレース参戦・遠征・育成をフルサポート。</div>
+      <div class="tag">★ JOIN TEAM</div>
+    </div>
+  </div>
+
+  <!-- PRICING -->
+  <div class="pricing-block">
+    <h3><span class="yen-mark">¥</span>料金一覧（すべて税込・道具一式レンタル込み）</h3>
+    <div class="pricing-table">
+      <div class="price-item">
+        <span class="name">① 体験教室（約60分）</span>
+        <span class="amt">¥4,500<small>/回</small></span>
+      </div>
+      <div class="price-item">
+        <span class="name">③ チャレンジクラス（走行料込）</span>
+        <span class="amt">¥15,500<small>/回</small></span>
+      </div>
+      <div class="price-item">
+        <span class="name">② リピート練習 30分</span>
+        <span class="amt">¥3,000<small>/回</small></span>
+      </div>
+      <div class="price-item">
+        <span class="name">④ AAAレーシングアカデミー所属</span>
+        <span class="amt">¥6,600<small>/月</small></span>
+      </div>
+      <div class="price-item">
+        <span class="name">② リピート練習 60分</span>
+        <span class="amt">¥4,500<small>/回</small></span>
+      </div>
+      <div class="price-item">
+        <span class="name">マイカートでの参加</span>
+        <span class="amt" style="font-size:2.5mm;">ご相談ください</span>
+      </div>
+    </div>
+    <div class="price-note">
+      ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップによる割引</strong> 適用済の価格です。<br>
+      ※ サーキット走行の際はスポーツ安全保険の加入を推奨。走行には<strong>長袖・長ズボン・運動靴</strong>が必要です。
+    </div>
+  </div>
+
+  <!-- KARTS + FEATURES -->
+  <div class="info-row">
+    <div class="karts">
+      <div class="kart">
+        <div class="kart-icon"></div>
+        <div class="kart-info">
+          <div class="kart-name">キッズカート</div>
+          <div class="kart-age">4才 〜 小学生</div>
+          <div class="kart-speed">MAX 約 50 km/h</div>
+        </div>
+      </div>
+      <div class="kart junior">
+        <div class="kart-icon"></div>
+        <div class="kart-info">
+          <div class="kart-name">ジュニアカート</div>
+          <div class="kart-age">小学生</div>
+          <div class="kart-speed">MAX 約 80 km/h</div>
+        </div>
+      </div>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="ico">安</div>
+        <div class="body">
+          <div class="ttl">安全第一</div>
+          <div class="desc">プロコーチが装備からマンツーマン指導</div>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="ico">手</div>
+        <div class="body">
+          <div class="ttl">手ぶらOK</div>
+          <div class="desc">ヘルメット・スーツまで道具一式レンタル</div>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="ico">雨</div>
+        <div class="body">
+          <div class="ttl">小雨開催</div>
+          <div class="desc">荒天時のみ中止／LINE公式で連絡</div>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="ico">★</div>
+        <div class="body">
+          <div class="ttl">世界へ続く道</div>
+          <div class="desc">アカデミー出身者が欧州OK昇格</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTACT -->
+  <div class="contact">
+    <div class="contact-grid">
+      <div class="contact-info">
+        <div class="label">▼ ご予約・お問い合わせ</div>
+        <div class="name">エーワンサーキット</div>
+        <div class="addr">〒818-0024 福岡県筑紫野市大字原田1338<br>九州自動車道・筑紫野ICから車で約15分／無料駐車場あり</div>
+        <div class="tel">TEL：092-927-1177<small>受付：開催日（土・日）</small></div>
+      </div>
+      <div class="qr">
+        <img src="qr_reserve.png" alt="予約QR">
+        <div class="qr-label">体験予約</div>
+        <div class="qr-sub">Reserva</div>
+      </div>
+      <div class="qr">
+        <img src="qr_line.png" alt="LINE QR">
+        <div class="qr-label">LINE相談</div>
+        <div class="qr-sub">@kidskart</div>
+      </div>
+      <div class="qr">
+        <img src="qr_web.png" alt="Web QR">
+        <div class="qr-label">公式サイト</div>
+        <div class="qr-sub">kidskart.org</div>
+      </div>
+    </div>
+    <div class="sponsor">
+      Operated by <strong>AAA Motor Sports</strong> ／ Main Sponsor： <strong>福岡トヨペット株式会社</strong>
+    </div>
+  </div>
+
+</body>
+</html>
