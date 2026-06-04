@@ -231,6 +231,49 @@
     letter-spacing: .3mm;
     vertical-align: middle;
   }
+  .toyopi-inline {
+    margin-top: 1.5mm;
+    background: #fff001;
+    border: .35mm solid #005950;
+    border-radius: 1.2mm;
+    padding: 1mm 2mm;
+    display: flex;
+    align-items: center;
+    gap: 2mm;
+  }
+  .toyopi-inline .ti-left {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 2mm;
+    line-height: 1.2;
+  }
+  .toyopi-inline .ti-l {
+    font-size: 1.7mm;
+    font-weight: 900;
+    color: #d63a3a;
+    letter-spacing: .4mm;
+    white-space: nowrap;
+  }
+  .toyopi-inline .ti-h {
+    font-size: 2.5mm;
+    font-weight: 900;
+    color: #005950;
+  }
+  .toyopi-inline .ti-s {
+    font-size: 1.9mm;
+    color: #005950;
+    font-weight: 700;
+    opacity: .85;
+  }
+  .toyopi-inline img {
+    width: 8mm;
+    height: 8mm;
+    background: #fff;
+    padding: .3mm;
+    border-radius: .6mm;
+    flex-shrink: 0;
+  }
   .step .tag {
     display: inline-block;
     margin-top: 1mm;
@@ -445,8 +488,8 @@
   }
   .contact-grid {
     display: grid;
-    grid-template-columns: 1fr 18mm 18mm 18mm;
-    gap: 2.5mm;
+    grid-template-columns: 1fr 16mm 16mm 16mm 16mm;
+    gap: 2mm;
     align-items: center;
     position: relative;
     z-index: 2;
@@ -496,13 +539,14 @@
     z-index: 2;
   }
   .qr img {
-    width: 15mm; height: 15mm;
+    width: 14mm; height: 14mm;
     background: #fff;
     padding: .4mm;
-    border-radius: 1.2mm;
+    border-radius: 1mm;
     display: block;
     margin: 0 auto;
   }
+  .qr.toyopi img { background: #fff001; }
   .qr .qr-label {
     margin-top: 1mm;
     font-size: 2.2mm;
@@ -631,8 +675,7 @@
       </div>
     </div>
     <div class="price-note">
-      ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップによる割引</strong> 適用済の価格です。<br>
-      ※ サーキット走行の際はスポーツ安全保険の加入を推奨。走行には<strong>運動靴</strong>が必要です。
+      ※ 体験教室は <strong>トヨピーのお友達料金</strong>（お友達登録で適用・登録無料）です。サーキット走行の際はスポーツ安全保険の加入を推奨。走行には<strong>運動靴</strong>が必要です。<strong>お友達登録</strong>は右下のQRから。
     </div>
   </div>
 
@@ -699,6 +742,11 @@
         <img src="qr_web.png" alt="Web QR">
         <div class="qr-label">公式サイト</div>
         <div class="qr-sub">kidskart.org</div>
+      </div>
+      <div class="qr toyopi">
+        <img src="qr_toyopi_friend.png" alt="トヨピー登録QR">
+        <div class="qr-label" style="color:#fff001;">トヨピー登録</div>
+        <div class="qr-sub">お友達料金適用</div>
       </div>
     </div>
     <div class="sponsor">

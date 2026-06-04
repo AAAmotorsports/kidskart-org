@@ -234,9 +234,50 @@
     font-size: 2.1mm;
     color: #5a6378;
     line-height: 1.55;
-    margin-bottom: 6mm;
+    margin-bottom: 4mm;
   }
   .price-note strong { color: #0b3b8c; }
+  .toyopi-box {
+    background: #fff001;
+    border: .4mm solid #005950;
+    border-radius: 2mm;
+    padding: 3mm 3.5mm;
+    margin-bottom: 5mm;
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+  }
+  .toyopi-left { flex: 1; }
+  .toyopi-l {
+    font-size: 1.9mm;
+    font-weight: 900;
+    color: #d63a3a;
+    letter-spacing: .6mm;
+    margin-bottom: 1mm;
+  }
+  .toyopi-h {
+    font-size: 3.3mm;
+    font-weight: 900;
+    color: #005950;
+    line-height: 1.3;
+    margin-bottom: 1mm;
+  }
+  .toyopi-s {
+    font-size: 2mm;
+    color: #005950;
+    font-weight: 700;
+    opacity: .8;
+  }
+  .toyopi-qr {
+    flex-shrink: 0;
+    background: #fff;
+    padding: 1mm;
+    border-radius: 1mm;
+  }
+  .toyopi-qr img {
+    width: 17mm; height: 17mm;
+    display: block;
+  }
 
   .access-section {
     margin-bottom: 5mm;
@@ -713,8 +754,19 @@
       </div>
 
       <div class="price-note">
-        ※ 体験教室は <strong>福岡トヨペット様のスポンサーシップ</strong> による割引適用済。<br>
+        ※ 体験教室は <strong>トヨピーのお友達料金</strong>（お友達登録で適用・登録無料）です。<br>
         ※ 走行には <strong>運動靴</strong> をご持参ください。
+      </div>
+
+      <div class="toyopi-box">
+        <div class="toyopi-left">
+          <div class="toyopi-l">▼ TOYOPI MEMBER</div>
+          <div class="toyopi-h">トヨピーのお友達<br>登録はこちら。</div>
+          <div class="toyopi-s">登録無料・1分で完了</div>
+        </div>
+        <div class="toyopi-qr">
+          <img src="qr_toyopi_friend.png" alt="トヨピー登録QR">
+        </div>
       </div>
 
       <div class="access-section">
