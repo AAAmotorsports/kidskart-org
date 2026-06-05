@@ -19,7 +19,7 @@
   body {
     width: 182mm;
     height: 257mm;
-    padding: 3.5mm 5.5mm 2.5mm;
+    padding: 3mm 5.5mm 2mm;
     position: relative;
     overflow: hidden;
   }
@@ -29,14 +29,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 1.5mm;
-    border-bottom: 1.5px solid #0b3b8c;
-    margin-bottom: 2.5mm;
+    padding-bottom: 1.2mm;
+    border-bottom: 1.5px solid #005950;
+    margin-bottom: 1.5mm;
   }
   .brand { display: flex; align-items: center; gap: 2.5mm; }
   .brand-mark {
     width: 11mm; height: 11mm;
-    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
+    background: linear-gradient(135deg, #005950, #007a68);
     color: #fff;
     display: flex; align-items: center; justify-content: center;
     border-radius: 2mm;
@@ -47,7 +47,7 @@
   .brand-title .jp {
     font-size: 5.5mm;
     font-weight: 900;
-    color: #0b3b8c;
+    color: #005950;
     letter-spacing: .2mm;
     white-space: nowrap;
   }
@@ -65,7 +65,7 @@
   .header-tag .since {
     display: inline-block;
     background: #f4f7fc;
-    color: #0b3b8c;
+    color: #005950;
     font-size: 2.3mm;
     font-weight: 900;
     padding: .8mm 2mm;
@@ -81,16 +81,36 @@
 
   /* ===== HERO ===== */
   .hero {
-    margin-bottom: 2.2mm;
+    margin-bottom: 1.5mm;
+    background: #fff001;
+    margin-left: -5.5mm;
+    margin-right: -5.5mm;
+    padding: 2mm 5.5mm 2mm;
+    position: relative;
   }
+  /* Three-color stripes echoing the banner's stripes */
+  .hero::before, .hero::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 1.2mm;
+    background: linear-gradient(90deg,
+      #d63a3a 0%, #d63a3a 33.33%,
+      #1d75bc 33.33%, #1d75bc 66.66%,
+      #d63a3a 66.66%, #d63a3a 100%);
+  }
+  .hero::before { top: 0; }
+  .hero::after { bottom: 0; }
   .hero-banner {
-    width: 67%;
+    width: 72%;
     margin: 0 auto;
-    border-radius: 2.5mm;
+    border-radius: 2mm;
     overflow: hidden;
     display: block;
     line-height: 0;
-    box-shadow: 0 .5mm 1.5mm rgba(11,59,140,.15);
+    box-shadow: 0 .5mm 1.5mm rgba(0,89,80,.25);
+    position: relative;
+    z-index: 2;
   }
   .hero-banner img {
     width: 100%;
@@ -105,7 +125,7 @@
     flex-wrap: nowrap;
   }
   .hero-stat {
-    background: #0b3b8c;
+    background: #005950;
     color: #fff;
     padding: 1mm 2.5mm;
     border-radius: 1mm;
@@ -114,7 +134,7 @@
     letter-spacing: .3mm;
     white-space: nowrap;
   }
-  .hero-stat strong { color: #ffe55c; font-size: 2.8mm; font-weight: 900; }
+  .hero-stat strong { color: #fff001; font-size: 2.8mm; font-weight: 900; }
   .hero-stat.alt { background: #e9531f; }
   .hero-stat.alt strong { color: #fff; }
 
@@ -137,7 +157,7 @@
   .section-title h2 {
     font-size: 4.2mm;
     font-weight: 900;
-    color: #0b3b8c;
+    color: #005950;
   }
   .section-title h2 .hl { color: #e9531f; }
 
@@ -162,7 +182,7 @@
   }
   .step .num {
     width: 6.5mm; height: 6.5mm;
-    background: #0b3b8c;
+    background: #005950;
     color: #fff;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -173,7 +193,7 @@
   .step h3 {
     font-size: 2.9mm;
     font-weight: 900;
-    color: #0b3b8c;
+    color: #005950;
     margin-bottom: 1.2mm;
     line-height: 1.2;
   }
@@ -196,10 +216,10 @@
     display: block;
     margin-top: .8mm;
     font-size: 1.8mm;
-    color: #0b3b8c;
+    color: #005950;
     font-weight: 800;
     line-height: 1.25;
-    background: #eaf3ff;
+    background: #fff8b8;
     padding: .5mm 1mm;
     border-radius: .8mm;
   }
@@ -277,8 +297,8 @@
   .step .tag {
     display: inline-block;
     margin-top: 1mm;
-    background: #eaf3ff;
-    color: #0b3b8c;
+    background: #fff8b8;
+    color: #005950;
     font-size: 1.9mm;
     font-weight: 800;
     padding: .4mm 1.5mm;
@@ -297,14 +317,14 @@
   .pricing-block h3 {
     font-size: 3.1mm;
     font-weight: 900;
-    color: #0b3b8c;
+    color: #005950;
     margin-bottom: 1.8mm;
     display: flex;
     align-items: center;
     gap: 2mm;
   }
   .pricing-block h3 .yen-mark {
-    background: #0b3b8c;
+    background: #005950;
     color: #fff;
     width: 5mm; height: 5mm;
     border-radius: 50%;
@@ -337,7 +357,7 @@
     color: #5a6378;
     line-height: 1.45;
   }
-  .price-note strong { color: #0b3b8c; }
+  .price-note strong { color: #005950; }
 
   /* ===== KARTS + FEATURES (combined row) ===== */
   .info-row {
@@ -350,7 +370,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2.5mm;
-    margin-bottom: 1.8mm;
+    margin-bottom: 1.5mm;
   }
   .kart {
     background: #fff;
@@ -363,7 +383,7 @@
   }
   .kart-icon {
     width: 10mm; height: 10mm;
-    background: linear-gradient(135deg, #0b3b8c, #4caee0);
+    background: linear-gradient(135deg, #005950, #4cb5a4);
     border-radius: 50%;
     color: #fff;
     display: flex; align-items: center; justify-content: center;
@@ -388,7 +408,7 @@
     box-shadow: 4mm 0 0 #fff;
   }
   .kart-info { line-height: 1.2; }
-  .kart-info .kart-name { font-size: 3mm; font-weight: 900; color: #0b3b8c; }
+  .kart-info .kart-name { font-size: 3mm; font-weight: 900; color: #005950; }
   .kart-info .kart-age { font-size: 2.3mm; color: #5a6378; margin-top: .7mm; font-weight: 700; }
   .kart-info .kart-speed {
     margin-top: 1mm;
@@ -415,8 +435,8 @@
     flex-shrink: 0;
     width: 7mm; height: 7mm;
     border-radius: 50%;
-    background: #eaf3ff;
-    color: #0b3b8c;
+    background: #fff8b8;
+    color: #005950;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -427,7 +447,7 @@
   .feature .ttl {
     font-size: 2.5mm;
     font-weight: 900;
-    color: #0b3b8c;
+    color: #005950;
   }
   .feature .desc {
     margin-top: .5mm;
@@ -441,14 +461,14 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 2mm;
-    margin-bottom: 1.8mm;
+    margin-bottom: 1.5mm;
   }
   .photo {
     border-radius: 2mm;
     overflow: hidden;
     position: relative;
     background: #f4f7fc;
-    aspect-ratio: 5 / 4;
+    height: 33mm;
   }
   .photo img {
     width: 100%;
@@ -459,7 +479,7 @@
   .photo .cap {
     position: absolute;
     left: 0; right: 0; bottom: 0;
-    background: linear-gradient(to top, rgba(11,59,140,.95) 25%, rgba(11,59,140,0));
+    background: linear-gradient(to top, rgba(0,89,80,.95) 25%, rgba(0,89,80,0));
     color: #fff;
     font-size: 2mm;
     font-weight: 900;
@@ -471,7 +491,7 @@
   .photo .cap small {
     display: block;
     font-size: 1.5mm;
-    color: #ffe55c;
+    color: #fff001;
     margin-top: .3mm;
     font-weight: 700;
     letter-spacing: .5mm;
@@ -479,10 +499,10 @@
 
   /* ===== CONTACT ===== */
   .contact {
-    background: linear-gradient(135deg, #0b3b8c, #1e6fd9);
+    background: linear-gradient(135deg, #005950, #007a68);
     color: #fff;
     border-radius: 2.5mm;
-    padding: 2mm 3.5mm 1.5mm;
+    padding: 1.8mm 3.5mm 1.2mm;
     position: relative;
     overflow: hidden;
   }
@@ -506,7 +526,7 @@
   .contact-info .label {
     font-size: 2.2mm;
     font-weight: 800;
-    color: #ffe55c;
+    color: #fff001;
     letter-spacing: .5mm;
     margin-bottom: .8mm;
   }
@@ -556,7 +576,7 @@
   }
   .qr .qr-sub {
     font-size: 1.8mm;
-    color: #ffe55c;
+    color: #fff001;
     margin-top: .3mm;
     font-weight: 700;
   }
@@ -564,16 +584,16 @@
   /* ===== SPONSOR ===== */
   .sponsor {
     text-align: center;
-    font-size: 2.1mm;
+    font-size: 2mm;
     color: rgba(255,255,255,.8);
-    margin-top: 1.5mm;
-    padding-top: 1.2mm;
+    margin-top: 1mm;
+    padding-top: .8mm;
     border-top: .25mm dashed rgba(255,255,255,.3);
     position: relative;
     z-index: 2;
     letter-spacing: .3mm;
   }
-  .sponsor strong { color: #ffe55c; font-weight: 900; }
+  .sponsor strong { color: #fff001; font-weight: 900; }
 </style>
 </head>
 <body>
