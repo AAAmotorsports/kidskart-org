@@ -6,6 +6,28 @@
 <title>ページが見つかりませんでした — 福岡キッズカートアカデミー</title>
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://kidskart.org/">
+<script>
+  (function(){
+    var p = location.pathname || '';
+    var target = null;
+    if (/^\/archives\//i.test(p)) target = '/stories/';
+    else if (/^\/wp-content\//i.test(p)) target = '/';
+    else if (/(reserve|reservation|予約|受付)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(access|アクセス|方面から)/i.test(p)) target = '/#access';
+    else if (/(schedule|スケジュール|calendar|カレンダー)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(体験|教室|レッスン|lesson|program|コース)/i.test(p)) target = '/#what';
+    else if (/(price|料金|fee|cost)/i.test(p)) target = '/#pricing';
+    else if (/(contact|問い合わせ|お問い合わせ)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(sponsor|協賛|toyopet|トヨペット)/i.test(p)) target = '/';
+    if (target) {
+      var meta = document.createElement('meta');
+      meta.httpEquiv = 'refresh';
+      meta.content = '2; url=' + target;
+      document.head.appendChild(meta);
+      window.__redirectTarget = target;
+    }
+  })();
+</script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%}
@@ -56,9 +78,9 @@
 <body>
   <div class="card">
     <div class="badge">404</div>
-    <h1>ページが見つかりませんでした</h1>
+    <h1 id="h">ページが見つかりませんでした</h1>
     <div class="code">PAGE NOT FOUND</div>
-    <p>お探しのページは移動・削除された可能性があります。<br>下のリンクからトップページまたは記事一覧へお進みください。</p>
+    <p id="msg">お探しのページは移動・削除された可能性があります。<br>下のリンクからトップページまたは記事一覧へお進みください。</p>
     <div class="links">
       <a class="btn btn-primary" href="/">🏠 トップページへ戻る</a>
       <a class="btn btn-ghost" href="/stories/">📖 記事アーカイブ（2013–2019）</a>
@@ -66,5 +88,11 @@
     </div>
     <div class="foot">福岡キッズカートアカデミー · FUKUOKA KIDS KART ACADEMY</div>
   </div>
+  <script>
+    if (window.__redirectTarget) {
+      document.getElementById('h').textContent = '新しいページへご案内します';
+      document.getElementById('msg').innerHTML = 'このページは移転しました。<br>まもなく該当ページへ自動で移動します。';
+    }
+  </script>
 </body>
 </html>
