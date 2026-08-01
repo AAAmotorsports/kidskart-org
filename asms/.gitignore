@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+.astro/
+dist/
+.vercel/
+.wrangler/
+*.log
+.DS_Store
