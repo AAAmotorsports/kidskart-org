@@ -502,6 +502,36 @@ CREATE POLICY staff_read_audit       ON audit_logs   FOR SELECT USING (auth.role
 -- Guest INSERT (via server-side API only, using service key that bypasses RLS)
 -- No public INSERT policies — all writes go through server-side API endpoints.
 
+-- -------------------------------------------------------------------------
+-- Table-level GRANTs
+-- -------------------------------------------------------------------------
+-- RLS only kicks in once PostgreSQL has granted the base privilege to the
+-- role. Without these GRANTs even a permissive RLS policy dies with
+-- "42501: permission denied for table ...". The service_role bypass covers
+-- all server-side writes, but browser reads via the anon key need this.
+
+GRANT SELECT ON courses TO anon, authenticated;
+GRANT SELECT ON slots    TO anon, authenticated;
+GRANT SELECT ON terms    TO anon, authenticated;
+
+GRANT ALL ON schedule_rules             TO authenticated;
+GRANT ALL ON schedule_exceptions        TO authenticated;
+GRANT ALL ON guardians                  TO authenticated;
+GRANT ALL ON customers                  TO authenticated;
+GRANT ALL ON guardian_customer_links    TO authenticated;
+GRANT ALL ON reservations               TO authenticated;
+GRANT ALL ON reservation_participants   TO authenticated;
+GRANT ALL ON consents                   TO authenticated;
+GRANT ALL ON customer_progressions      TO authenticated;
+GRANT ALL ON customer_bests             TO authenticated;
+GRANT ALL ON staff                      TO authenticated;
+GRANT SELECT ON audit_logs              TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON courses TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON slots   TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON terms   TO authenticated;
+
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
 -- =========================================================================
 -- End of 0001_initial_schema.sql
 -- =========================================================================
