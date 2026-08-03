@@ -1,0 +1,21 @@
+{
+  "name": "asms-app",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler pages dev ./dist",
+    "astro": "astro",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/cloudflare": "^11.2.2",
+    "@supabase/supabase-js": "^2.48.1",
+    "astro": "^5.1.6",
+    "typescript": "^5.7.3"
+  }
+}
