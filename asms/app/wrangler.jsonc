@@ -1,0 +1,25 @@
+/**
+ * Cloudflare Workers deployment config for the ASMS Astro app.
+ *
+ * The Astro build (via @astrojs/cloudflare) emits a Worker entry at
+ * ./dist/_worker.js/index.js and static assets under ./dist.
+ * Wrangler serves both from a single Worker deployment.
+ *
+ * Secrets (Supabase / Resend / R2 keys) are configured in the
+ * Cloudflare Dashboard → Workers → Settings → Variables and Secrets.
+ * Do NOT commit secret values here.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kidskart-asms",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
