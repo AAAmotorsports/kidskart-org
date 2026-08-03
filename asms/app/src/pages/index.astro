@@ -5,7 +5,35 @@ import { envFrom, getSupabase } from '@lib/supabase';
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
 
-// Ping the DB so we know the deployment is wired up correctly.
+function stringifyError(e: unknown): string {
+  if (!e) return 'unknown error';
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'object') {
+    const obj = e as Record<string, unknown>;
+    const parts: string[] = [];
+    if ('code' in obj && obj.code) parts.push(`code=${String(obj.code)}`);
+    if ('message' in obj && obj.message) parts.push(String(obj.message));
+    if ('details' in obj && obj.details) parts.push(`details=${String(obj.details)}`);
+    if ('hint' in obj && obj.hint) parts.push(`hint=${String(obj.hint)}`);
+    if (parts.length) return parts.join(' · ');
+    try { return JSON.stringify(e); } catch { return String(e); }
+  }
+  return String(e);
+}
+
+function mask(s: string, keep = 8): string {
+  if (!s) return '(unset)';
+  if (s.length <= keep + 4) return `${s.slice(0, keep)}…`;
+  return `${s.slice(0, keep)}…${s.slice(-4)} (len=${s.length})`;
+}
+
+const debug = {
+  url: env.PUBLIC_SUPABASE_URL || '(unset)',
+  anonKey: mask(env.PUBLIC_SUPABASE_ANON_KEY),
+  serviceKey: mask(env.SUPABASE_SERVICE_ROLE_KEY),
+};
+
 let coursesCount: number | null = null;
 let dbError: string | null = null;
 try {
@@ -16,7 +44,7 @@ try {
   if (error) throw error;
   coursesCount = count ?? 0;
 } catch (e) {
-  dbError = e instanceof Error ? e.message : String(e);
+  dbError = stringifyError(e);
 }
 ---
 <Base title="ASMS β — 福岡キッズカートアカデミー">
@@ -39,6 +67,13 @@ try {
           </>
         )}
       </div>
+
+      <details class="debug">
+        <summary>接続情報 (debug)</summary>
+        <div class="dbg-row"><span>URL</span><code>{debug.url}</code></div>
+        <div class="dbg-row"><span>anon</span><code>{debug.anonKey}</code></div>
+        <div class="dbg-row"><span>service</span><code>{debug.serviceKey}</code></div>
+      </details>
 
       <div class="links">
         <a href="/reserve/" class="btn btn-primary">予約フローを試す →</a>
@@ -99,23 +134,50 @@ try {
     border: 1px solid var(--line);
     border-radius: 12px;
     padding: 0.9rem 1rem;
-    margin-bottom: 1.6rem;
+    margin-bottom: 0.8rem;
     font-size: 0.82rem;
     text-align: left;
   }
-  .status .ok {
-    color: var(--lime-deep);
-    font-weight: 800;
-  }
-  .status .err {
-    color: var(--rose-deep);
-    font-weight: 800;
-  }
+  .status .ok { color: var(--lime-deep); font-weight: 800; }
+  .status .err { color: var(--rose-deep); font-weight: 800; }
   .status .meta {
-    color: var(--ink-2);
-    font-size: 0.74rem;
-    margin-top: 0.3rem;
+    color: var(--ink-2); font-size: 0.74rem; margin-top: 0.3rem;
+    font-family: var(--mono); word-break: break-all;
+  }
+  .debug {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 1.4rem;
+    font-size: 0.72rem;
+    text-align: left;
+  }
+  .debug summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--ink-3);
     font-family: var(--mono);
+    font-size: 0.68rem;
+  }
+  .dbg-row {
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    border-top: 1px dashed var(--line);
+    margin-top: 0.3rem;
+  }
+  .dbg-row span {
+    color: var(--ink-3);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+  .dbg-row code {
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    word-break: break-all;
   }
   .links {
     display: flex;
@@ -132,9 +194,7 @@ try {
     font-size: 0.9rem;
     transition: transform 0.15s;
   }
-  .btn:active {
-    transform: translateY(1px);
-  }
+  .btn:active { transform: translateY(1px); }
   .btn-primary {
     background: linear-gradient(135deg, var(--orange), var(--orange-deep));
     color: #fff;
@@ -150,8 +210,5 @@ try {
     color: var(--ink-3);
     font-family: var(--mono);
   }
-  .footer a {
-    color: var(--sky-deep);
-    text-decoration: none;
-  }
+  .footer a { color: var(--sky-deep); text-decoration: none; }
 </style>
