@@ -5,19 +5,15 @@ import { envFrom, getSupabase } from '@lib/supabase';
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
 
-function stringifyError(e: unknown): string {
-  if (!e) return 'unknown error';
+function stringifyAll(e: unknown): string {
+  if (!e) return 'null';
   if (typeof e === 'string') return e;
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error) return `${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(0, 3).join('\n') : ''}`;
   if (typeof e === 'object') {
     const obj = e as Record<string, unknown>;
-    const parts: string[] = [];
-    if ('code' in obj && obj.code) parts.push(`code=${String(obj.code)}`);
-    if ('message' in obj && obj.message) parts.push(String(obj.message));
-    if ('details' in obj && obj.details) parts.push(`details=${String(obj.details)}`);
-    if ('hint' in obj && obj.hint) parts.push(`hint=${String(obj.hint)}`);
-    if (parts.length) return parts.join(' · ');
-    try { return JSON.stringify(e); } catch { return String(e); }
+    const keys = Object.getOwnPropertyNames(obj);
+    if (keys.length === 0) return '(empty object)';
+    return keys.map(k => `${k}=${JSON.stringify(obj[k])}`).join(' | ');
   }
   return String(e);
 }
@@ -34,46 +30,66 @@ const debug = {
   serviceKey: mask(env.SUPABASE_SERVICE_ROLE_KEY),
 };
 
-let coursesCount: number | null = null;
-let dbError: string | null = null;
+// Test 1: raw HTTP fetch to Supabase health endpoint (no library)
+let rawFetch = '(未実行)';
 try {
-  const { count, error } = await supabase
-    .from('courses')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_active', true);
-  if (error) throw error;
-  coursesCount = count ?? 0;
+  const r = await fetch(`${env.PUBLIC_SUPABASE_URL}/rest/v1/`, {
+    headers: {
+      apikey: env.PUBLIC_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${env.PUBLIC_SUPABASE_ANON_KEY}`,
+    },
+  });
+  rawFetch = `HTTP ${r.status} ${r.statusText}`;
 } catch (e) {
-  dbError = stringifyError(e);
+  rawFetch = `FETCH ERR: ${stringifyAll(e)}`;
+}
+
+// Test 2: simple select with the supabase-js client
+let simpleQuery: { ok: boolean; msg: string } = { ok: false, msg: '(未実行)' };
+try {
+  const { data, error, status, statusText } = await supabase
+    .from('courses')
+    .select('id, code, name')
+    .eq('is_active', true)
+    .limit(5);
+  if (error) {
+    simpleQuery = {
+      ok: false,
+      msg: `status=${status} ${statusText} · ${stringifyAll(error)}`,
+    };
+  } else {
+    simpleQuery = {
+      ok: true,
+      msg: `${data?.length ?? 0} rows · sample=${JSON.stringify(data?.[0] ?? null)}`,
+    };
+  }
+} catch (e) {
+  simpleQuery = { ok: false, msg: `THROW: ${stringifyAll(e)}` };
 }
 ---
 <Base title="ASMS β — 福岡キッズカートアカデミー">
   <main>
     <div class="hero">
-      <span class="badge">ASMS · β</span>
+      <span class="badge">ASMS · β · diag</span>
       <h1>予約・安全管理システム</h1>
-      <p class="sub">福岡キッズカートアカデミーの新予約システム（開発中）</p>
+      <p class="sub">Supabase 接続診断</p>
 
       <div class="status">
-        {coursesCount !== null ? (
-          <>
-            <div class="ok">✓ Supabase 接続 OK</div>
-            <div class="meta">アクティブなコース: <strong>{coursesCount}</strong></div>
-          </>
-        ) : (
-          <>
-            <div class="err">✗ Supabase 接続エラー</div>
-            <div class="meta">{dbError ?? '環境変数が未設定です。'}</div>
-          </>
-        )}
+        <div class={simpleQuery.ok ? 'ok' : 'err'}>
+          {simpleQuery.ok ? '✓ Supabase 接続 OK' : '✗ Supabase 接続エラー'}
+        </div>
+        <div class="meta">{simpleQuery.msg}</div>
       </div>
 
-      <details class="debug">
-        <summary>接続情報 (debug)</summary>
+      <div class="debug">
+        <div class="dbg-title">🔌 RAW HTTP fetch</div>
+        <div class="dbg-val">{rawFetch}</div>
+
+        <div class="dbg-title">🔑 環境変数</div>
         <div class="dbg-row"><span>URL</span><code>{debug.url}</code></div>
         <div class="dbg-row"><span>anon</span><code>{debug.anonKey}</code></div>
         <div class="dbg-row"><span>service</span><code>{debug.serviceKey}</code></div>
-      </details>
+      </div>
 
       <div class="links">
         <a href="/reserve/" class="btn btn-primary">予約フローを試す →</a>
@@ -81,8 +97,7 @@ try {
       </div>
 
       <div class="footer">
-        Build: {new Date().toISOString().slice(0, 10)} ·
-        <a href="https://kidskart.org/">← kidskart.org</a>
+        Build: {new Date().toISOString().slice(0, 19)} JST
       </div>
     </div>
   </main>
@@ -98,7 +113,7 @@ try {
     background: linear-gradient(135deg, var(--sky-mist) 0%, var(--bg) 60%);
   }
   .hero {
-    max-width: 480px;
+    max-width: 560px;
     width: 100%;
     background: var(--bg);
     border-radius: 24px;
@@ -141,24 +156,33 @@ try {
   .status .ok { color: var(--lime-deep); font-weight: 800; }
   .status .err { color: var(--rose-deep); font-weight: 800; }
   .status .meta {
-    color: var(--ink-2); font-size: 0.74rem; margin-top: 0.3rem;
-    font-family: var(--mono); word-break: break-all;
+    color: var(--ink-2); font-size: 0.72rem; margin-top: 0.4rem;
+    font-family: var(--mono); word-break: break-all; line-height: 1.5;
   }
   .debug {
     background: var(--bg-2);
     border: 1px solid var(--line);
     border-radius: 12px;
-    padding: 0.6rem 0.9rem;
+    padding: 0.9rem 1rem;
     margin-bottom: 1.4rem;
     font-size: 0.72rem;
     text-align: left;
   }
-  .debug summary {
-    cursor: pointer;
-    font-weight: 700;
-    color: var(--ink-3);
+  .dbg-title {
+    font-weight: 800;
+    color: var(--ink);
+    margin: 0.5rem 0 0.3rem;
+    font-size: 0.74rem;
+  }
+  .dbg-title:first-child { margin-top: 0; }
+  .dbg-val {
+    color: var(--ink-2);
     font-family: var(--mono);
-    font-size: 0.68rem;
+    font-size: 0.72rem;
+    word-break: break-all;
+    background: var(--bg-3);
+    padding: 6px 8px;
+    border-radius: 6px;
   }
   .dbg-row {
     display: grid;
@@ -166,8 +190,8 @@ try {
     gap: 0.5rem;
     padding: 0.3rem 0;
     border-top: 1px dashed var(--line);
-    margin-top: 0.3rem;
   }
+  .dbg-row:first-of-type { border-top: none; }
   .dbg-row span {
     color: var(--ink-3);
     font-family: var(--mono);
@@ -179,36 +203,18 @@ try {
     font-size: 0.66rem;
     word-break: break-all;
   }
-  .links {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1.6rem;
-  }
+  .links { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.6rem; }
   .btn {
-    display: block;
-    text-decoration: none;
-    padding: 0.85rem 1.4rem;
-    border-radius: 12px;
-    font-weight: 800;
-    font-size: 0.9rem;
+    display: block; text-decoration: none;
+    padding: 0.85rem 1.4rem; border-radius: 12px;
+    font-weight: 800; font-size: 0.9rem;
     transition: transform 0.15s;
   }
   .btn:active { transform: translateY(1px); }
   .btn-primary {
     background: linear-gradient(135deg, var(--orange), var(--orange-deep));
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(229, 99, 26, 0.3);
+    color: #fff; box-shadow: 0 4px 12px rgba(229, 99, 26, 0.3);
   }
-  .btn-ghost {
-    background: var(--bg-2);
-    color: var(--ink-2);
-    border: 1.5px solid var(--line);
-  }
-  .footer {
-    font-size: 0.68rem;
-    color: var(--ink-3);
-    font-family: var(--mono);
-  }
-  .footer a { color: var(--sky-deep); text-decoration: none; }
+  .btn-ghost { background: var(--bg-2); color: var(--ink-2); border: 1.5px solid var(--line); }
+  .footer { font-size: 0.68rem; color: var(--ink-3); font-family: var(--mono); }
 </style>
