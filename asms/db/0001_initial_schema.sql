@@ -105,13 +105,26 @@ CREATE TABLE schedule_rules (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Seed schedule_rules to match current live Reserva calendar (as of 2026-08).
+-- weekday_mask 32|64|128 = 土 (Sat) | 日 (Sun) | 祝 (Holiday).
+-- The advertised menu also lists 12:00 taiken and 9:30 repeat_30 slots but
+-- they are not currently active in the calendar. The owner can activate them
+-- later by adding rules from the admin panel.
+
+-- 体験教室: 3 slots per weekend/holiday
 INSERT INTO schedule_rules (course_id, weekday_mask, start_time)
-SELECT id, 32|64|128, t FROM courses, unnest(ARRAY['10:00','12:00','14:00','16:00']::TIME[]) AS t
+SELECT id, 32|64|128, t FROM courses, unnest(ARRAY['10:00','14:00','16:00']::TIME[]) AS t
  WHERE code = 'taiken';
 
+-- リピート60: 3 slots per weekend/holiday
 INSERT INTO schedule_rules (course_id, weekday_mask, start_time)
 SELECT id, 32|64|128, t FROM courses, unnest(ARRAY['11:00','13:00','15:00']::TIME[]) AS t
- WHERE code IN ('repeat_60','repeat_30');
+ WHERE code = 'repeat_60';
+
+-- リピート30: 3 slots per weekend/holiday (menu advertises 9:30 too — currently inactive)
+INSERT INTO schedule_rules (course_id, weekday_mask, start_time)
+SELECT id, 32|64|128, t FROM courses, unnest(ARRAY['11:00','13:00','15:00']::TIME[]) AS t
+ WHERE code = 'repeat_30';
 
 -- -------------------------------------------------------------------------
 -- schedule_exceptions — 休業日・チャレンジ開催日・特別イベント
