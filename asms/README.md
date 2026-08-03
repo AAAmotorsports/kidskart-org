@@ -59,6 +59,33 @@
 3. `.env.local` を作成（[.env.example](./.env.example) 参照）
 4. Cloudflare Pages でこの subfolder を deploy target に設定
 
+### スタッフの初期登録
+
+現在の予定スタッフ:
+
+| 名前 | 権限 |
+|---|---|
+| マスター | owner |
+| スタッフ 1 | owner (Phase 1 は全員 owner) |
+| スタッフ 2 | owner |
+| スタッフ 3 | owner |
+
+**登録手順**（DB スキーマ流し込み後）:
+
+1. Supabase Dashboard → Authentication → Users → 各スタッフを "Add user" で招待
+2. 各スタッフがメール経由でパスワード設定
+3. Supabase SQL Editor で以下を実行（メールアドレスは実際のものに）:
+
+```sql
+INSERT INTO staff (auth_user_id, email, name, role) VALUES
+  ((SELECT id FROM auth.users WHERE email='master@example.com'), 'master@example.com', 'マスター', 'owner'),
+  ((SELECT id FROM auth.users WHERE email='staff1@example.com'), 'staff1@example.com', 'スタッフ 1', 'owner'),
+  ((SELECT id FROM auth.users WHERE email='staff2@example.com'), 'staff2@example.com', 'スタッフ 2', 'owner'),
+  ((SELECT id FROM auth.users WHERE email='staff3@example.com'), 'staff3@example.com', 'スタッフ 3', 'owner');
+```
+
+Phase 2 で管理画面から追加/権限変更ができるようになります。
+
 ## ファイル構成
 
 ```
