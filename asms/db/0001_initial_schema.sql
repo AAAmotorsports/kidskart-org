@@ -14,6 +14,26 @@
 --   6. All mutations recorded to audit_logs via triggers.
 -- =========================================================================
 
+-- Fully idempotent: drop everything from a previous run before recreating.
+-- Safe on empty DB (all IF EXISTS). CASCADE handles dependent objects.
+DROP TABLE IF EXISTS
+  audit_logs, staff,
+  customer_bests, customer_progressions,
+  consents, terms,
+  reservation_participants, reservations,
+  guardian_customer_links, customers, guardians,
+  slots, schedule_exceptions, schedule_rules, courses
+  CASCADE;
+
+DROP TYPE IF EXISTS
+  slot_status, skill_level, signature_type, vehicle_type,
+  price_tier, staff_role, gender, photo_consent,
+  attendance_status, reservation_status
+  CASCADE;
+
+DROP FUNCTION IF EXISTS touch_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS recalc_customer_participations() CASCADE;
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "citext";
