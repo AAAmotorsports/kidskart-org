@@ -1,0 +1,50 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  lang?: 'ja' | 'en';
+}
+
+const {
+  title,
+  description = '福岡キッズカートアカデミー 予約・安全管理システム',
+  lang = 'ja',
+} = Astro.props;
+---
+<!doctype html>
+<html lang={lang}>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content={description} />
+  <meta name="theme-color" content="#3aa9e8" />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>{title}</title>
+  <style is:global>
+    :root {
+      --sky:#3aa9e8; --sky-deep:#1a7fb8; --sky-light:#cae7f7; --sky-mist:#eef7fc;
+      --sun:#ffc943; --orange:#ff8a3d; --orange-deep:#e5631a;
+      --lime:#a4d65e; --lime-deep:#7eb13a;
+      --rose:#e5556f; --rose-deep:#c73854;
+      --violet:#7c6fdb;
+      --ink:#163048; --ink-2:#3d556f; --ink-3:#7d8fa0; --ink-4:#a8b8c5;
+      --bg:#fff; --bg-2:#f4f9fc; --bg-3:#e8f1f8;
+      --line:#d8e6f0; --line-2:#bcd3e3;
+      --jp:'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic UI',-apple-system,BlinkMacSystemFont,sans-serif;
+      --mono:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{
+      font-family:var(--jp); background:var(--bg-2); color:var(--ink);
+      line-height:1.65; -webkit-font-smoothing:antialiased;
+      font-feature-settings:"palt";
+    }
+    a{color:var(--sky-deep)}
+  </style>
+</head>
+<body>
+  <slot />
+</body>
+</html>

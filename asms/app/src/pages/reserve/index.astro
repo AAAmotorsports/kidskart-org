@@ -1,0 +1,154 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabase } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabase(env);
+
+// Load upcoming open slots (grouped by date for a very basic calendar view).
+const today = new Date().toISOString().slice(0, 10);
+const { data: slots, error } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, course_id, courses(name, code, vehicle)')
+  .eq('status', 'open')
+  .gte('date', today)
+  .order('date')
+  .order('start_time')
+  .limit(100);
+
+type Slot = NonNullable<typeof slots>[number];
+const byDate = new Map<string, Slot[]>();
+for (const s of slots ?? []) {
+  const arr = byDate.get(s.date) ?? [];
+  arr.push(s);
+  byDate.set(s.date, arr);
+}
+---
+<Base title="予約 — 福岡キッズカートアカデミー">
+  <main>
+    <header class="hd">
+      <a class="back" href="/">‹ 戻る</a>
+      <h1>予約(β)</h1>
+      <p class="sub">開催日を選ぶ</p>
+    </header>
+
+    {error ? (
+      <div class="empty">
+        <strong>読み込みエラー</strong>
+        <p>{error.message}</p>
+      </div>
+    ) : byDate.size === 0 ? (
+      <div class="empty">
+        <strong>開催予定がありません</strong>
+        <p>スケジュール自動生成の cron が未実行、または全ての slots が cancelled 状態です。</p>
+        <p class="hint">
+          管理画面から <code>schedule_rules</code> を元に <code>slots</code> を生成してください。<br>
+          （Phase 1 実装で自動化予定）
+        </p>
+      </div>
+    ) : (
+      <div class="days">
+        {Array.from(byDate.entries()).map(([date, slots]) => (
+          <div class="day-card">
+            <div class="date">{formatDate(date)}</div>
+            <ul class="slots">
+              {slots.map((s) => (
+                <li>
+                  <span class="time">{s.start_time.slice(0, 5)}</span>
+                  <span class="course">{(s.courses as any)?.name ?? s.course_id.slice(0, 8)}</span>
+                  <span class="cap">残 {s.capacity}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    )}
+
+    <footer>
+      <p class="tip">この画面は実装初期版です。9 ステップフローは順次追加します。</p>
+    </footer>
+  </main>
+</Base>
+
+<script is:inline define:vars={{}}>
+  function formatDate(iso) {
+    const d = new Date(iso);
+    const wd = ['日','月','火','水','木','金','土'][d.getDay()];
+    return `${d.getMonth()+1}月${d.getDate()}日 (${wd})`;
+  }
+  window.formatDate = formatDate;
+</script>
+
+<script>
+  // Astro renders server-side; format on client for correct locale.
+  document.querySelectorAll<HTMLElement>('.date').forEach((el) => {
+    const iso = el.textContent?.trim();
+    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      const d = new Date(iso);
+      const wd = ['日','月','火','水','木','金','土'][d.getDay()];
+      el.textContent = `${d.getMonth()+1}月${d.getDate()}日 (${wd})`;
+    }
+  });
+</script>
+
+<style>
+  main {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 3rem;
+  }
+  .hd {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 1rem;
+  }
+  .back {
+    display: inline-block;
+    font-size: 0.78rem;
+    color: var(--ink-3);
+    text-decoration: none;
+    margin-bottom: 0.5rem;
+  }
+  h1 { margin: 0 0 0.3rem; font-size: 1.4rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: 0.82rem; }
+
+  .empty {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.4rem;
+    text-align: center;
+    color: var(--ink-2);
+  }
+  .empty strong { color: var(--ink); display: block; margin-bottom: 0.4rem; font-size: 1rem; }
+  .empty p { margin: 0.3rem 0; font-size: 0.82rem; }
+  .empty .hint { color: var(--ink-3); font-size: 0.74rem; margin-top: 0.8rem; }
+  .empty code { font-family: var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; font-size: 0.78rem; }
+
+  .days { display: flex; flex-direction: column; gap: 0.8rem; }
+  .day-card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 2px 6px rgba(22,48,72,0.04);
+  }
+  .date { font-weight: 800; color: var(--ink); margin-bottom: 0.6rem; font-family: var(--mono); }
+  .slots { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+  .slots li {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    background: var(--bg-2);
+    border-radius: 8px;
+    font-size: 0.8rem;
+  }
+  .time { font-family: var(--mono); font-weight: 700; color: var(--ink); }
+  .course { color: var(--ink-2); }
+  .cap { font-family: var(--mono); font-size: 0.7rem; color: var(--lime-deep); font-weight: 700; }
+
+  footer { margin-top: 2rem; text-align: center; }
+  .tip { font-size: 0.7rem; color: var(--ink-3); }
+</style>

@@ -1,0 +1,157 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabase } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabase(env);
+
+// Ping the DB so we know the deployment is wired up correctly.
+let coursesCount: number | null = null;
+let dbError: string | null = null;
+try {
+  const { count, error } = await supabase
+    .from('courses')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_active', true);
+  if (error) throw error;
+  coursesCount = count ?? 0;
+} catch (e) {
+  dbError = e instanceof Error ? e.message : String(e);
+}
+---
+<Base title="ASMS β — 福岡キッズカートアカデミー">
+  <main>
+    <div class="hero">
+      <span class="badge">ASMS · β</span>
+      <h1>予約・安全管理システム</h1>
+      <p class="sub">福岡キッズカートアカデミーの新予約システム（開発中）</p>
+
+      <div class="status">
+        {coursesCount !== null ? (
+          <>
+            <div class="ok">✓ Supabase 接続 OK</div>
+            <div class="meta">アクティブなコース: <strong>{coursesCount}</strong></div>
+          </>
+        ) : (
+          <>
+            <div class="err">✗ Supabase 接続エラー</div>
+            <div class="meta">{dbError ?? '環境変数が未設定です。'}</div>
+          </>
+        )}
+      </div>
+
+      <div class="links">
+        <a href="/reserve/" class="btn btn-primary">予約フローを試す →</a>
+        <a href="https://github.com/AAAmotorsports/kidskart-org/tree/main/asms" class="btn btn-ghost">GitHub</a>
+      </div>
+
+      <div class="footer">
+        Build: {new Date().toISOString().slice(0, 10)} ·
+        <a href="https://kidskart.org/">← kidskart.org</a>
+      </div>
+    </div>
+  </main>
+</Base>
+
+<style>
+  main {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.25rem;
+    background: linear-gradient(135deg, var(--sky-mist) 0%, var(--bg) 60%);
+  }
+  .hero {
+    max-width: 480px;
+    width: 100%;
+    background: var(--bg);
+    border-radius: 24px;
+    padding: 2.5rem 2rem;
+    box-shadow: 0 12px 40px rgba(58, 169, 232, 0.18);
+    text-align: center;
+  }
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.15em;
+    color: var(--sky-deep);
+    background: var(--sky-mist);
+    padding: 0.3rem 0.8rem;
+    border-radius: 100px;
+    margin-bottom: 1.2rem;
+    font-weight: 700;
+  }
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.5rem;
+    text-wrap: balance;
+  }
+  .sub {
+    color: var(--ink-2);
+    font-size: 0.9rem;
+    margin: 0 0 1.6rem;
+  }
+  .status {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.6rem;
+    font-size: 0.82rem;
+    text-align: left;
+  }
+  .status .ok {
+    color: var(--lime-deep);
+    font-weight: 800;
+  }
+  .status .err {
+    color: var(--rose-deep);
+    font-weight: 800;
+  }
+  .status .meta {
+    color: var(--ink-2);
+    font-size: 0.74rem;
+    margin-top: 0.3rem;
+    font-family: var(--mono);
+  }
+  .links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.6rem;
+  }
+  .btn {
+    display: block;
+    text-decoration: none;
+    padding: 0.85rem 1.4rem;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 0.9rem;
+    transition: transform 0.15s;
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(229, 99, 26, 0.3);
+  }
+  .btn-ghost {
+    background: var(--bg-2);
+    color: var(--ink-2);
+    border: 1.5px solid var(--line);
+  }
+  .footer {
+    font-size: 0.68rem;
+    color: var(--ink-3);
+    font-family: var(--mono);
+  }
+  .footer a {
+    color: var(--sky-deep);
+    text-decoration: none;
+  }
+</style>
