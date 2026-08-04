@@ -1,6 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getJapaneseHolidays, hasHolidayTable } from '@lib/jp_holidays';
 
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
@@ -13,6 +14,122 @@ const url = new URL(Astro.request.url);
 const year = parseInt(url.searchParams.get('year') ?? String(defaultYear), 10);
 const month = parseInt(url.searchParams.get('month') ?? String(defaultMonth), 10);
 const mode = url.searchParams.get('mode') ?? '';
+
+// POST — schedule_exceptions CRUD. Uses PRG pattern so refresh doesn't
+// re-submit the form.
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const op = form.get('op') as string;
+  const backYear = (form.get('year') as string) || String(year);
+  const backMonth = (form.get('month') as string) || String(month);
+
+  const finalize = (msg: string, err: string) => {
+    const q = new URLSearchParams({ year: backYear, month: backMonth });
+    if (msg) q.set('msg', msg);
+    if (err) q.set('err', err);
+    return Astro.redirect(`/admin/schedule?${q.toString()}`);
+  };
+
+  const fmtErr = (e: any) =>
+    `${e?.code ?? ''} ${e?.message ?? ''} ${e?.details ?? ''}`.trim();
+
+  if (op === 'add_exception') {
+    const type = form.get('type') as string;
+    const date = form.get('date') as string;
+    const title = ((form.get('title') as string) || '').trim() || null;
+    const rawStart = ((form.get('start_time') as string) || '').trim();
+    const rawCourse = ((form.get('course_id') as string) || '').trim();
+    const rawCapacity = ((form.get('capacity') as string) || '').trim();
+
+    if (!type || !date) {
+      return finalize('', '種別と日付は必須です');
+    }
+    if (type !== 'closure' && !rawCourse) {
+      return finalize('', 'この種別ではコース選択が必須です');
+    }
+    if (type !== 'closure' && !rawStart) {
+      return finalize('', 'この種別では開始時刻が必須です');
+    }
+
+    const payload: Record<string, unknown> = { type, date };
+    if (title) payload.title = title;
+    if (type !== 'closure') {
+      payload.start_time = rawStart;
+      payload.course_id = rawCourse;
+      if (rawCapacity) payload.capacity = parseInt(rawCapacity, 10);
+    }
+
+    const { error } = await supabase.from('schedule_exceptions').insert(payload);
+    return error
+      ? finalize('', fmtErr(error))
+      : finalize(`${date} を「${labelType(type)}」として追加しました`, '');
+  }
+
+  if (op === 'delete_exception') {
+    const id = form.get('id') as string;
+    if (!id) return finalize('', 'ID が指定されていません');
+    const { error } = await supabase.from('schedule_exceptions').delete().eq('id', id);
+    return error ? finalize('', fmtErr(error)) : finalize('例外設定を削除しました', '');
+  }
+
+  if (op === 'bulk_holidays') {
+    const yr = parseInt(backYear, 10);
+    const mo = parseInt(backMonth, 10);
+    const holidays = getJapaneseHolidays(yr, mo);
+    if (holidays.length === 0) {
+      return finalize(`${yr}年${mo}月に該当する祝日はありません`, '');
+    }
+
+    // Skip dates already registered so we don't duplicate.
+    const monthStart = `${yr}-${String(mo).padStart(2, '0')}-01`;
+    const endDay = new Date(yr, mo, 0).getDate();
+    const monthEnd = `${yr}-${String(mo).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+    const { data: existing } = await supabase
+      .from('schedule_exceptions')
+      .select('date, type')
+      .eq('type', 'closure')
+      .gte('date', monthStart)
+      .lte('date', monthEnd);
+    const existingDates = new Set((existing ?? []).map((r: any) => r.date));
+
+    const rows = holidays
+      .filter((h) => !existingDates.has(h.date))
+      .map((h) => ({ type: 'closure', date: h.date, title: h.name }));
+
+    if (rows.length === 0) {
+      return finalize('祝日はすでに全て休業日として登録されています', '');
+    }
+
+    const { error } = await supabase.from('schedule_exceptions').insert(rows);
+    return error
+      ? finalize('', fmtErr(error))
+      : finalize(`${rows.length}件の祝日を休業日として追加しました`, '');
+  }
+
+  return finalize('', `未対応の操作: ${op}`);
+}
+
+function labelType(t: string): string {
+  return (
+    {
+      closure: '休業日',
+      challenge: 'チャレンジ日',
+      event: '特別イベント',
+      extra_slot: '追加枠',
+    } as Record<string, string>
+  )[t] ?? t;
+}
+
+const msg = url.searchParams.get('msg');
+const err = url.searchParams.get('err');
+
+// Load courses for the "add exception" form
+const { data: coursesData } = await supabase
+  .from('courses')
+  .select('id, code, name, default_capacity, display_order')
+  .eq('is_active', true)
+  .order('display_order');
+const courses = coursesData ?? [];
 
 let rows: Array<{
   action: string;
@@ -43,16 +160,20 @@ if (mode === 'preview' || mode === 'apply') {
   }
 }
 
-// existing exceptions for context
+// existing exceptions for the selected month
 const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
 const monthEndDate = new Date(year, month, 0);
 const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
 const { data: exceptions } = await supabase
   .from('schedule_exceptions')
-  .select('id, date, type, title, start_time, course_id, courses(name)')
+  .select('id, date, type, title, start_time, capacity, course_id, courses(name)')
   .gte('date', monthStart)
   .lte('date', monthEnd)
-  .order('date');
+  .order('date')
+  .order('start_time');
+
+const holidaysAvailable = hasHolidayTable(year);
+const monthlyHolidays = getJapaneseHolidays(year, month);
 
 // summary of proposed / applied actions
 const summary = rows.reduce<Record<string, number>>((acc, r) => {
@@ -74,6 +195,9 @@ const actionColor: Record<string, string> = {
   skipped_closure: 'closed',
   skipped_challenge_morning: 'muted',
 };
+
+// Default date for the add form: first day of selected month
+const addDefaultDate = monthStart;
 ---
 <Base title="スケジュール管理 — ASMS">
   <main>
@@ -96,6 +220,9 @@ const actionColor: Record<string, string> = {
         プレビュー
       </button>
     </form>
+
+    {msg && <div class="ok-banner">{msg}</div>}
+    {err && <div class="err">{err}</div>}
 
     {mode && (
       <div class="mode-banner">
@@ -172,21 +299,114 @@ const actionColor: Record<string, string> = {
     )}
 
     <section class="exceptions">
-      <h2>{year}年{month}月 の例外設定</h2>
+      <div class="ex-hd">
+        <h2>{year}年{month}月 の例外設定</h2>
+        {holidaysAvailable && monthlyHolidays.length > 0 && (
+          <form method="post" class="bulk-form">
+            <input type="hidden" name="op" value="bulk_holidays" />
+            <input type="hidden" name="year" value={year} />
+            <input type="hidden" name="month" value={month} />
+            <button type="submit" class="btn-mini">
+              🎌 {monthlyHolidays.length}件の祝日を休業日に一括追加
+            </button>
+          </form>
+        )}
+      </div>
+
       {exceptions && exceptions.length > 0 ? (
         <ul class="ex-list">
-          {exceptions.map((ex) => (
+          {exceptions.map((ex: any) => (
             <li>
-              <span class="mono">{ex.date}</span>
-              <span class={`ex-type ex-${ex.type}`}>{ex.type}</span>
+              <span class="mono ex-date">{ex.date}</span>
+              <span class={`ex-type ex-${ex.type}`}>{labelType(ex.type)}</span>
+              {ex.start_time && <span class="mono ex-time">{ex.start_time.slice(0,5)}</span>}
+              {ex.courses?.name && <span class="ex-course">{ex.courses.name}</span>}
               {ex.title && <span class="ex-title">{ex.title}</span>}
-              {ex.start_time && <span class="mono">{ex.start_time.slice(0,5)}</span>}
+              <form method="post" class="del-form" onsubmit="return confirm('この例外設定を削除しますか？');">
+                <input type="hidden" name="op" value="delete_exception" />
+                <input type="hidden" name="id" value={ex.id} />
+                <input type="hidden" name="year" value={year} />
+                <input type="hidden" name="month" value={month} />
+                <button type="submit" class="del-btn" aria-label="削除">×</button>
+              </form>
             </li>
           ))}
         </ul>
       ) : (
-        <p class="empty-ex">例外設定はまだありません。休業日や特別イベントは Supabase の Table Editor から <code>schedule_exceptions</code> に追加してください（次バージョンで UI 化予定）。</p>
+        <p class="empty-ex">まだ例外設定はありません。下のフォームから追加できます。</p>
       )}
+
+      <details class="add-ex-wrap" open={!(exceptions && exceptions.length > 0)}>
+        <summary>➕ 例外設定を追加</summary>
+        <form method="post" class="add-ex-form" id="addExForm">
+          <input type="hidden" name="op" value="add_exception" />
+          <input type="hidden" name="year" value={year} />
+          <input type="hidden" name="month" value={month} />
+
+          <div class="field type-field">
+            <label>種別 *</label>
+            <div class="type-choices">
+              <label class="type-choice">
+                <input type="radio" name="type" value="closure" checked />
+                <span>🚫 休業日</span>
+                <em>その日のスロットを終日生成しない</em>
+              </label>
+              <label class="type-choice">
+                <input type="radio" name="type" value="challenge" />
+                <span>🏁 チャレンジ日</span>
+                <em>午前ミニ枠を抑止しチャレンジ枠を追加</em>
+              </label>
+              <label class="type-choice">
+                <input type="radio" name="type" value="event" />
+                <span>🎉 特別イベント</span>
+                <em>サマースクール等の単発イベント枠</em>
+              </label>
+              <label class="type-choice">
+                <input type="radio" name="type" value="extra_slot" />
+                <span>➕ 追加枠</span>
+                <em>通常日にもう1枠だけ追加</em>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="ex-date">日付 *</label>
+            <input type="date" id="ex-date" name="date"
+              min={`${year}-${String(month).padStart(2,'0')}-01`}
+              max={monthEnd}
+              value={addDefaultDate}
+              required />
+          </div>
+
+          <div class="field course-field" data-conditional="hide-on-closure">
+            <label for="ex-course">コース *</label>
+            <select id="ex-course" name="course_id">
+              <option value="">— 選択 —</option>
+              {courses.map((c: any) => (
+                <option value={c.id}>{c.name} ({c.code})</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="field time-field" data-conditional="hide-on-closure">
+            <label for="ex-time">開始時刻 *</label>
+            <input type="time" id="ex-time" name="start_time" step="900" />
+          </div>
+
+          <div class="field capacity-field" data-conditional="hide-on-closure">
+            <label for="ex-capacity">定員（空欄でコース既定値）</label>
+            <input type="number" id="ex-capacity" name="capacity" min="1" max="30" />
+          </div>
+
+          <div class="field title-field">
+            <label for="ex-title">タイトル・メモ</label>
+            <input type="text" id="ex-title" name="title" maxlength="80"
+              placeholder="例: サマースクール、GW休業 など" />
+          </div>
+
+          <button type="submit" class="btn btn-primary">追加</button>
+        </form>
+      </details>
     </section>
 
     <details class="help">
@@ -194,18 +414,45 @@ const actionColor: Record<string, string> = {
       <ul>
         <li><strong>プレビュー</strong>: DB を変更せず、生成される予定のスロットを表で確認。</li>
         <li><strong>生成</strong>: プレビュー内容を実際に <code>slots</code> に INSERT。既存重複は自動スキップ。</li>
-        <li>例外日は <code>schedule_exceptions</code> テーブルで管理:
+        <li><strong>祝日一括追加</strong>: 表示中の月の日本の祝日を <code>closure</code>（休業日）として一括登録。すでに登録済みの祝日はスキップ。</li>
+        <li>例外の種別:
           <ul>
-            <li><code>closure</code>: 休業日 → 終日スロット生成なし</li>
-            <li><code>challenge</code>: チャレンジ日 → 午前ミニ枠を抑止 + チャレンジ枠を追加</li>
-            <li><code>event</code>: 特別イベント日 → イベント枠を追加</li>
-            <li><code>extra_slot</code>: 通常日に追加枠</li>
+            <li><strong>休業日</strong> → 終日スロット生成なし</li>
+            <li><strong>チャレンジ日</strong> → 午前ミニ枠を抑止 + チャレンジ枠を追加</li>
+            <li><strong>特別イベント</strong> → イベント枠を追加（サマースクール等）</li>
+            <li><strong>追加枠</strong> → 通常日に追加スロット</li>
           </ul>
         </li>
+        <li>例外設定を変更したら、<strong>プレビュー</strong>を再実行して反映を確認してから生成してください。</li>
       </ul>
     </details>
   </main>
 </Base>
+
+<script>
+  // Progressive disclosure: hide course / time / capacity fields when
+  // type = closure (休業日) since those columns are unused for that type.
+  const form = document.getElementById('addExForm') as HTMLFormElement | null;
+  if (form) {
+    const typeInputs = form.querySelectorAll<HTMLInputElement>('input[name="type"]');
+    const conditional = form.querySelectorAll<HTMLElement>('[data-conditional="hide-on-closure"]');
+    const courseSelect = form.querySelector<HTMLSelectElement>('#ex-course');
+    const timeInput = form.querySelector<HTMLInputElement>('#ex-time');
+
+    const sync = () => {
+      const selected = form.querySelector<HTMLInputElement>('input[name="type"]:checked')?.value;
+      const isClosure = selected === 'closure';
+      conditional.forEach((el) => {
+        el.style.display = isClosure ? 'none' : '';
+      });
+      if (courseSelect) courseSelect.required = !isClosure;
+      if (timeInput) timeInput.required = !isClosure;
+    };
+
+    typeInputs.forEach((r) => r.addEventListener('change', sync));
+    sync();
+  }
+</script>
 
 <style>
   main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
@@ -235,6 +482,12 @@ const actionColor: Record<string, string> = {
     border: 1px solid var(--sky-light);
     padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
     font-size: .85rem;
+  }
+  .ok-banner {
+    background: rgba(164, 214, 94, .12); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem; font-weight: 700;
   }
 
   .err {
@@ -286,20 +539,106 @@ const actionColor: Record<string, string> = {
     background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
     padding: 1rem 1.2rem; margin-bottom: 1.5rem;
   }
-  .exceptions h2 { margin: 0 0 .7rem; font-size: .95rem; font-weight: 800; }
-  .ex-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .ex-hd { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; margin-bottom: .7rem; }
+  .exceptions h2 { margin: 0; font-size: .95rem; font-weight: 800; }
+
+  .bulk-form { margin: 0; }
+  .btn-mini {
+    font-family: var(--jp); font-size: .74rem; font-weight: 700;
+    padding: .4rem .8rem; border-radius: 6px;
+    background: var(--bg-2); color: var(--ink);
+    border: 1px solid var(--line); cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-mini:hover { background: var(--bg-3); }
+
+  .ex-list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
   .ex-list li {
     display: flex; gap: .6rem; align-items: center; font-size: .82rem;
     padding: .5rem .7rem; background: var(--bg-2); border-radius: 6px;
+    flex-wrap: wrap;
   }
-  .ex-type { font-size: .68rem; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+  .ex-date { font-weight: 700; }
+  .ex-type { font-size: .68rem; padding: 2px 8px; border-radius: 100px; font-weight: 700; }
   .ex-closure { background: rgba(229,85,111,.15); color: var(--rose-deep); }
   .ex-challenge { background: rgba(124,111,219,.15); color: var(--violet); }
   .ex-event { background: rgba(255,138,61,.15); color: var(--orange-deep); }
   .ex-extra_slot { background: rgba(58,169,232,.15); color: var(--sky-deep); }
-  .ex-title { color: var(--ink-2); }
-  .empty-ex { margin: 0; color: var(--ink-3); font-size: .8rem; }
-  .empty-ex code { font-family: var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; }
+  .ex-time { color: var(--ink-2); }
+  .ex-course { color: var(--ink-2); font-size: .78rem; }
+  .ex-title { color: var(--ink-2); flex: 1; min-width: 0; }
+  .del-form { margin: 0 0 0 auto; }
+  .del-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--bg);
+    color: var(--ink-3); font-size: 1rem; line-height: 1;
+    cursor: pointer; transition: all .15s;
+    padding: 0;
+  }
+  .del-btn:hover {
+    background: rgba(229,85,111,.1); border-color: var(--rose);
+    color: var(--rose-deep);
+  }
+  .empty-ex { margin: 0 0 1rem; color: var(--ink-3); font-size: .8rem; }
+
+  .add-ex-wrap {
+    border-top: 1px dashed var(--line); padding-top: .8rem; margin-top: .5rem;
+  }
+  .add-ex-wrap > summary {
+    cursor: pointer; font-weight: 700; font-size: .84rem; color: var(--ink);
+    padding: .3rem 0;
+    list-style: none;
+  }
+  .add-ex-wrap > summary::-webkit-details-marker { display: none; }
+  .add-ex-form {
+    display: grid; gap: .8rem;
+    padding: 1rem; margin-top: .6rem;
+    background: var(--bg-2); border-radius: 8px;
+  }
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field label {
+    font-size: .72rem; font-weight: 700; color: var(--ink-2);
+  }
+  .field input[type="date"],
+  .field input[type="time"],
+  .field input[type="text"],
+  .field input[type="number"],
+  .field select {
+    padding: .55rem .7rem; font-size: .9rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--jp);
+  }
+  .field input[type="date"],
+  .field input[type="time"],
+  .field input[type="number"] { font-family: var(--mono); max-width: 200px; }
+
+  .type-field { gap: .5rem; }
+  .type-choices {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .5rem;
+  }
+  .type-choice {
+    display: flex; flex-direction: column; gap: .15rem;
+    padding: .6rem .7rem; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--bg);
+    cursor: pointer; transition: all .15s;
+    font-size: .82rem;
+  }
+  .type-choice:hover { border-color: var(--sky); }
+  .type-choice input { position: absolute; opacity: 0; }
+  .type-choice span { font-weight: 700; }
+  .type-choice em {
+    font-style: normal; font-size: .68rem; color: var(--ink-3);
+  }
+  .type-choice:has(input:checked) {
+    background: var(--sky-mist); border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(58, 169, 232, .12);
+  }
+
+  .add-ex-form > button[type="submit"] {
+    justify-self: start; padding: .6rem 1.4rem;
+  }
 
   .help {
     background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
