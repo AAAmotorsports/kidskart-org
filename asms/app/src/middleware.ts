@@ -12,16 +12,39 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (!needsAuth) return next();
 
-  const rt = (context.locals as any)?.runtime?.env ?? import.meta.env;
-  const user = rt.ADMIN_USERNAME as string | undefined;
-  const pass = rt.ADMIN_PASSWORD as string | undefined;
+  // Cloudflare Workers exposes bindings through context.locals.runtime.env.
+  // In dev (`astro dev`) they land on import.meta.env instead. Read both
+  // so the same middleware works in both worlds.
+  const rt = (context.locals as any)?.runtime?.env;
+  const user = rt?.ADMIN_USERNAME || import.meta.env.ADMIN_USERNAME || '';
+  const pass = rt?.ADMIN_PASSWORD || import.meta.env.ADMIN_PASSWORD || '';
 
-  // If admin credentials are not configured at all, block outright.
   if (!user || !pass) {
-    return new Response(
-      'Admin credentials are not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD in the Worker environment.',
-      { status: 503 }
-    );
+    // Debug output so we can see exactly what env surface the Worker has.
+    // Once auth works this branch is never hit in production so the leak
+    // window is short — but still: only reveal key NAMES, never values.
+    const rtKeys = rt ? Object.keys(rt).slice(0, 30).sort() : [];
+    const metaKeys = Object.keys(import.meta.env)
+      .filter((k) => !k.startsWith('_'))
+      .slice(0, 30)
+      .sort();
+    const body = [
+      'Admin credentials are not configured.',
+      '',
+      'Set ADMIN_USERNAME (plain) and ADMIN_PASSWORD (secret) as',
+      'Worker runtime variables in Cloudflare Dashboard.',
+      '',
+      '--- DEBUG (env surface visible to the middleware) ---',
+      `context.locals.runtime.env present: ${!!rt}`,
+      `runtime.env keys (${rtKeys.length}): ${JSON.stringify(rtKeys)}`,
+      `import.meta.env keys (${metaKeys.length}): ${JSON.stringify(metaKeys)}`,
+      `ADMIN_USERNAME resolved length: ${user.length}`,
+      `ADMIN_PASSWORD resolved length: ${pass.length}`,
+    ].join('\n');
+    return new Response(body, {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   }
 
   const header = context.request.headers.get('authorization') ?? '';
@@ -49,8 +72,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
   });
 });
 
-// Constant-time-ish string compare to blunt timing attacks.
-// Not perfect (length is leaked) but good enough for a shared secret.
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
