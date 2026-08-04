@@ -1,0 +1,93 @@
+---
+import Base from '@layouts/Base.astro';
+---
+<Base title="管理 — 福岡キッズカートアカデミー">
+  <main>
+    <header class="hd">
+      <h1>管理画面</h1>
+      <p class="sub">福岡キッズカートアカデミー · ASMS</p>
+    </header>
+
+    <div class="grid">
+      <a class="card" href="/admin/schedule">
+        <div class="ico">📅</div>
+        <div class="ct">
+          <h2>スケジュール管理</h2>
+          <p>月次スロット生成・例外日設定</p>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <div class="card disabled">
+        <div class="ico">📋</div>
+        <div class="ct">
+          <h2>予約一覧 <span class="soon">Coming soon</span></h2>
+          <p>Phase 1 で実装予定</p>
+        </div>
+      </div>
+      <div class="card disabled">
+        <div class="ico">👥</div>
+        <div class="ct">
+          <h2>顧客管理 <span class="soon">Coming soon</span></h2>
+          <p>参加履歴・習熟度・ベストタイム</p>
+        </div>
+      </div>
+      <div class="card disabled">
+        <div class="ico">⚙️</div>
+        <div class="ct">
+          <h2>コース設定 <span class="soon">Coming soon</span></h2>
+          <p>料金・時間・車両</p>
+        </div>
+      </div>
+    </div>
+
+    <footer class="ft">
+      <a href="/">← サイトトップへ</a>
+    </footer>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 640px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 1.5rem;
+  }
+  h1 { margin: 0 0 .3rem; font-size: 1.6rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .grid { display: flex; flex-direction: column; gap: .7rem; }
+  .card {
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    padding: 1rem 1.2rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: transform .1s, box-shadow .15s;
+  }
+  a.card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(58,169,232,.15); }
+  a.card:active { transform: translateY(1px); }
+  .card.disabled { opacity: .5; cursor: not-allowed; }
+  .ico { font-size: 1.6rem; }
+  .ct { flex: 1; }
+  .ct h2 { margin: 0; font-size: .95rem; font-weight: 800; }
+  .ct p { margin: .2rem 0 0; color: var(--ink-3); font-size: .75rem; }
+  .ct .soon {
+    font-family: var(--mono);
+    font-size: .58rem;
+    padding: 1px 6px;
+    background: var(--bg-3);
+    color: var(--ink-3);
+    border-radius: 4px;
+    margin-left: .4rem;
+    vertical-align: 2px;
+    font-weight: 700;
+  }
+  .arrow { color: var(--ink-3); font-size: 1.1rem; }
+  .ft { margin-top: 2rem; text-align: center; font-size: .74rem; }
+  .ft a { color: var(--sky-deep); text-decoration: none; }
+</style>

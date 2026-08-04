@@ -22,6 +22,10 @@ interface Env {
 
   PUBLIC_APP_URL?: string;
   PUBLIC_RESERVE_PATH?: string;
+
+  // Simple admin gate for MVP — will be replaced by Supabase Auth later
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
 }
 
 declare namespace App {
