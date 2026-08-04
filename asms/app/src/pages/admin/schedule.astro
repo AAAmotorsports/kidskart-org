@@ -1,0 +1,321 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const now = new Date();
+const defaultYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+const defaultMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+
+const url = new URL(Astro.request.url);
+const year = parseInt(url.searchParams.get('year') ?? String(defaultYear), 10);
+const month = parseInt(url.searchParams.get('month') ?? String(defaultMonth), 10);
+const mode = url.searchParams.get('mode') ?? '';
+
+let rows: Array<{
+  action: string;
+  slot_date: string;
+  weekday: string;
+  start_time: string | null;
+  end_time: string | null;
+  course_code: string | null;
+  course_name: string | null;
+  capacity: number | null;
+  reason: string | null;
+}> = [];
+let fnError: string | null = null;
+let applied = false;
+
+if (mode === 'preview' || mode === 'apply') {
+  const dryRun = mode === 'preview';
+  const { data, error } = await supabase.rpc('generate_slots_for_month', {
+    p_year: year,
+    p_month: month,
+    p_dry_run: dryRun,
+  });
+  if (error) {
+    fnError = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.trim();
+  } else {
+    rows = (data ?? []) as typeof rows;
+    if (!dryRun) applied = true;
+  }
+}
+
+// existing exceptions for context
+const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+const monthEndDate = new Date(year, month, 0);
+const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
+const { data: exceptions } = await supabase
+  .from('schedule_exceptions')
+  .select('id, date, type, title, start_time, course_id, courses(name)')
+  .gte('date', monthStart)
+  .lte('date', monthEnd)
+  .order('date');
+
+// summary of proposed / applied actions
+const summary = rows.reduce<Record<string, number>>((acc, r) => {
+  acc[r.action] = (acc[r.action] ?? 0) + 1;
+  return acc;
+}, {});
+
+const actionLabel: Record<string, string> = {
+  would_create: '📝 生成予定',
+  created: '✅ 生成完了',
+  skipped_exists: '⏭ 既存',
+  skipped_closure: '🚫 休業',
+  skipped_challenge_morning: '⛔ チャレンジ日午前抑止',
+};
+const actionColor: Record<string, string> = {
+  would_create: 'proposed',
+  created: 'created',
+  skipped_exists: 'muted',
+  skipped_closure: 'closed',
+  skipped_challenge_morning: 'muted',
+};
+---
+<Base title="スケジュール管理 — ASMS">
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin">← 管理トップ</a>
+      <h1>スケジュール管理</h1>
+      <p class="sub">月次スロット生成・例外日管理</p>
+    </header>
+
+    <form class="month-form" method="get">
+      <label>
+        年
+        <input type="number" name="year" min="2025" max="2030" value={year} />
+      </label>
+      <label>
+        月
+        <input type="number" name="month" min="1" max="12" value={month} />
+      </label>
+      <button type="submit" name="mode" value="preview" class="btn btn-primary">
+        プレビュー
+      </button>
+    </form>
+
+    {mode && (
+      <div class="mode-banner">
+        {mode === 'preview' && (
+          <><strong>{year}年{month}月</strong>のプレビュー（DB 未変更）</>
+        )}
+        {mode === 'apply' && applied && (
+          <><strong>{year}年{month}月</strong>のスロットを生成しました ✅</>
+        )}
+      </div>
+    )}
+
+    {fnError && (
+      <div class="err">
+        <strong>関数呼び出しエラー:</strong>
+        <code>{fnError}</code>
+      </div>
+    )}
+
+    {rows.length > 0 && (
+      <>
+        <section class="summary">
+          {Object.entries(summary).map(([action, count]) => (
+            <div class={`chip chip-${actionColor[action] ?? 'muted'}`}>
+              {actionLabel[action] ?? action}: <strong>{count}</strong>
+            </div>
+          ))}
+        </section>
+
+        <section class="table-wrap">
+          <table class="slot-table">
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>時間</th>
+                <th>コース</th>
+                <th class="num">定員</th>
+                <th>状態</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr class={`row-${actionColor[r.action] ?? 'muted'}`}>
+                  <td class="mono">{r.slot_date} ({r.weekday})</td>
+                  <td class="mono">
+                    {r.start_time ? `${r.start_time.slice(0, 5)}` : '—'}
+                    {r.end_time && `–${r.end_time.slice(0, 5)}`}
+                  </td>
+                  <td>{r.course_name ?? '—'}</td>
+                  <td class="mono num">{r.capacity ?? '—'}</td>
+                  <td class="status">
+                    {actionLabel[r.action] ?? r.action}
+                    {r.reason && <span class="reason"> · {r.reason}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        {mode === 'preview' && rows.some(r => r.action === 'would_create') && (
+          <form class="apply-form" method="get">
+            <input type="hidden" name="year" value={year} />
+            <input type="hidden" name="month" value={month} />
+            <button type="submit" name="mode" value="apply" class="btn btn-primary btn-big">
+              ✅ この内容で {year}年{month}月 のスロットを生成する
+            </button>
+            <p class="warn">
+              生成後は個別スロットの status を変更できますが、大量に消したい場合は SQL で直接扱ってください。
+            </p>
+          </form>
+        )}
+      </>
+    )}
+
+    <section class="exceptions">
+      <h2>{year}年{month}月 の例外設定</h2>
+      {exceptions && exceptions.length > 0 ? (
+        <ul class="ex-list">
+          {exceptions.map((ex) => (
+            <li>
+              <span class="mono">{ex.date}</span>
+              <span class={`ex-type ex-${ex.type}`}>{ex.type}</span>
+              {ex.title && <span class="ex-title">{ex.title}</span>}
+              {ex.start_time && <span class="mono">{ex.start_time.slice(0,5)}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="empty-ex">例外設定はまだありません。休業日や特別イベントは Supabase の Table Editor から <code>schedule_exceptions</code> に追加してください（次バージョンで UI 化予定）。</p>
+      )}
+    </section>
+
+    <details class="help">
+      <summary>ヘルプ</summary>
+      <ul>
+        <li><strong>プレビュー</strong>: DB を変更せず、生成される予定のスロットを表で確認。</li>
+        <li><strong>生成</strong>: プレビュー内容を実際に <code>slots</code> に INSERT。既存重複は自動スキップ。</li>
+        <li>例外日は <code>schedule_exceptions</code> テーブルで管理:
+          <ul>
+            <li><code>closure</code>: 休業日 → 終日スロット生成なし</li>
+            <li><code>challenge</code>: チャレンジ日 → 午前ミニ枠を抑止 + チャレンジ枠を追加</li>
+            <li><code>event</code>: 特別イベント日 → イベント枠を追加</li>
+            <li><code>extra_slot</code>: 通常日に追加枠</li>
+          </ul>
+        </li>
+      </ul>
+    </details>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.5rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .5rem; }
+  h1 { margin: 0 0 .3rem; font-size: 1.5rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .month-form {
+    display: flex; gap: .8rem; align-items: end; flex-wrap: wrap;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem; margin-bottom: 1.2rem;
+  }
+  .month-form label {
+    display: flex; flex-direction: column; gap: .3rem;
+    font-size: .72rem; font-weight: 700; color: var(--ink-2);
+  }
+  .month-form input {
+    padding: .5rem .7rem; font-size: .9rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    font-family: var(--mono);
+    width: 5rem;
+  }
+
+  .mode-banner {
+    background: var(--sky-mist);
+    border: 1px solid var(--sky-light);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem;
+  }
+
+  .err {
+    background: rgba(229, 85, 111, .08); border: 1px solid rgba(229, 85, 111, .3);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    color: var(--rose-deep); font-size: .82rem;
+  }
+  .err code { display: block; margin-top: .3rem; font-family: var(--mono); font-size: .74rem; color: var(--ink); word-break: break-all; }
+
+  .summary { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+  .chip {
+    padding: .4rem .8rem; border-radius: 100px;
+    font-size: .78rem; font-weight: 700;
+    background: var(--bg-2); border: 1px solid var(--line);
+  }
+  .chip strong { font-family: var(--mono); }
+  .chip-created { background: rgba(164, 214, 94, .15); border-color: var(--lime-deep); color: var(--lime-deep); }
+  .chip-proposed { background: rgba(58, 169, 232, .12); border-color: var(--sky); color: var(--sky-deep); }
+  .chip-closed { background: rgba(229, 85, 111, .1); border-color: var(--rose); color: var(--rose-deep); }
+
+  .table-wrap { overflow-x: auto; margin-bottom: 1.2rem; }
+  .slot-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .slot-table th, .slot-table td {
+    text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .slot-table th {
+    background: var(--bg-2); font-size: .7rem; font-weight: 700; color: var(--ink-2);
+    letter-spacing: .02em;
+  }
+  .slot-table .num { text-align: right; }
+  .slot-table .mono { font-family: var(--mono); }
+  .slot-table .row-created td { background: rgba(164, 214, 94, .04); }
+  .slot-table .row-proposed td { background: rgba(58, 169, 232, .04); }
+  .slot-table .row-closed td { color: var(--ink-3); background: rgba(229, 85, 111, .03); }
+  .slot-table .row-muted td { color: var(--ink-3); }
+  .slot-table .status { font-size: .74rem; }
+  .slot-table .reason { color: var(--ink-3); }
+
+  .apply-form { text-align: center; margin-bottom: 2rem; }
+  .apply-form .btn-big { padding: 1rem 1.4rem; font-size: 1rem; width: 100%; max-width: 480px; }
+  .warn {
+    margin-top: .6rem; font-size: .72rem; color: var(--ink-3);
+    background: var(--bg-2); padding: .5rem .8rem; border-radius: 6px;
+    display: inline-block;
+  }
+
+  .exceptions {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1.2rem; margin-bottom: 1.5rem;
+  }
+  .exceptions h2 { margin: 0 0 .7rem; font-size: .95rem; font-weight: 800; }
+  .ex-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .ex-list li {
+    display: flex; gap: .6rem; align-items: center; font-size: .82rem;
+    padding: .5rem .7rem; background: var(--bg-2); border-radius: 6px;
+  }
+  .ex-type { font-size: .68rem; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+  .ex-closure { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+  .ex-challenge { background: rgba(124,111,219,.15); color: var(--violet); }
+  .ex-event { background: rgba(255,138,61,.15); color: var(--orange-deep); }
+  .ex-extra_slot { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+  .ex-title { color: var(--ink-2); }
+  .empty-ex { margin: 0; color: var(--ink-3); font-size: .8rem; }
+  .empty-ex code { font-family: var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; }
+
+  .help {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: .8rem 1rem;
+  }
+  .help summary { cursor: pointer; font-weight: 700; font-size: .82rem; color: var(--ink); }
+  .help ul { font-size: .78rem; color: var(--ink-2); }
+  .help code { font-family: var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; }
+
+  .btn {
+    padding: .6rem 1rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .88rem; font-weight: 800;
+    border: none; cursor: pointer;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229, 99, 26, .3);
+  }
+</style>
