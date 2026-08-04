@@ -5,9 +5,16 @@
  * ./dist/_worker.js/index.js and static assets under ./dist.
  * Wrangler serves both from a single Worker deployment.
  *
- * Secrets (Supabase / Resend / R2 keys) are configured in the
- * Cloudflare Dashboard → Workers → Settings → Variables and Secrets.
- * Do NOT commit secret values here.
+ * Environment variables:
+ * - `vars`: plain text runtime bindings, committed to git. Only put
+ *   non-sensitive values here (Supabase URL/anon key are safe — anon
+ *   key is meant to be public and RLS keeps it honest).
+ * - Secrets (SUPABASE_SERVICE_ROLE_KEY, ADMIN_PASSWORD): NEVER commit.
+ *   Set them with `wrangler secret put NAME` or via the Cloudflare
+ *   Dashboard → this Worker → Settings → Variables and Secrets →
+ *   "Add secret". Values entered as "Build environment variables"
+ *   under Workers Builds are ONLY visible during the build; they do
+ *   not reach the running Worker.
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -21,5 +28,13 @@
   },
   "observability": {
     "enabled": true
+  },
+  "vars": {
+    // Public/anon values — safe to commit. RLS on Supabase enforces access.
+    "PUBLIC_SUPABASE_URL": "https://qwwrhesgbytefxufeiwj.supabase.co",
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq",
+    "ADMIN_USERNAME": "masaaki0820"
+    // ADMIN_PASSWORD and SUPABASE_SERVICE_ROLE_KEY must be added as
+    // Secrets — see the comment block above.
   }
 }
