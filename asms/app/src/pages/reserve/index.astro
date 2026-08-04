@@ -5,11 +5,19 @@ import { envFrom, getSupabase } from '@lib/supabase';
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
 
-// Load upcoming open slots (grouped by date for a very basic calendar view).
+// Always load the course menu — customers should see what we offer
+// even when no dates are on the calendar yet.
+const { data: courses } = await supabase
+  .from('courses')
+  .select('id, code, name, description, duration_min, price_regular, price_member, vehicle')
+  .eq('is_active', true)
+  .order('display_order');
+
+// Load any upcoming open slots (may be empty during month-end gaps).
 const today = new Date().toISOString().slice(0, 10);
-const { data: slots, error } = await supabase
+const { data: slots } = await supabase
   .from('slots')
-  .select('id, date, start_time, end_time, capacity, course_id, courses(name, code, vehicle)')
+  .select('id, date, start_time, end_time, capacity, course_id, courses(name, code)')
   .eq('status', 'open')
   .gte('date', today)
   .order('date')
@@ -23,132 +31,335 @@ for (const s of slots ?? []) {
   arr.push(s);
   byDate.set(s.date, arr);
 }
+const hasSlots = byDate.size > 0;
+
+// Next-schedule messaging: publish window is around the 25th of each month
+// for the following month. Compute what to tell people right now.
+const now = new Date();
+const day = now.getDate();
+const thisMonth = now.getMonth() + 1;
+const nextMonth = thisMonth === 12 ? 1 : thisMonth + 1;
+const monthAfterNext = nextMonth === 12 ? 1 : nextMonth + 1;
+
+let scheduleNotice: string;
+if (day < 25) {
+  scheduleNotice = `${nextMonth}月分のスケジュールは ${thisMonth}/25 頃に公開予定です。`;
+} else {
+  scheduleNotice = `${monthAfterNext}月分のスケジュールは ${nextMonth}/25 頃に公開予定です。`;
+}
+
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+function formatDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  return `${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+}
+function priceLabel(regular: number, member: number): string {
+  if (regular === member) return `¥${regular.toLocaleString()}`;
+  return `¥${regular.toLocaleString()} / 会員 ¥${member.toLocaleString()}`;
+}
+function vehicleLabel(v: string): string {
+  switch (v) {
+    case 'toyopet_kart': return 'トヨピーカート';
+    case 'rotax_micro': return 'Rotax Micro';
+    default: return '';
+  }
+}
 ---
 <Base title="予約 — 福岡キッズカートアカデミー">
   <main>
     <header class="hd">
-      <a class="back" href="/">‹ 戻る</a>
-      <h1>予約(β)</h1>
-      <p class="sub">開催日を選ぶ</p>
+      <a class="back" href="/">← ホーム</a>
+      <h1>予約 <span class="beta">β</span></h1>
+      <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
     </header>
 
-    {error ? (
-      <div class="empty">
-        <strong>読み込みエラー</strong>
-        <p>{error.message}</p>
+    <!-- Always-visible course menu -->
+    <section class="courses">
+      <div class="section-h">
+        <h2>コース一覧</h2>
+        <p>お子様の経験や目的に合わせて選べます</p>
       </div>
-    ) : byDate.size === 0 ? (
-      <div class="empty">
-        <strong>開催予定がありません</strong>
-        <p>スケジュール自動生成の cron が未実行、または全ての slots が cancelled 状態です。</p>
-        <p class="hint">
-          管理画面から <code>schedule_rules</code> を元に <code>slots</code> を生成してください。<br>
-          （Phase 1 実装で自動化予定）
-        </p>
-      </div>
-    ) : (
-      <div class="days">
-        {Array.from(byDate.entries()).map(([date, slots]) => (
-          <div class="day-card">
-            <div class="date">{formatDate(date)}</div>
-            <ul class="slots">
-              {slots.map((s) => (
-                <li>
-                  <span class="time">{s.start_time.slice(0, 5)}</span>
-                  <span class="course">{(s.courses as any)?.name ?? s.course_id.slice(0, 8)}</span>
-                  <span class="cap">残 {s.capacity}</span>
-                </li>
-              ))}
-            </ul>
+      <div class="course-grid">
+        {courses?.map((c) => (
+          <div class={`course c-${c.code}`}>
+            <div class="course-name">
+              {c.name}
+              {c.vehicle !== 'mini_default' && (
+                <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
+              )}
+            </div>
+            <div class="course-meta">
+              <span class="course-dur">{c.duration_min}分</span>
+              <span class="course-price">{priceLabel(c.price_regular, c.price_member)}</span>
+            </div>
+            {c.description && <p class="course-desc">{c.description}</p>}
           </div>
         ))}
       </div>
+      <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。</p>
+    </section>
+
+    {hasSlots ? (
+      <section class="dates">
+        <div class="section-h">
+          <h2>開催予定日を選ぶ</h2>
+          <p>ご希望の日付をタップして予約フローへ</p>
+        </div>
+        <div class="day-list">
+          {Array.from(byDate.entries()).map(([date, dateSlots]) => (
+            <div class="day-card">
+              <div class="day-head">{formatDate(date)}</div>
+              <ul class="slot-list">
+                {dateSlots.map((s) => (
+                  <li>
+                    <span class="slot-time">{s.start_time.slice(0, 5)}</span>
+                    <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
+                    <span class="slot-cap">残 {s.capacity}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <p class="dev-note">※ この画面は開発中です。日付タップの予約フロー（保護者情報 → 参加者 → 安全ルール → 電子署名 → 完了）は近日実装。</p>
+      </section>
+    ) : (
+      <section class="empty">
+        <div class="empty-card">
+          <div class="empty-icon">📅</div>
+          <h2>現在、公開中の開催予定はありません</h2>
+          <p class="notice">{scheduleNotice}</p>
+          <p class="policy">スケジュール更新は原則毎月 <strong>25 日頃</strong>です。</p>
+        </div>
+
+        <div class="cta-card">
+          <h3>今すぐ予約したい方へ</h3>
+          <p>現在の予約は Reserva（旧予約サイト）でも受け付けています。</p>
+          <a class="btn btn-primary" href="https://reserva.be/kidskart/reserve" target="_blank" rel="noopener">
+            Reserva で予約する →
+          </a>
+          <a class="btn btn-ghost" href="tel:0929271177">
+            📞 電話で問い合わせ (092-927-1177)
+          </a>
+        </div>
+
+        <div class="notify-card">
+          <h3>🔔 開催のお知らせを受け取る</h3>
+          <p>新しいスケジュールが公開されたら通知を希望される方は、下記いずれかでご登録ください:</p>
+          <div class="notify-btns">
+            <a class="btn btn-ghost" href="mailto:info@kidskart.org?subject=開催通知希望">
+              ✉️ メール登録
+            </a>
+            <a class="btn btn-ghost" href="https://line.me/R/ti/p/@kidskart" target="_blank" rel="noopener">
+              💬 LINE 友達追加
+            </a>
+          </div>
+        </div>
+      </section>
     )}
 
-    <footer>
-      <p class="tip">この画面は実装初期版です。9 ステップフローは順次追加します。</p>
+    <footer class="ft">
+      <a href="https://kidskart.org/">← kidskart.org へ戻る</a>
     </footer>
   </main>
 </Base>
 
-<script is:inline define:vars={{}}>
-  function formatDate(iso) {
-    const d = new Date(iso);
-    const wd = ['日','月','火','水','木','金','土'][d.getDay()];
-    return `${d.getMonth()+1}月${d.getDate()}日 (${wd})`;
-  }
-  window.formatDate = formatDate;
-</script>
-
-<script>
-  // Astro renders server-side; format on client for correct locale.
-  document.querySelectorAll<HTMLElement>('.date').forEach((el) => {
-    const iso = el.textContent?.trim();
-    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-      const d = new Date(iso);
-      const wd = ['日','月','火','水','木','金','土'][d.getDay()];
-      el.textContent = `${d.getMonth()+1}月${d.getDate()}日 (${wd})`;
-    }
-  });
-</script>
-
 <style>
   main {
-    max-width: 480px;
+    max-width: 640px;
     margin: 0 auto;
     padding: 1.5rem 1.25rem 3rem;
   }
   .hd {
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--line);
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
   }
   .back {
     display: inline-block;
-    font-size: 0.78rem;
+    font-size: .78rem;
     color: var(--ink-3);
     text-decoration: none;
-    margin-bottom: 0.5rem;
+    margin-bottom: .5rem;
   }
-  h1 { margin: 0 0 0.3rem; font-size: 1.4rem; font-weight: 800; }
-  .sub { margin: 0; color: var(--ink-2); font-size: 0.82rem; }
+  h1 {
+    margin: 0 0 .3rem;
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: -.01em;
+  }
+  .beta {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: .58rem;
+    color: var(--sky-deep);
+    background: var(--sky-mist);
+    padding: 2px 6px;
+    border-radius: 4px;
+    vertical-align: 6px;
+    letter-spacing: .05em;
+  }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
 
-  .empty {
+  section { margin-bottom: 2rem; }
+  .section-h { margin-bottom: 1rem; }
+  .section-h h2 { margin: 0 0 .2rem; font-size: 1.1rem; font-weight: 800; letter-spacing: -.005em; }
+  .section-h p { margin: 0; font-size: .78rem; color: var(--ink-3); }
+
+  /* Courses */
+  .course-grid {
+    display: flex;
+    flex-direction: column;
+    gap: .7rem;
+  }
+  .course {
     background: var(--bg);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 1.4rem;
-    text-align: center;
-    color: var(--ink-2);
+    border-left: 4px solid var(--sky);
+    border-radius: 12px;
+    padding: .9rem 1.1rem;
   }
-  .empty strong { color: var(--ink); display: block; margin-bottom: 0.4rem; font-size: 1rem; }
-  .empty p { margin: 0.3rem 0; font-size: 0.82rem; }
-  .empty .hint { color: var(--ink-3); font-size: 0.74rem; margin-top: 0.8rem; }
-  .empty code { font-family: var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; font-size: 0.78rem; }
+  .course.c-repeat_60 { border-left-color: var(--lime-deep); }
+  .course.c-repeat_30 { border-left-color: var(--lime); }
+  .course.c-challenge_ts { border-left-color: var(--sun); }
+  .course.c-challenge_rx { border-left-color: var(--orange); }
+  .course-name {
+    font-weight: 800;
+    font-size: .95rem;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .course-veh {
+    font-size: .68rem;
+    background: var(--bg-3);
+    color: var(--ink-2);
+    padding: 2px 7px;
+    border-radius: 100px;
+    font-weight: 700;
+  }
+  .course-meta {
+    display: flex;
+    gap: 1rem;
+    align-items: baseline;
+    margin: .3rem 0;
+    font-family: var(--mono);
+    font-size: .8rem;
+  }
+  .course-dur { color: var(--ink-3); font-size: .74rem; }
+  .course-price { color: var(--sky-deep); font-weight: 700; }
+  .course-desc { margin: .3rem 0 0; font-size: .78rem; color: var(--ink-2); line-height: 1.6; }
+  .member-note {
+    font-size: .74rem;
+    color: var(--ink-2);
+    background: linear-gradient(135deg, rgba(255, 201, 67, .08), rgba(255, 138, 61, .04));
+    border: 1px solid rgba(255, 201, 67, .3);
+    padding: .7rem .9rem;
+    border-radius: 10px;
+    margin: 1rem 0 0;
+    line-height: 1.6;
+  }
+  .member-note strong { color: var(--orange-deep); }
 
-  .days { display: flex; flex-direction: column; gap: 0.8rem; }
+  /* Dates (when slots exist) */
+  .day-list { display: flex; flex-direction: column; gap: .7rem; }
   .day-card {
     background: var(--bg);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 1rem 1.2rem;
-    box-shadow: 0 2px 6px rgba(22,48,72,0.04);
+    border-radius: 12px;
+    padding: .9rem 1.1rem;
   }
-  .date { font-weight: 800; color: var(--ink); margin-bottom: 0.6rem; font-family: var(--mono); }
-  .slots { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
-  .slots li {
+  .day-head { font-weight: 800; color: var(--ink); font-family: var(--mono); margin-bottom: .5rem; }
+  .slot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+  .slot-list li {
     display: grid;
     grid-template-columns: auto 1fr auto;
-    gap: 0.6rem;
-    padding: 0.5rem 0.7rem;
+    gap: .5rem;
+    padding: .45rem .6rem;
     background: var(--bg-2);
     border-radius: 8px;
-    font-size: 0.8rem;
+    font-size: .78rem;
   }
-  .time { font-family: var(--mono); font-weight: 700; color: var(--ink); }
-  .course { color: var(--ink-2); }
-  .cap { font-family: var(--mono); font-size: 0.7rem; color: var(--lime-deep); font-weight: 700; }
+  .slot-time { font-family: var(--mono); font-weight: 700; color: var(--ink); }
+  .slot-course { color: var(--ink-2); }
+  .slot-cap { font-family: var(--mono); font-size: .7rem; color: var(--lime-deep); font-weight: 700; }
+  .dev-note {
+    font-size: .7rem;
+    color: var(--ink-3);
+    text-align: center;
+    padding: .8rem;
+    background: var(--bg-2);
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
 
-  footer { margin-top: 2rem; text-align: center; }
-  .tip { font-size: 0.7rem; color: var(--ink-3); }
+  /* Empty state */
+  .empty { display: flex; flex-direction: column; gap: 1rem; }
+  .empty-card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.5rem 1.2rem;
+    text-align: center;
+  }
+  .empty-icon { font-size: 2rem; margin-bottom: .4rem; }
+  .empty-card h2 { margin: 0 0 .8rem; font-size: 1.05rem; color: var(--ink); font-weight: 800; }
+  .empty-card .notice {
+    margin: 0 0 .5rem;
+    padding: .7rem .9rem;
+    background: var(--sky-mist);
+    border-radius: 10px;
+    color: var(--ink);
+    font-size: .84rem;
+    font-weight: 700;
+  }
+  .empty-card .policy { margin: 0; font-size: .74rem; color: var(--ink-3); }
+
+  .cta-card, .notify-card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.2rem;
+  }
+  .cta-card h3, .notify-card h3 {
+    margin: 0 0 .5rem;
+    font-size: .95rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .cta-card p, .notify-card p {
+    margin: 0 0 .8rem;
+    font-size: .8rem;
+    color: var(--ink-2);
+    line-height: 1.6;
+  }
+  .cta-card .btn, .notify-card .btn { margin-bottom: .5rem; }
+  .notify-btns { display: flex; flex-direction: column; gap: .5rem; }
+
+  .btn {
+    display: block;
+    text-decoration: none;
+    text-align: center;
+    padding: .8rem 1.2rem;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: .88rem;
+    transition: transform .15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(229, 99, 26, .3);
+  }
+  .btn-ghost {
+    background: var(--bg-2);
+    color: var(--ink);
+    border: 1.5px solid var(--line);
+  }
+
+  .ft { margin-top: 2.5rem; text-align: center; font-size: .74rem; }
+  .ft a { color: var(--sky-deep); text-decoration: none; }
 </style>
