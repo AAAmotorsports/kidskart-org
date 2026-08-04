@@ -22,9 +22,11 @@ if (Astro.request.method === 'POST') {
   const op = form.get('op') as string;
   const backYear = (form.get('year') as string) || String(year);
   const backMonth = (form.get('month') as string) || String(month);
+  const backMode = (form.get('mode') as string) || '';
 
   const finalize = (msg: string, err: string) => {
     const q = new URLSearchParams({ year: backYear, month: backMonth });
+    if (backMode) q.set('mode', backMode);
     if (msg) q.set('msg', msg);
     if (err) q.set('err', err);
     return Astro.redirect(`/admin/schedule?${q.toString()}`);
@@ -72,6 +74,69 @@ if (Astro.request.method === 'POST') {
     return error ? finalize('', fmtErr(error)) : finalize('例外設定を削除しました', '');
   }
 
+  if (op === 'add_closure_range') {
+    const fromDate = (form.get('from_date') as string) || '';
+    const toDate = (form.get('to_date') as string) || '';
+    const title = ((form.get('title') as string) || '').trim() || null;
+    if (!fromDate || !toDate) return finalize('', '開始日と終了日は必須です');
+    if (fromDate > toDate) return finalize('', '終了日は開始日以降にしてください');
+
+    // Enumerate every day in [fromDate, toDate] and dedupe against existing closures.
+    const days: string[] = [];
+    const cur = new Date(fromDate + 'T00:00:00');
+    const end = new Date(toDate + 'T00:00:00');
+    while (cur <= end) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const d = String(cur.getDate()).padStart(2, '0');
+      days.push(`${y}-${m}-${d}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (days.length > 62) return finalize('', '一度に登録できるのは62日までです');
+
+    const { data: existing } = await supabase
+      .from('schedule_exceptions')
+      .select('date')
+      .eq('type', 'closure')
+      .in('date', days);
+    const seen = new Set((existing ?? []).map((r: any) => r.date));
+    const rows = days
+      .filter((day) => !seen.has(day))
+      .map((day) => ({ type: 'closure', date: day, title }));
+
+    if (rows.length === 0) {
+      return finalize('この期間はすでに全て休業日として登録済みです', '');
+    }
+    const { error } = await supabase.from('schedule_exceptions').insert(rows);
+    return error
+      ? finalize('', fmtErr(error))
+      : finalize(`${rows.length}日間を休業日として追加しました`, '');
+  }
+
+  if (op === 'suppress_slot') {
+    const date = (form.get('date') as string) || '';
+    const startTime = (form.get('start_time') as string) || '';
+    const courseCode = (form.get('course_code') as string) || '';
+    if (!date || !startTime || !courseCode) return finalize('', '抑止に必要な情報が不足しています');
+
+    const { data: course, error: cErr } = await supabase
+      .from('courses')
+      .select('id')
+      .eq('code', courseCode)
+      .maybeSingle();
+    if (cErr || !course) return finalize('', 'コースが見つかりません');
+
+    const { error } = await supabase.from('schedule_exceptions').insert({
+      type: 'suppress',
+      date,
+      start_time: startTime,
+      course_id: course.id,
+    });
+    return error
+      ? finalize('', fmtErr(error))
+      : finalize(`${date} ${startTime.slice(0,5)} の枠を抑止しました`, '');
+  }
+
   if (op === 'bulk_holidays') {
     const yr = parseInt(backYear, 10);
     const mo = parseInt(backMonth, 10);
@@ -116,6 +181,7 @@ function labelType(t: string): string {
       challenge: 'チャレンジ日',
       event: '特別イベント',
       extra_slot: '追加枠',
+      suppress: '枠抑止',
     } as Record<string, string>
   )[t] ?? t;
 }
@@ -261,6 +327,7 @@ const addDefaultDate = monthStart;
                 <th>コース</th>
                 <th class="num">定員</th>
                 <th>状態</th>
+                <th class="act-col"></th>
               </tr>
             </thead>
             <tbody>
@@ -276,6 +343,21 @@ const addDefaultDate = monthStart;
                   <td class="status">
                     {actionLabel[r.action] ?? r.action}
                     {r.reason && <span class="reason"> · {r.reason}</span>}
+                  </td>
+                  <td class="act-col">
+                    {r.action === 'would_create' && r.start_time && r.course_code && (
+                      <form method="post" class="row-suppress"
+                            onsubmit="return confirm('この枠を生成対象から外しますか？');">
+                        <input type="hidden" name="op" value="suppress_slot" />
+                        <input type="hidden" name="year" value={year} />
+                        <input type="hidden" name="month" value={month} />
+                        <input type="hidden" name="mode" value="preview" />
+                        <input type="hidden" name="date" value={r.slot_date} />
+                        <input type="hidden" name="start_time" value={r.start_time} />
+                        <input type="hidden" name="course_code" value={r.course_code} />
+                        <button type="submit" class="del-btn" title="この枠を抑止" aria-label="この枠を抑止">×</button>
+                      </form>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -301,17 +383,44 @@ const addDefaultDate = monthStart;
     <section class="exceptions">
       <div class="ex-hd">
         <h2>{year}年{month}月 の例外設定</h2>
-        {holidaysAvailable && monthlyHolidays.length > 0 && (
-          <form method="post" class="bulk-form">
-            <input type="hidden" name="op" value="bulk_holidays" />
-            <input type="hidden" name="year" value={year} />
-            <input type="hidden" name="month" value={month} />
-            <button type="submit" class="btn-mini">
-              🎌 {monthlyHolidays.length}件の祝日を休業日に一括追加
-            </button>
-          </form>
-        )}
+        <div class="hd-actions">
+          {holidaysAvailable && monthlyHolidays.length > 0 && (
+            <form method="post" class="bulk-form">
+              <input type="hidden" name="op" value="bulk_holidays" />
+              <input type="hidden" name="year" value={year} />
+              <input type="hidden" name="month" value={month} />
+              <input type="hidden" name="mode" value={mode} />
+              <button type="submit" class="btn-mini">
+                🎌 {monthlyHolidays.length}件の祝日を休業日に一括追加
+              </button>
+            </form>
+          )}
+        </div>
       </div>
+
+      <details class="add-range-wrap">
+        <summary>📅 期間で休業日を一括追加（お盆・GW など）</summary>
+        <form method="post" class="range-form">
+          <input type="hidden" name="op" value="add_closure_range" />
+          <input type="hidden" name="year" value={year} />
+          <input type="hidden" name="month" value={month} />
+          <input type="hidden" name="mode" value={mode} />
+          <div class="range-row">
+            <label>開始日
+              <input type="date" name="from_date" value={monthStart} required />
+            </label>
+            <label>終了日
+              <input type="date" name="to_date" value={monthStart} required />
+            </label>
+          </div>
+          <div class="field">
+            <label>タイトル（任意）</label>
+            <input type="text" name="title" maxlength="80"
+              placeholder="例: お盆休み、GW休業" />
+          </div>
+          <button type="submit" class="btn btn-primary">期間で休業日追加</button>
+        </form>
+      </details>
 
       {exceptions && exceptions.length > 0 ? (
         <ul class="ex-list">
@@ -327,6 +436,7 @@ const addDefaultDate = monthStart;
                 <input type="hidden" name="id" value={ex.id} />
                 <input type="hidden" name="year" value={year} />
                 <input type="hidden" name="month" value={month} />
+                <input type="hidden" name="mode" value={mode} />
                 <button type="submit" class="del-btn" aria-label="削除">×</button>
               </form>
             </li>
@@ -342,6 +452,7 @@ const addDefaultDate = monthStart;
           <input type="hidden" name="op" value="add_exception" />
           <input type="hidden" name="year" value={year} />
           <input type="hidden" name="month" value={month} />
+          <input type="hidden" name="mode" value={mode} />
 
           <div class="field type-field">
             <label>種別 *</label>
@@ -526,6 +637,8 @@ const addDefaultDate = monthStart;
   .slot-table .row-muted td { color: var(--ink-3); }
   .slot-table .status { font-size: .74rem; }
   .slot-table .reason { color: var(--ink-3); }
+  .slot-table .act-col { width: 32px; text-align: center; }
+  .row-suppress { margin: 0; display: inline; }
 
   .apply-form { text-align: center; margin-bottom: 2rem; }
   .apply-form .btn-big { padding: 1rem 1.4rem; font-size: 1rem; width: 100%; max-width: 480px; }
@@ -541,6 +654,38 @@ const addDefaultDate = monthStart;
   }
   .ex-hd { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; margin-bottom: .7rem; }
   .exceptions h2 { margin: 0; font-size: .95rem; font-weight: 800; }
+  .hd-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+  .add-range-wrap {
+    margin-bottom: 1rem; background: var(--bg-2); border-radius: 8px;
+    padding: .6rem .8rem;
+  }
+  .add-range-wrap > summary {
+    cursor: pointer; font-size: .78rem; font-weight: 700; color: var(--ink-2);
+    padding: .2rem 0;
+    list-style: none;
+  }
+  .add-range-wrap > summary::-webkit-details-marker { display: none; }
+  .range-form { display: grid; gap: .6rem; margin-top: .6rem; }
+  .range-row { display: flex; gap: .8rem; flex-wrap: wrap; }
+  .range-row label {
+    display: flex; flex-direction: column; gap: .25rem;
+    font-size: .7rem; font-weight: 700; color: var(--ink-2);
+  }
+  .range-row input {
+    padding: .45rem .6rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    font-family: var(--mono);
+    background: var(--bg);
+  }
+  .range-form > .field input {
+    padding: .45rem .6rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .range-form > button { justify-self: start; }
+
+  .ex-suppress { background: rgba(160,160,160,.15); color: var(--ink-3); }
 
   .bulk-form { margin: 0; }
   .btn-mini {
