@@ -23,9 +23,11 @@ interface Env {
   PUBLIC_APP_URL?: string;
   PUBLIC_RESERVE_PATH?: string;
 
-  // Simple admin gate for MVP — will be replaced by Supabase Auth later
+  // Simple admin gate for MVP — will be replaced by Supabase Auth later.
+  // Password is stored as a SHA-256 hex digest so the plain value never
+  // leaves the operator's machine.
   ADMIN_USERNAME?: string;
-  ADMIN_PASSWORD?: string;
+  ADMIN_PASSWORD_HASH?: string;
 }
 
 declare namespace App {

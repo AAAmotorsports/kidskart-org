@@ -33,8 +33,15 @@
     // Public/anon values — safe to commit. RLS on Supabase enforces access.
     "PUBLIC_SUPABASE_URL": "https://qwwrhesgbytefxufeiwj.supabase.co",
     "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq",
-    "ADMIN_USERNAME": "masaaki0820"
-    // ADMIN_PASSWORD and SUPABASE_SERVICE_ROLE_KEY must be added as
-    // Secrets — see the comment block above.
+    // Admin gate — the password itself is NEVER stored, only its SHA-256
+    // digest. The middleware hashes whatever the client sends and compares
+    // to this value, so committing the hash to a public repo leaks nothing
+    // beyond the fact that the site has admin auth. To rotate: pick a new
+    // password, `printf '<pw>' | sha256sum` on any Unix box, replace here.
+    "ADMIN_USERNAME": "masaaki0820",
+    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88"
+    // SUPABASE_SERVICE_ROLE_KEY must still be added as a proper Cloudflare
+    // secret — write endpoints that bypass RLS need it and it must not
+    // land in this file.
   }
 }
