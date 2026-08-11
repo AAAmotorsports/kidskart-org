@@ -13,7 +13,7 @@ const { data: courses } = await supabase
   .eq('is_active', true)
   .order('display_order');
 
-// Load any upcoming open slots (may be empty during month-end gaps).
+// Load open upcoming slots (up to 4 months out).
 const today = new Date().toISOString().slice(0, 10);
 const { data: slots } = await supabase
   .from('slots')
@@ -22,7 +22,7 @@ const { data: slots } = await supabase
   .gte('date', today)
   .order('date')
   .order('start_time')
-  .limit(100);
+  .limit(400);
 
 type Slot = NonNullable<typeof slots>[number];
 const byDate = new Map<string, Slot[]>();
@@ -33,20 +33,72 @@ for (const s of slots ?? []) {
 }
 const hasSlots = byDate.size > 0;
 
+// Which month to render the calendar for
+const url = new URL(Astro.request.url);
+const urlMonth = url.searchParams.get('month');
+let visYear: number;
+let visMonth: number;
+if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+  const [y, m] = urlMonth.split('-').map(Number);
+  visYear = y; visMonth = m;
+} else if (slots && slots.length > 0) {
+  const d = new Date(slots[0].date + 'T00:00:00');
+  visYear = d.getFullYear();
+  visMonth = d.getMonth() + 1;
+} else {
+  const n = new Date();
+  visYear = n.getFullYear();
+  visMonth = n.getMonth() + 1;
+}
+
+const monthStart = `${visYear}-${String(visMonth).padStart(2, '0')}-01`;
+const daysInMonth = new Date(visYear, visMonth, 0).getDate();
+const monthEnd = `${visYear}-${String(visMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+const visSlots = (slots ?? []).filter((s) => s.date >= monthStart && s.date <= monthEnd);
+const visByDate = new Map<string, Slot[]>();
+for (const s of visSlots) {
+  const arr = visByDate.get(s.date) ?? [];
+  arr.push(s);
+  visByDate.set(s.date, arr);
+}
+
+const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+const monthsWithSlots = new Set<string>();
+for (const s of slots ?? []) {
+  monthsWithSlots.add(s.date.slice(0, 7));
+}
+const prevM = visMonth === 1 ? { y: visYear - 1, m: 12 } : { y: visYear, m: visMonth - 1 };
+const nextM = visMonth === 12 ? { y: visYear + 1, m: 1 } : { y: visYear, m: visMonth + 1 };
+const hasPrev = monthsWithSlots.has(monthKey(prevM.y, prevM.m));
+const hasNext = monthsWithSlots.has(monthKey(nextM.y, nextM.m));
+
+// Calendar cells: leading blanks then day entries. Sunday-start (JS default).
+type Cell = { date: string; dayNum: number; count: number; dow: number } | null;
+const firstDow = new Date(visYear, visMonth - 1, 1).getDay();
+const cells: Cell[] = [];
+for (let i = 0; i < firstDow; i++) cells.push(null);
+for (let dnum = 1; dnum <= daysInMonth; dnum++) {
+  const iso = `${visYear}-${String(visMonth).padStart(2, '0')}-${String(dnum).padStart(2, '0')}`;
+  cells.push({
+    date: iso,
+    dayNum: dnum,
+    count: visByDate.get(iso)?.length ?? 0,
+    dow: new Date(visYear, visMonth - 1, dnum).getDay(),
+  });
+}
+while (cells.length % 7 !== 0) cells.push(null);
+
 // Next-schedule messaging: publish window is around the 25th of each month
-// for the following month. Compute what to tell people right now.
+// for the following month.
 const now = new Date();
 const day = now.getDate();
 const thisMonth = now.getMonth() + 1;
-const nextMonth = thisMonth === 12 ? 1 : thisMonth + 1;
-const monthAfterNext = nextMonth === 12 ? 1 : nextMonth + 1;
-
-let scheduleNotice: string;
-if (day < 25) {
-  scheduleNotice = `${nextMonth}月分のスケジュールは ${thisMonth}/25 頃に公開予定です。`;
-} else {
-  scheduleNotice = `${monthAfterNext}月分のスケジュールは ${nextMonth}/25 頃に公開予定です。`;
-}
+const nextMonthNum = thisMonth === 12 ? 1 : thisMonth + 1;
+const monthAfterNext = nextMonthNum === 12 ? 1 : nextMonthNum + 1;
+const scheduleNotice = day < 25
+  ? `${nextMonthNum}月分のスケジュールは ${thisMonth}/25 頃に公開予定です。`
+  : `${monthAfterNext}月分のスケジュールは ${nextMonthNum}/25 頃に公開予定です。`;
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
 function formatDate(iso: string): string {
@@ -64,6 +116,8 @@ function vehicleLabel(v: string): string {
     default: return '';
   }
 }
+
+const visSortedDates = Array.from(visByDate.keys()).sort();
 ---
 <Base title="予約 — 福岡キッズカートアカデミー">
   <main>
@@ -73,7 +127,6 @@ function vehicleLabel(v: string): string {
       <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
     </header>
 
-    <!-- Always-visible course menu -->
     <section class="courses">
       <div class="section-h">
         <h2>コース一覧</h2>
@@ -103,27 +156,72 @@ function vehicleLabel(v: string): string {
       <section class="dates">
         <div class="section-h">
           <h2>開催予定日を選ぶ</h2>
-          <p>ご希望の日付をタップして予約フローへ</p>
+          <p>カレンダーの緑の日をタップして時間帯を選んでください</p>
         </div>
-        <div class="day-list">
-          {Array.from(byDate.entries()).map(([date, dateSlots]) => (
-            <div class="day-card">
-              <div class="day-head">{formatDate(date)}</div>
-              <ul class="slot-list">
-                {dateSlots.map((s) => (
-                  <li>
-                    <a class="slot-link" href={`/reserve/${s.id}`}>
-                      <span class="slot-time">{s.start_time.slice(0, 5)}</span>
-                      <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
-                      <span class="slot-cap">残 {s.capacity}</span>
-                      <span class="slot-arrow">→</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+
+        <div class="cal-wrap">
+          <div class="cal-hd">
+            {hasPrev ? (
+              <a class="cal-nav" href={`/reserve/?month=${monthKey(prevM.y, prevM.m)}`}>← {prevM.m}月</a>
+            ) : (
+              <span class="cal-nav disabled">← {prevM.m}月</span>
+            )}
+            <div class="cal-title">{visYear}年 {visMonth}月</div>
+            {hasNext ? (
+              <a class="cal-nav" href={`/reserve/?month=${monthKey(nextM.y, nextM.m)}`}>{nextM.m}月 →</a>
+            ) : (
+              <span class="cal-nav disabled">{nextM.m}月 →</span>
+            )}
+          </div>
+
+          <div class="cal-grid">
+            {weekdayJa.map((w, i) => (
+              <div class={`cal-dow ${i === 0 ? 'sun' : ''} ${i === 6 ? 'sat' : ''}`}>{w}</div>
+            ))}
+            {cells.map((cell) => (
+              cell === null
+                ? <div class="cal-cell blank" />
+                : (cell.count > 0
+                    ? (
+                      <a class={`cal-cell has ${cell.dow === 0 ? 'sun' : ''} ${cell.dow === 6 ? 'sat' : ''}`}
+                         href={`#day-${cell.date}`}>
+                        <span class="cal-day">{cell.dayNum}</span>
+                        <span class="cal-count">{cell.count}枠</span>
+                      </a>
+                    )
+                    : (
+                      <div class={`cal-cell muted ${cell.dow === 0 ? 'sun' : ''} ${cell.dow === 6 ? 'sat' : ''}`}>
+                        <span class="cal-day">{cell.dayNum}</span>
+                      </div>
+                    )
+                )
+            ))}
+          </div>
         </div>
+
+        {visSortedDates.length === 0 ? (
+          <p class="no-in-month">{visYear}年{visMonth}月は開催予定がありません。前月/翌月をお試しください。</p>
+        ) : (
+          <div class="day-list">
+            {visSortedDates.map((date) => (
+              <div class="day-card" id={`day-${date}`}>
+                <div class="day-head">{formatDate(date)}</div>
+                <ul class="slot-list">
+                  {visByDate.get(date)!.map((s) => (
+                    <li>
+                      <a class="slot-link" href={`/reserve/${s.id}`}>
+                        <span class="slot-time">{s.start_time.slice(0, 5)}</span>
+                        <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
+                        <span class="slot-cap">残 {s.capacity}</span>
+                        <span class="slot-arrow">→</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     ) : (
       <section class="empty">
@@ -265,13 +363,84 @@ function vehicleLabel(v: string): string {
   }
   .member-note strong { color: var(--orange-deep); }
 
-  /* Dates (when slots exist) */
+  /* Calendar */
+  .cal-wrap {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem; margin-bottom: 1.2rem;
+  }
+  .cal-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .8rem; gap: .5rem;
+  }
+  .cal-nav {
+    font-size: .82rem; font-weight: 700; color: var(--sky-deep);
+    text-decoration: none;
+    padding: .3rem .6rem; border-radius: 6px;
+    transition: background .1s;
+  }
+  .cal-nav:hover { background: var(--sky-mist); }
+  .cal-nav.disabled { color: var(--ink-3); cursor: default; opacity: .4; }
+  .cal-nav.disabled:hover { background: transparent; }
+  .cal-title {
+    font-weight: 800; font-size: 1rem; color: var(--ink);
+    font-family: var(--mono);
+  }
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cal-dow {
+    text-align: center; font-size: .68rem; font-weight: 800;
+    color: var(--ink-3); padding: .3rem 0;
+    letter-spacing: .05em;
+  }
+  .cal-dow.sun { color: var(--rose); }
+  .cal-dow.sat { color: var(--sky-deep); }
+  .cal-cell {
+    aspect-ratio: 1 / 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    background: var(--bg-2); border-radius: 6px;
+    font-family: var(--mono);
+    color: var(--ink-3);
+    text-decoration: none;
+  }
+  .cal-cell .cal-day { font-size: .9rem; font-weight: 700; }
+  .cal-cell.sun .cal-day { color: var(--rose); }
+  .cal-cell.sat .cal-day { color: var(--sky-deep); }
+  .cal-cell.blank { background: transparent; }
+  .cal-cell.muted .cal-day { color: var(--ink-3); }
+  .cal-cell.has {
+    background: linear-gradient(135deg, rgba(164, 214, 94, .18), rgba(164, 214, 94, .06));
+    border: 1.5px solid var(--lime);
+    color: var(--lime-deep);
+    cursor: pointer;
+    transition: transform .1s, box-shadow .1s;
+  }
+  .cal-cell.has:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(164, 214, 94, .25);
+  }
+  .cal-cell.has .cal-day { color: var(--ink); }
+  .cal-cell.has .cal-count {
+    font-size: .62rem; font-weight: 800;
+    color: var(--lime-deep);
+    background: rgba(255,255,255,.6);
+    padding: 1px 5px; border-radius: 100px;
+  }
+  .no-in-month {
+    text-align: center; color: var(--ink-3); font-size: .82rem;
+    padding: 1rem; background: var(--bg-2); border-radius: 8px;
+  }
+
+  /* Day cards (below calendar) */
   .day-list { display: flex; flex-direction: column; gap: .7rem; }
   .day-card {
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: 12px;
     padding: .9rem 1.1rem;
+    scroll-margin-top: .8rem;
   }
   .day-head { font-weight: 800; color: var(--ink); font-family: var(--mono); margin-bottom: .5rem; }
   .slot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
@@ -363,4 +532,6 @@ function vehicleLabel(v: string): string {
 
   .ft { margin-top: 2.5rem; text-align: center; font-size: .74rem; }
   .ft a { color: var(--sky-deep); text-decoration: none; }
+
+  html { scroll-behavior: smooth; }
 </style>
