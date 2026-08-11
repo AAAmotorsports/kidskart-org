@@ -1,0 +1,178 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const { reservationId } = Astro.params;
+
+const { data: res } = await supabase
+  .from('reservations')
+  .select(`
+    id, reservation_number, status, price_tier, total_amount, cancel_token, created_at,
+    slots(date, start_time, end_time, courses(code, name)),
+    guardians(name, email, phone),
+    reservation_participants(name_snapshot, kana_snapshot, age_at_booking)
+  `)
+  .eq('id', reservationId)
+  .maybeSingle();
+
+if (!res) {
+  return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
+}
+
+const slot: any = res.slots ?? {};
+const course: any = slot.courses ?? {};
+const guardian: any = res.guardians ?? {};
+const participants: any[] = (res.reservation_participants as any[]) ?? [];
+
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+const d = new Date(slot.date + 'T00:00:00');
+const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+const timeLabel = `${slot.start_time?.slice(0, 5) ?? ''}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}`;
+
+const isPending = res.status === 'pending_approval';
+---
+<Base title={`予約${isPending ? '受付' : '完了'} — ${res.reservation_number}`}>
+  <main>
+    <header class="hd">
+      <div class={`status-icon ${isPending ? 'pending' : 'ok'}`}>
+        {isPending ? '⏳' : '✅'}
+      </div>
+      <h1>{isPending ? 'ご予約を受付ました' : 'ご予約が確定しました'}</h1>
+      <p class="sub">
+        {isPending
+          ? '当社確認後、確定通知をお送りします。しばらくお待ちください。'
+          : '当日、時間に余裕を持ってお越しください。'}
+      </p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <span class="k">予約番号</span>
+        <span class="v mono big">{res.reservation_number}</span>
+      </div>
+      <div class="row">
+        <span class="k">状態</span>
+        <span class={`v badge ${isPending ? 'badge-pending' : 'badge-confirmed'}`}>
+          {isPending ? '承認待ち' : '確定'}
+        </span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>予約枠</h2>
+      <div class="row"><span class="k">コース</span><span class="v">{course.name}</span></div>
+      <div class="row"><span class="k">日付</span><span class="v mono">{dateLabel}</span></div>
+      <div class="row"><span class="k">時間</span><span class="v mono">{timeLabel}</span></div>
+      <div class="row"><span class="k">料金</span><span class="v mono">¥{res.total_amount.toLocaleString()}（{res.price_tier === 'member' ? '会員' : '一般'} × {participants.length}名）</span></div>
+    </section>
+
+    <section class="card">
+      <h2>参加者（{participants.length}名）</h2>
+      <ul class="p-list">
+        {participants.map((p, i) => (
+          <li>
+            <span class="p-idx">{i + 1}.</span>
+            <span class="p-name">{p.name_snapshot}</span>
+            <span class="p-kana">（{p.kana_snapshot}）</span>
+            <span class="p-age">{p.age_at_booking}歳</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>保護者連絡先</h2>
+      <div class="row"><span class="k">お名前</span><span class="v">{guardian.name}</span></div>
+      <div class="row"><span class="k">メール</span><span class="v mono">{guardian.email}</span></div>
+      <div class="row"><span class="k">電話</span><span class="v mono">{guardian.phone}</span></div>
+    </section>
+
+    <div class="notice">
+      💌 確認メールの自動送信は現在準備中です。ご不明な点は <a href="tel:0929271177">092-927-1177</a> までお問い合わせください。
+    </div>
+
+    <div class="cta">
+      <a class="btn btn-primary" href="/reserve/">別の日程を予約する</a>
+      <a class="btn btn-ghost" href="https://kidskart.org/">kidskart.org へ戻る</a>
+    </div>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 640px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+
+  .hd { text-align: center; margin-bottom: 1.5rem; }
+  .status-icon {
+    font-size: 3rem; margin-bottom: .3rem;
+  }
+  .status-icon.ok { color: var(--lime-deep); }
+  .status-icon.pending { color: var(--sun); }
+  h1 { margin: 0 0 .4rem; font-size: 1.4rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; line-height: 1.6; }
+
+  .card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1.15rem; margin-bottom: .8rem;
+  }
+  .card h2 {
+    margin: 0 0 .5rem; font-size: .82rem; font-weight: 800; color: var(--sky-deep);
+    letter-spacing: .05em; text-transform: uppercase;
+  }
+  .row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: .5rem; padding: .35rem 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: .84rem;
+  }
+  .row:last-child { border-bottom: none; }
+  .k { color: var(--ink-3); font-size: .74rem; font-weight: 700; }
+  .v { color: var(--ink); }
+  .mono { font-family: var(--mono); }
+  .big { font-size: 1.15rem; font-weight: 800; color: var(--sky-deep); }
+  .badge {
+    padding: 3px 10px; border-radius: 100px;
+    font-size: .72rem; font-weight: 800;
+  }
+  .badge-confirmed { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .badge-pending { background: rgba(255,201,67,.2); color: var(--orange-deep); }
+
+  .p-list { list-style: none; margin: 0; padding: 0; }
+  .p-list li {
+    display: flex; gap: .5rem; align-items: baseline;
+    padding: .35rem 0; border-bottom: 1px dashed var(--line);
+    font-size: .84rem;
+  }
+  .p-list li:last-child { border-bottom: none; }
+  .p-idx { font-family: var(--mono); color: var(--ink-3); }
+  .p-name { font-weight: 700; }
+  .p-kana { color: var(--ink-3); font-size: .74rem; }
+  .p-age { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--ink-2); }
+
+  .notice {
+    background: rgba(255,201,67,.1); border: 1px solid rgba(255,201,67,.35);
+    padding: .8rem .95rem; border-radius: 10px;
+    font-size: .78rem; line-height: 1.7;
+    margin-top: 1.2rem; color: var(--ink);
+  }
+  .notice a { color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+
+  .cta { margin-top: 1.5rem; display: flex; flex-direction: column; gap: .5rem; }
+  .btn {
+    display: block; text-align: center; text-decoration: none;
+    padding: .85rem 1.2rem; border-radius: 10px;
+    font-weight: 800; font-size: .9rem;
+    transition: transform .1s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229,99,26,.3);
+  }
+  .btn-ghost {
+    background: var(--bg-2); color: var(--ink);
+    border: 1.5px solid var(--line);
+  }
+</style>
