@@ -11,6 +11,7 @@ interface Env {
   MAIL_FROM_ADDRESS?: string;
   MAIL_FROM_NAME?: string;
   MAIL_REPLY_TO?: string;
+  MAIL_ADMIN_TO?: string;
 
   PUBLIC_TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;

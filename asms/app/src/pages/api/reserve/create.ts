@@ -5,13 +5,12 @@ export const prerender = false;
 
 // POST /api/reserve/create
 //
-// Atomic-ish creation of a reservation from the customer wizard.
-// The individual INSERTs aren't wrapped in a single Postgres transaction
-// (supabase-js has no first-class BEGIN/COMMIT), so a failure between
-// steps can leave orphans. For MVP volume this is acceptable — orphaned
-// guardians/customers without a reservation can be cleaned up by an
-// admin job later. The critical uniqueness (slot capacity, reservation
-// number) is still guarded by DB constraints.
+// Thin wrapper around create_reservation_atomic() PL/pgSQL function.
+// The heavy lifting (SELECT FOR UPDATE slot lock, capacity check,
+// guardian/customer dedup, all INSERTs) happens in one Postgres
+// transaction on the DB side — TOCTOU-safe and orphan-free.
+// This handler just validates the request, calls the RPC, maps its
+// error code back to HTTP, and fires the notification emails.
 //
 // Payload shape (validated shallowly here — client-side wizard is the
 // primary UX filter, this is defence in depth):
@@ -50,6 +49,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     checked_safety_items,
   } = body ?? {};
 
+  // --- Shallow validation (defence in depth; wizard is the real filter) --
   if (!slot_id || !term_id) return json({ error: 'slot_id と term_id は必須です' }, 400);
   if (!Array.isArray(participants) || participants.length === 0) {
     return json({ error: '参加者情報が空です' }, 400);
@@ -70,267 +70,108 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!Array.isArray(checked_safety_items)) {
     return json({ error: '安全項目のチェックが不足しています' }, 400);
   }
-
-  // --- Load slot + course ------------------------------------------------
-  const { data: slot, error: slotErr } = await supabase
-    .from('slots')
-    .select('id, date, start_time, capacity, status, course_id, courses(id, code, name, price_regular, price_member, requires_approval)')
-    .eq('id', slot_id)
-    .maybeSingle();
-  if (slotErr) return json({ error: 'slot lookup failed', detail: slotErr.message }, 500);
-  if (!slot) return json({ error: '指定の枠が見つかりません' }, 404);
-  if (slot.status !== 'open') return json({ error: 'この枠は現在受付停止中です' }, 409);
-
-  const course: any = slot.courses ?? {};
-
-  // --- Capacity guard (TOCTOU race remains but slot capacity is the
-  //     final backstop — a real overbook would surface here as > capacity
-  //     after the fact and needs admin cleanup). ---------------------------
-  const { data: existingRes } = await supabase
-    .from('reservations')
-    .select('id')
-    .eq('slot_id', slot_id)
-    .neq('status', 'cancelled');
-  const resIds = (existingRes ?? []).map((r) => r.id);
-  let reserved = 0;
-  if (resIds.length > 0) {
-    const { count } = await supabase
-      .from('reservation_participants')
-      .select('*', { count: 'exact', head: true })
-      .in('reservation_id', resIds);
-    reserved = count ?? 0;
-  }
-  if (reserved + participants.length > slot.capacity) {
-    return json({
-      error: `満席のため受付できません（残 ${Math.max(0, slot.capacity - reserved)} 名）`,
-    }, 409);
-  }
-
-  // --- Load current terms for snapshot ----------------------------------
-  const { data: term } = await supabase
-    .from('terms')
-    .select('id, version, body_markdown, content_hash')
-    .eq('id', term_id)
-    .maybeSingle();
-  if (!term) return json({ error: '利用規約バージョンが見つかりません' }, 400);
-
-  // --- Guardian dedup: match by lower-cased email --------------------------
-  // Same email ≒ same person. Not perfect (typos, shared addresses) but
-  // prevents the "each booking creates a new guardian row" bloat we saw
-  // in early testing. If contact info drifted since last time (address
-  // change etc.), UPDATE the existing row so the karte reflects current
-  // reality.
-  const guardianEmail = (guardian.email ?? '').trim();
-  let guardianId: string | null = null;
-  if (guardianEmail) {
-    const { data: existing } = await supabase
-      .from('guardians')
-      .select('id')
-      .ilike('email', guardianEmail)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existing?.id) {
-      const { error: uErr } = await supabase
-        .from('guardians')
-        .update({
-          name: guardian.name,
-          kana: guardian.kana,
-          phone: guardian.phone,
-          postal_code: guardian.postal_code || null,
-          address: guardian.address || null,
-          emergency_contact_name: emergency.name,
-          emergency_contact_phone: emergency.phone,
-          emergency_contact_relation: emergency.relation || null,
-        })
-        .eq('id', existing.id);
-      if (uErr) return json({ error: `保護者情報の更新に失敗しました: ${uErr.message}`, detail: uErr.details }, 500);
-      guardianId = existing.id;
-    }
-  }
-  if (!guardianId) {
-    const { data: gRow, error: gErr } = await supabase
-      .from('guardians')
-      .insert({
-        name: guardian.name,
-        kana: guardian.kana,
-        phone: guardian.phone,
-        email: guardianEmail,
-        postal_code: guardian.postal_code || null,
-        address: guardian.address || null,
-        emergency_contact_name: emergency.name,
-        emergency_contact_phone: emergency.phone,
-        emergency_contact_relation: emergency.relation || null,
-      })
-      .select('id')
-      .single();
-    if (gErr || !gRow) return json({ error: `保護者情報の登録に失敗しました: ${gErr?.message ?? '不明'}`, detail: gErr?.details }, 500);
-    guardianId = gRow.id;
-  }
-
-  // --- Customer dedup: reuse an existing customer if same guardian has
-  //     already registered a child with the exact same (name, kana,
-  //     birth_date) triplet. Two different families with a same-named
-  //     same-birthday child would collide only within one guardian scope,
-  //     which is unlikely enough for MVP. Same guardian, different kana
-  //     writing would miss and create a dup — admin can merge later.
-  const customerIds: string[] = [];
   for (const p of participants) {
     if (!p.name || !p.kana || !p.birth_date || !p.gender || !p.height_cm) {
       return json({ error: '参加者情報に不足があります' }, 400);
     }
-    const { data: linkedCustomers } = await supabase
-      .from('guardian_customer_links')
-      .select('customer_id, customers(id, name, kana, birth_date, is_deleted)')
-      .eq('guardian_id', guardianId);
-    const reused = (linkedCustomers ?? []).find((l: any) => {
-      const c = l.customers;
-      return c && !c.is_deleted
-        && c.name === p.name
-        && c.kana === p.kana
-        && c.birth_date === p.birth_date;
-    });
-    if (reused) {
-      customerIds.push((reused as any).customers.id);
-      continue;
-    }
-
-    const customerNumber = 'C-' +
-      Date.now().toString(36).toUpperCase() + '-' +
-      Math.floor(Math.random() * 100000).toString().padStart(5, '0');
-    const { data: c, error: cErr } = await supabase
-      .from('customers')
-      .insert({
-        customer_number: customerNumber,
-        name: p.name,
-        kana: p.kana,
-        birth_date: p.birth_date,
-        gender: p.gender,
-      })
-      .select('id')
-      .single();
-    if (cErr || !c) {
-      return json({ error: `顧客情報の登録に失敗しました: ${cErr?.message ?? '不明'}`, detail: cErr?.details }, 500);
-    }
-    customerIds.push(c.id);
-
-    // Only create the link for newly-inserted customers; existing links
-    // are preserved on reuse.
-    await supabase.from('guardian_customer_links').insert({
-      guardian_id: guardianId,
-      customer_id: c.id,
-      relation: emergency.relation || '保護者',
-      is_primary: true,
-    });
   }
 
-  // --- Compute pricing + approval flag ----------------------------------
-  const perPersonPrice = price_tier === 'member' ? course.price_member : course.price_regular;
-  const totalAmount = (perPersonPrice ?? 0) * participants.length;
-  const requiresApproval = !!course.requires_approval;
-  const status = requiresApproval ? 'pending_approval' : 'confirmed';
+  const guardianEmail = (guardian.email ?? '').trim();
 
-  // --- Insert reservation -----------------------------------------------
-  const { data: rRow, error: rErr } = await supabase
-    .from('reservations')
-    .insert({
-      slot_id: slot.id,
-      guardian_id: guardianId,
-      status,
+  // --- Single atomic RPC call --------------------------------------------
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_reservation_atomic', {
+    payload: {
+      slot_id,
+      term_id,
       price_tier: price_tier === 'member' ? 'member' : 'regular',
-      total_amount: totalAmount,
-    })
-    .select('id, reservation_number')
-    .single();
-  if (rErr || !rRow) {
+      guardian: { ...guardian, email: guardianEmail },
+      emergency,
+      participants,
+      signature,
+      checked_safety_items,
+      ip_address: request.headers.get('CF-Connecting-IP') || clientAddress || '',
+      user_agent: request.headers.get('User-Agent') || '',
+    },
+  });
+
+  if (rpcErr) {
+    // Custom SQLSTATE 'PGRSN' → domain error. Map to appropriate HTTP.
+    const hint = rpcErr.hint ?? '';
+    const message = rpcErr.message ?? '不明なエラー';
+    if (rpcErr.code === 'PGRSN') {
+      const httpCode =
+        hint === 'slot_not_found' ? 404 :
+        hint === 'slot_not_open'  ? 409 :
+        hint === 'slot_full'      ? 409 :
+        hint === 'terms_not_found' ? 400 :
+        hint === 'empty_participants' || hint === 'missing_field' ? 400 :
+        500;
+      return json({ error: message, hint }, httpCode);
+    }
+    // Unexpected Postgres error
     return json({
-      error: `予約の登録に失敗しました: ${rErr?.message ?? '不明なエラー'}`,
-      detail: `${rErr?.code ?? ''} ${rErr?.details ?? ''} ${rErr?.hint ?? ''}`.trim(),
+      error: `予約の登録に失敗しました: ${message}`,
+      detail: `${rpcErr.code ?? ''} ${rpcErr.details ?? ''} ${rpcErr.hint ?? ''}`.trim(),
     }, 500);
   }
 
-  // --- Insert participants snapshot -------------------------------------
-  const ageAtBooking = (bd: string) => {
-    const now = new Date();
-    const b = new Date(bd);
-    let a = now.getFullYear() - b.getFullYear();
-    const m = now.getMonth() - b.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
-    return Math.max(0, a);
-  };
-  for (let i = 0; i < participants.length; i++) {
-    const p = participants[i];
-    const { error: pErr } = await supabase.from('reservation_participants').insert({
-      reservation_id: rRow.id,
-      customer_id: customerIds[i],
-      name_snapshot: p.name,
-      kana_snapshot: p.kana,
-      birth_date_snapshot: p.birth_date,
-      age_at_booking: ageAtBooking(p.birth_date),
-      height_cm: p.height_cm,
-      gender_snapshot: p.gender,
-      kart_experience_note: p.kart_experience_note || null,
-      photo_consent: p.photo_consent || 'allow',
-    });
-    if (pErr) {
-      return json({ error: '参加者スナップショットの登録に失敗しました', detail: pErr.message }, 500);
-    }
+  const result: any = rpcResult ?? {};
+  if (!result.ok) {
+    return json({ error: '予約作成が失敗しました', detail: JSON.stringify(result) }, 500);
   }
 
-  // --- Consent record (append-only) -------------------------------------
-  const { error: consentErr } = await supabase.from('consents').insert({
-    reservation_id: rRow.id,
-    term_id: term.id,
-    term_version: term.version,
-    term_body_snapshot: term.body_markdown,
-    term_hash_snapshot: term.content_hash,
-    consenter_name: guardian.name,
-    signature_type: signature.type,
-    signature_typed_name: signature.type === 'typed' ? signature.typed_name : null,
-    signature_image_key: signature.type === 'drawn' ? signature.image_data : null,
-    ip_address: request.headers.get('CF-Connecting-IP') || clientAddress || null,
-    user_agent: request.headers.get('User-Agent') || null,
-    checked_safety_items,
-    declaration_text: '本規約およびキャンセルポリシー、安全ルール全10項目に同意します。',
-  });
-  if (consentErr) {
-    return json({ error: '同意履歴の登録に失敗しました', detail: consentErr.message }, 500);
-  }
-
-  // --- Fire-and-forget confirmation email (Resend) ---------------------
+  // --- Fire-and-forget notification emails -------------------------------
   // Wrapped in ctx.waitUntil so Cloudflare Workers keeps the async fetch
-  // alive after we return the response. Without waitUntil the runtime
-  // cancels pending work as soon as the response is sent, which silently
-  // drops the email AND the console output.
+  // alive after we return the response.
   const apiUrl = new URL(request.url);
   const emailPromise = sendConfirmationEmail(env, {
     to: guardianEmail,
     guardianName: guardian.name,
-    reservationNumber: rRow.reservation_number,
-    status,
-    dateIso: slot.date,
-    startTime: slot.start_time,
-    endTime: slot.end_time,
-    courseName: course.name,
+    reservationNumber: result.reservation_number,
+    status: result.status,
+    dateIso: result.slot_date,
+    startTime: result.slot_start_time,
+    endTime: result.slot_end_time,
+    courseName: result.course_name,
     participants: participants.map((p: any) => p.name),
-    totalAmount,
+    totalAmount: result.total_amount,
     priceTier: price_tier,
     origin: `${apiUrl.protocol}//${apiUrl.host}`,
-    reservationId: rRow.id,
+    reservationId: result.reservation_id,
   }).catch((e) => console.warn('[reserve/create] email send failed:', e));
+
+  const adminEmailPromise = sendAdminNotification(env, {
+    to: env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '',
+    reservationNumber: result.reservation_number,
+    status: result.status,
+    dateIso: result.slot_date,
+    startTime: result.slot_start_time,
+    endTime: result.slot_end_time,
+    courseName: result.course_name,
+    guardianName: guardian.name,
+    guardianPhone: guardian.phone,
+    guardianEmail: guardianEmail,
+    participants: participants.map((p: any) => ({ name: p.name, birth_date: p.birth_date, height_cm: p.height_cm })),
+    totalAmount: result.total_amount,
+    priceTier: price_tier,
+    origin: `${apiUrl.protocol}//${apiUrl.host}`,
+    reservationId: result.reservation_id,
+    slotId: slot_id,
+  }).catch((e) => console.warn('[reserve/create] admin email send failed:', e));
 
   const runtimeCtx = (locals as any).runtime?.ctx;
   if (runtimeCtx && typeof runtimeCtx.waitUntil === 'function') {
     runtimeCtx.waitUntil(emailPromise);
+    runtimeCtx.waitUntil(adminEmailPromise);
   } else {
     console.warn('[reserve/create] no runtime.ctx.waitUntil — email may be cancelled after response');
   }
 
   return json({
     ok: true,
-    reservation_id: rRow.id,
-    reservation_number: rRow.reservation_number,
-    status,
+    reservation_id: result.reservation_id,
+    reservation_number: result.reservation_number,
+    status: result.status,
   });
 };
 
@@ -462,6 +303,120 @@ async function sendConfirmationEmail(env: Env, args: {
     const t = await r.text().catch(() => '');
     throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`);
   }
+}
+
+async function sendAdminNotification(env: Env, args: {
+  to: string;
+  reservationNumber: string;
+  status: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  participants: Array<{ name: string; birth_date: string; height_cm: number }>;
+  totalAmount: number;
+  priceTier: string;
+  origin: string;
+  reservationId: string;
+  slotId: string;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn('[admin-notif] SKIP: RESEND_API_KEY not set');
+    return;
+  }
+  if (!args.to) {
+    console.warn('[admin-notif] SKIP: MAIL_ADMIN_TO not set');
+    return;
+  }
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+
+  const isPending = args.status === 'pending_approval';
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getMonth() + 1}/${d.getDate()} (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+
+  const subject = isPending
+    ? `【承認待ち予約】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} ${args.guardianName}様 (${args.participants.length}名)`
+    : `【新規予約】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} ${args.guardianName}様 (${args.participants.length}名)`;
+
+  const partList = args.participants
+    .map((p) => `${p.name}(${p.birth_date} · ${p.height_cm}cm)`)
+    .join(' / ');
+
+  const slotUrl = `${args.origin}/admin/slots/${args.slotId}`;
+  const resUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
+
+  const text = [
+    `新規予約が入りました${isPending ? '（承認待ち）' : ''}。`,
+    '',
+    `予約番号: ${args.reservationNumber}`,
+    `コース  : ${args.courseName}`,
+    `日時   : ${dateLabel} ${timeLabel}`,
+    `参加者  : ${partList}`,
+    `保護者  : ${args.guardianName} / ${args.guardianPhone} / ${args.guardianEmail}`,
+    `料金   : ¥${args.totalAmount.toLocaleString()} (${args.priceTier === 'member' ? '会員' : '一般'})`,
+    '',
+    `▼ スロット詳細（当日運用）`,
+    slotUrl,
+    '',
+    `▼ 予約詳細`,
+    resUrl,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    'ASMS 自動通知',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
+<body style="font-family:'Hiragino Sans',sans-serif;color:#163048;margin:0;padding:1rem;background:#f4f9fc">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;padding:1.2rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="font-size:.72rem;color:#7d8fa0;font-family:monospace;margin-bottom:.5rem">ASMS 自動通知</div>
+    <h2 style="margin:0 0 .8rem;font-size:1.1rem;color:${isPending ? '#e5631a' : '#7eb13a'}">
+      ${isPending ? '⏳ 承認待ち予約が入りました' : '✅ 新規予約が入りました'}
+    </h2>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;width:5.5em">予約番号</td><td style="padding:.35rem 0;font-family:monospace;color:#1a7fb8;font-weight:800">${escapeHtml(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${escapeHtml(args.courseName)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">日時</td><td style="padding:.35rem 0;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(dateLabel)} ${escapeHtml(timeLabel)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0;vertical-align:top">参加者</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${escapeHtml(partList)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0;vertical-align:top">保護者</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">
+        ${escapeHtml(args.guardianName)}<br>
+        <span style="font-family:monospace;font-size:.76rem;color:#3d556f">📞 ${escapeHtml(args.guardianPhone)}</span><br>
+        <span style="font-family:monospace;font-size:.76rem;color:#3d556f">✉️ ${escapeHtml(args.guardianEmail)}</span>
+      </td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">料金</td><td style="padding:.35rem 0;font-family:monospace;color:#e5631a;font-weight:800;border-top:1px dashed #d8e6f0">¥${args.totalAmount.toLocaleString()} (${args.priceTier === 'member' ? '会員' : '一般'})</td></tr>
+    </table>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
+      <a href="${slotUrl}" style="flex:1;padding:.6rem 1rem;background:#3aa9e8;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.84rem;text-align:center">📋 スロット詳細（当日運用）</a>
+      <a href="${resUrl}" style="flex:1;padding:.6rem 1rem;background:#f4f9fc;color:#163048;border:1px solid #d8e6f0;text-decoration:none;border-radius:6px;font-weight:700;font-size:.84rem;text-align:center">予約詳細</a>
+    </div>
+    ${isPending ? '<p style="margin:1rem 0 0;padding:.6rem;background:rgba(255,201,67,.15);border:1px solid rgba(255,201,67,.4);border-radius:6px;font-size:.78rem">承認制コースです。管理画面から確認 → 確定通知を保護者へお送りください。</p>' : ''}
+  </div>
+</body></html>`;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [args.to],
+      subject,
+      text,
+      html,
+    }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Resend admin-notif ${r.status}: ${t.slice(0, 200)}`);
+  }
+  console.log('[admin-notif] sent to', args.to);
 }
 
 function escapeHtml(s: string): string {

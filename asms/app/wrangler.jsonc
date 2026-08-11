@@ -57,7 +57,9 @@
     "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88",
     "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
     "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
-    "MAIL_REPLY_TO": "info@kidskart.org"
+    "MAIL_REPLY_TO": "info@kidskart.org",
+    // 新規予約が入ったとき運営に通知するメール宛先
+    "MAIL_ADMIN_TO": "info@kidskart.org"
   }
   //
   // Secrets (stay in Cloudflare Dashboard, encrypted):
