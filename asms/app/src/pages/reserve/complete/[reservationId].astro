@@ -32,6 +32,17 @@ const d = new Date(slot.date + 'T00:00:00');
 const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
 const timeLabel = `${slot.start_time?.slice(0, 5) ?? ''}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}`;
 
+// 受付開始 = 開始時刻の 15 分前
+function checkInLabel(startTime: string): string {
+  const [h, m] = startTime.split(':').map(Number);
+  let total = h * 60 + m - 15;
+  if (total < 0) total = 0;
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+const checkIn = slot.start_time ? checkInLabel(slot.start_time) : '';
+
 const isPending = res.status === 'pending_approval';
 ---
 <Base title={`予約${isPending ? '受付' : '完了'} — ${res.reservation_number}`}>
@@ -44,7 +55,7 @@ const isPending = res.status === 'pending_approval';
       <p class="sub">
         {isPending
           ? '当社確認後、確定通知をお送りします。しばらくお待ちください。'
-          : '当日、時間に余裕を持ってお越しください。'}
+          : <>当日は <strong>開始時刻の 15 分前</strong> までにお越しください。</>}
       </p>
     </header>
 
@@ -66,6 +77,10 @@ const isPending = res.status === 'pending_approval';
       <div class="row"><span class="k">コース</span><span class="v">{course.name}</span></div>
       <div class="row"><span class="k">日付</span><span class="v mono">{dateLabel}</span></div>
       <div class="row"><span class="k">時間</span><span class="v mono">{timeLabel}</span></div>
+      <div class="row highlight">
+        <span class="k">受付開始</span>
+        <span class="v mono">{checkIn} <span class="v-note">（開始15分前）</span></span>
+      </div>
       <div class="row"><span class="k">料金</span><span class="v mono">¥{res.total_amount.toLocaleString()}（{res.price_tier === 'member' ? '会員' : '一般'} × {participants.length}名）</span></div>
     </section>
 
@@ -128,6 +143,13 @@ const isPending = res.status === 'pending_approval';
     font-size: .84rem;
   }
   .row:last-child { border-bottom: none; }
+  .row.highlight {
+    background: rgba(255,201,67,.12);
+    margin: 0 -.5rem; padding: .5rem .5rem; border-radius: 6px;
+    border-bottom: none;
+  }
+  .row.highlight .v { color: var(--orange-deep); font-weight: 800; }
+  .v-note { font-size: .68rem; color: var(--ink-3); font-weight: 400; font-family: var(--jp); margin-left: .3rem; }
   .k { color: var(--ink-3); font-size: .74rem; font-weight: 700; }
   .v { color: var(--ink); }
   .mono { font-family: var(--mono); }
