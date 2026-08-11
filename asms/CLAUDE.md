@@ -51,3 +51,19 @@
 
 ### 画面のスクロール抑止
 - 電子署名エリアなど、指ジェスチャを吸収したい要素には `touch-action: none` **と** `touchstart/touchmove` の `preventDefault({ passive: false })` を**両方**適用する（片方だけだと古い WebView で漏れる）
+
+### 環境変数の source of truth
+- **Cloudflare Dashboard の「変数とシークレット」が唯一の設定場所**
+- `wrangler.jsonc` の `vars` は空 `{}` にしておく（過去に `vars` に書いたら Runtime に届かない事故があった）
+- Astro の `envFrom(locals)` で `locals.runtime.env` から読む（`import.meta.env` は dev 用フォールバックのみ）
+- 新しい環境変数を追加するときは:
+  1. Dashboard の 変数とシークレット に追加（変数 or シークレット）
+  2. `env.d.ts` の `Env` 型に追加
+  3. **既存のバージョンを再展開 or 新規コミット** で bind し直す（Dashboard 追加だけでは古い version には反映されない）
+  4. `wrangler.jsonc` のコメント欄「VARIABLES THAT MUST EXIST IN THE DASHBOARD」に追記
+
+### Cloudflare 設定のバックアップ
+Cloudflare Dashboard の変数を誤って全削除するとサイトが即死する。1 人運用でも:
+- 追加/変更したら wrangler.jsonc のコメントブロックを更新（値以外の一覧を残す）
+- シークレット値は 1Password 等の別レイヤに保管
+- 削除操作の前に別タブでリストのスクショを撮る

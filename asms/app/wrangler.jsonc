@@ -29,29 +29,38 @@
   "observability": {
     "enabled": true
   },
-  "vars": {
-    // Public/anon values — safe to commit. RLS on Supabase enforces access.
-    "PUBLIC_SUPABASE_URL": "https://qwwrhesgbytefxufeiwj.supabase.co",
-    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq",
-    // Admin gate — the password itself is NEVER stored, only its SHA-256
-    // digest. The middleware hashes whatever the client sends and compares
-    // to this value, so committing the hash to a public repo leaks nothing
-    // beyond the fact that the site has admin auth. To rotate: pick a new
-    // password, `printf '<pw>' | sha256sum` on any Unix box, replace here.
-    "ADMIN_USERNAME": "masaaki0820",
-    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88",
-    // Outbound mail. The FROM / NAME / REPLY-TO are non-sensitive so they
-    // live in git; the RESEND_API_KEY itself must be added as a proper
-    // Cloudflare secret (Dashboard → 変数とシークレット → シークレット追加).
-    // Adding it in git would let anyone with repo access send mail as us.
-    "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
-    "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
-    "MAIL_REPLY_TO": "info@kidskart.org"
-    // SUPABASE_SERVICE_ROLE_KEY and RESEND_API_KEY must be added as
-    // Cloudflare secrets — write endpoints that bypass RLS need the
-    // former and outbound Resend calls need the latter. Dashboard-added
-    // secrets bind on the next code deploy, not on manual re-deploy of
-    // an existing version; push a commit to force a rebind if a new
-    // secret isn't visible at runtime.
-  }
+  // ---- Environment variables --------------------------------------------
+  // NOTE: this project's runtime env is managed **entirely in the
+  // Cloudflare Dashboard** (Workers & Pages → kidskart-asms → 設定 →
+  // 変数とシークレット), NOT in this file's `vars` section.
+  //
+  // Reason: with the Workers Builds deploy path (`npx wrangler deploy`
+  // from CI), `vars` declared here weren't reliably reaching runtime —
+  // we spent an afternoon chasing that (see git history around
+  // 2026-08-11). Dashboard-added variables persist across deploys and
+  // bind reliably, so we standardized on that as the single source of
+  // truth.
+  //
+  // ==== VARIABLES THAT MUST EXIST IN THE DASHBOARD ====
+  //
+  // Type: 変数 (plain text)
+  //   ADMIN_USERNAME           = masaaki0820
+  //   ADMIN_PASSWORD_HASH      = <sha256 hex of the admin password>
+  //   PUBLIC_SUPABASE_URL      = https://<project>.supabase.co
+  //   PUBLIC_SUPABASE_ANON_KEY = sb_publishable_...
+  //   MAIL_FROM_ADDRESS        = noreply@kidskart.org
+  //   MAIL_FROM_NAME           = 福岡キッズカートアカデミー
+  //   MAIL_REPLY_TO            = info@kidskart.org
+  //
+  // Type: シークレット (encrypted)
+  //   SUPABASE_SERVICE_ROLE_KEY = sb_secret_...
+  //   RESEND_API_KEY            = re_...
+  //
+  // To rotate the admin password: pick a new one, run
+  //   printf '<pw>' | sha256sum
+  // on any Unix box, then update ADMIN_PASSWORD_HASH in the Dashboard.
+  //
+  // Intentionally leaving `vars` OUT of this file so wrangler deploy
+  // doesn't try to override the dashboard-managed values.
+  "vars": {}
 }
