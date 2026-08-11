@@ -182,6 +182,14 @@ const termsHtml = terms
                 </label>
               </div>
               <p class="hint">会員未登録の方でも当日受付で会員登録可能です。</p>
+
+              <div id="memberConfirm" hidden class="member-confirm">
+                <label>
+                  <input type="checkbox" id="memberConfirmChk" />
+                  <span>✅ <strong>トヨピー会員に登録済み</strong>です</span>
+                </label>
+                <p class="hint">会員価格でのご予約には、当日または事前にトヨピー会員登録が必要です。</p>
+              </div>
             </div>
 
             <div class="total-preview">
@@ -286,11 +294,13 @@ const termsHtml = terms
               </div>
               <div class="field">
                 <label>郵便番号</label>
-                <input type="text" name="g_postal" maxlength="10" placeholder="811-0011" />
+                <input type="text" id="g_postal" name="g_postal" maxlength="10" placeholder="8110011"
+                  inputmode="numeric" autocomplete="postal-code" />
+                <p class="hint zip-hint" id="zipHint">7桁入力で住所が自動入力されます</p>
               </div>
               <div class="field field-wide">
                 <label>住所</label>
-                <input type="text" name="g_address" maxlength="200" placeholder="福岡県福岡市…" />
+                <input type="text" id="g_address" name="g_address" maxlength="200" placeholder="福岡県福岡市…" autocomplete="street-address" />
               </div>
             </div>
             <div class="nav-btns">
@@ -302,18 +312,28 @@ const termsHtml = terms
           <section class="step" data-step="4" hidden>
             <h2>4. 緊急連絡先</h2>
             <p class="hint">当日、保護者ご本人と連絡が取れない場合の連絡先です。</p>
-            <div class="grid-2">
-              <div class="field">
-                <label>お名前 *</label>
-                <input type="text" name="e_name" required maxlength="40" />
-              </div>
-              <div class="field">
-                <label>続柄 *</label>
-                <input type="text" name="e_relation" required maxlength="20" placeholder="祖父母／配偶者 など" />
-              </div>
-              <div class="field field-wide">
-                <label>電話番号 *</label>
-                <input type="tel" name="e_phone" required maxlength="20" />
+
+            <div class="same-as-guardian">
+              <label>
+                <input type="checkbox" id="sameAsGuardian" checked />
+                <span>👤 <strong>保護者と同じ</strong>（保護者情報を緊急連絡先として使用）</span>
+              </label>
+            </div>
+
+            <div id="emergencyFields" hidden>
+              <div class="grid-2">
+                <div class="field">
+                  <label>お名前 *</label>
+                  <input type="text" name="e_name" maxlength="40" />
+                </div>
+                <div class="field">
+                  <label>続柄 *</label>
+                  <input type="text" name="e_relation" maxlength="20" placeholder="祖父母／配偶者 など" />
+                </div>
+                <div class="field field-wide">
+                  <label>電話番号 *</label>
+                  <input type="tel" name="e_phone" maxlength="20" />
+                </div>
               </div>
             </div>
             <div class="nav-btns">
@@ -455,11 +475,15 @@ const termsHtml = terms
     });
 
     const totalPreviewEl = document.getElementById('totalPreview')!;
+    const memberConfirm = document.getElementById('memberConfirm')!;
+    const memberConfirmChk = document.getElementById('memberConfirmChk') as HTMLInputElement;
     const updateTotal = () => {
       const count = getRadioValue('participant_count') || '1';
       const tier = getRadioValue('price_tier') || 'regular';
       const per = tier === 'member' ? priceMember : priceRegular;
       totalPreviewEl.textContent = `¥${(per * parseInt(count, 10)).toLocaleString()}`;
+      memberConfirm.hidden = tier !== 'member';
+      if (tier !== 'member') memberConfirmChk.checked = false;
     };
     form.querySelectorAll<HTMLInputElement>('input[name="participant_count"], input[name="price_tier"]')
       .forEach((el) => el.addEventListener('change', updateTotal));
@@ -471,6 +495,12 @@ const termsHtml = terms
 
     const host = document.getElementById('participantsHost')!;
     const tpl = document.getElementById('participantTpl') as HTMLTemplateElement;
+    // Default birthday = today − 6 years (typical target age for 体験教室).
+    const defaultBirthdate = (() => {
+      const t = new Date();
+      t.setFullYear(t.getFullYear() - 6);
+      return t.toISOString().slice(0, 10);
+    })();
     const renderParticipants = () => {
       const count = parseInt(getRadioValue('participant_count') || '1', 10);
       const captured: Record<string, string>[] = [];
@@ -491,6 +521,9 @@ const termsHtml = terms
         const wrap = frag.querySelector('.participant') as HTMLElement;
         wrap.dataset.pIndex = String(i);
         (frag.querySelector('.p-num') as HTMLElement).textContent = String(i + 1);
+        // Pre-fill birthday default if none captured
+        const birth = wrap.querySelector<HTMLInputElement>('input[name="p_birth"]');
+        if (birth && !captured[i]?.p_birth) birth.value = defaultBirthdate;
         wrap.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
           const prev = captured[i]?.[f.name];
           if (prev == null) return;
@@ -523,12 +556,13 @@ const termsHtml = terms
     const canvas = document.getElementById('sigCanvas') as HTMLCanvasElement;
     const ctx = canvas.getContext('2d')!;
     let sigDrawn = false;
+    let sigSetupDone = false;
     const setupCanvas = () => {
       const ratio = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0) return;
-      canvas.width = rect.width * ratio;
-      canvas.height = rect.height * ratio;
+      if (rect.width === 0 || rect.height === 0) return false;
+      canvas.width = Math.round(rect.width * ratio);
+      canvas.height = Math.round(rect.height * ratio);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.strokeStyle = '#0a2540';
       ctx.lineWidth = 2.5;
@@ -536,14 +570,34 @@ const termsHtml = terms
       ctx.lineJoin = 'round';
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, rect.width, rect.height);
+      sigSetupDone = true;
+      return true;
     };
-    // Set up once the signature step is first shown (canvas has 0 width while hidden).
+    // Set up whenever the signature step becomes visible AND on the
+    // first pointerdown if the observer missed the first time (older
+    // browsers, race conditions). Also re-setup on window resize
+    // — but preserve the drawn image so the user doesn't lose their
+    // signature.
     const sigStep = steps.find((s) => s.dataset.step === '7')!;
+    const trySetup = () => { if (!sigSetupDone) requestAnimationFrame(() => setupCanvas()); };
     new MutationObserver(() => {
-      if (!sigStep.hidden && canvas.width === 0) setTimeout(setupCanvas, 0);
+      if (!sigStep.hidden) trySetup();
     }).observe(sigStep, { attributes: true, attributeFilter: ['hidden'] });
+    let resizeTimer: any = null;
     window.addEventListener('resize', () => {
-      if (!sigStep.hidden) setupCanvas();
+      if (sigStep.hidden || !sigSetupDone) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        // Preserve existing image before reset
+        const snap = canvas.toDataURL('image/png');
+        setupCanvas();
+        const img = new Image();
+        img.onload = () => {
+          const rect = canvas.getBoundingClientRect();
+          ctx.drawImage(img, 0, 0, rect.width, rect.height);
+        };
+        img.src = snap;
+      }, 150);
     });
 
     let drawing = false;
@@ -553,8 +607,11 @@ const termsHtml = terms
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
     canvas.addEventListener('pointerdown', (e) => {
+      // Emergency setup — if the observer didn't fire (rare timing bug)
+      // this ensures the canvas has real dimensions before we draw.
+      if (!sigSetupDone) setupCanvas();
       e.preventDefault();
-      canvas.setPointerCapture(e.pointerId);
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
       drawing = true;
       sigDrawn = true;
       const p = pointerPos(e);
@@ -589,6 +646,52 @@ const termsHtml = terms
       ctx.fillRect(0, 0, rect.width, rect.height);
       sigDrawn = false;
     });
+
+    // "緊急連絡先は保護者と同じ" toggle: reveal / hide the emergency
+    // form and skip its required validation when checked.
+    const sameChk = document.getElementById('sameAsGuardian') as HTMLInputElement | null;
+    const emerFields = document.getElementById('emergencyFields');
+    const emerInputs = emerFields ? Array.from(emerFields.querySelectorAll<HTMLInputElement>('input')) : [];
+    const syncSame = () => {
+      const same = !!sameChk?.checked;
+      if (emerFields) emerFields.hidden = same;
+      emerInputs.forEach((i) => { i.required = !same; });
+    };
+    sameChk?.addEventListener('change', syncSame);
+    syncSame();
+
+    // Postal code → address auto-fill via zipcloud (free public JP API).
+    // Only fills the address field when it's empty so we don't blow away
+    // a manually-typed value.
+    const zipInput = document.getElementById('g_postal') as HTMLInputElement | null;
+    const addrInput = document.getElementById('g_address') as HTMLInputElement | null;
+    const zipHint = document.getElementById('zipHint');
+    if (zipInput && addrInput) {
+      const lookup = async () => {
+        const zip = zipInput.value.replace(/[^0-9]/g, '');
+        if (zip.length !== 7) return;
+        if (zipHint) { zipHint.textContent = '住所を検索中…'; }
+        try {
+          const r = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+          const d = await r.json();
+          if (d.status === 200 && d.results?.[0]) {
+            const a = d.results[0];
+            const addr = `${a.address1}${a.address2}${a.address3}`;
+            if (!addrInput.value.trim()) addrInput.value = addr;
+            if (zipHint) { zipHint.textContent = `✅ ${addr}`; zipHint.style.color = 'var(--lime-deep)'; }
+          } else {
+            if (zipHint) { zipHint.textContent = '該当する住所が見つかりませんでした'; zipHint.style.color = 'var(--rose-deep)'; }
+          }
+        } catch {
+          if (zipHint) { zipHint.textContent = '住所検索に失敗しました（手動で入力してください）'; zipHint.style.color = 'var(--rose-deep)'; }
+        }
+      };
+      zipInput.addEventListener('blur', lookup);
+      zipInput.addEventListener('input', () => {
+        const zip = zipInput.value.replace(/[^0-9]/g, '');
+        if (zip.length === 7) lookup();
+      });
+    }
 
     const modeInputs = form.querySelectorAll<HTMLInputElement>('input[name="sig_mode"]');
     const drawnHost = document.getElementById('sigDrawn')!;
@@ -643,19 +746,22 @@ const termsHtml = terms
         ? { type: 'drawn', image_data: sigDrawn ? canvas.toDataURL('image/png') : null }
         : { type: 'typed', typed_name: gd('sig_typed_name') };
       const per = tier === 'member' ? priceMember : priceRegular;
+      const guardian = {
+        name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
+        email: gd('g_email'), postal_code: gd('g_postal'), address: gd('g_address'),
+      };
+      const sameAsGuardian = !!sameChk?.checked;
+      const emergency = sameAsGuardian
+        ? { name: guardian.name, phone: guardian.phone, relation: '本人' }
+        : { name: gd('e_name'), phone: gd('e_phone'), relation: gd('e_relation') };
       return {
         slot_id: slotId,
         term_id: termId,
         price_tier: tier,
         totalAmount: per * count,
         participants,
-        guardian: {
-          name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
-          email: gd('g_email'), postal_code: gd('g_postal'), address: gd('g_address'),
-        },
-        emergency: {
-          name: gd('e_name'), phone: gd('e_phone'), relation: gd('e_relation'),
-        },
+        guardian,
+        emergency,
         signature,
         checked_safety_items: safety,
       };
@@ -671,6 +777,13 @@ const termsHtml = terms
           if (!stepEl.querySelector(`input[name="${f.name}"]:checked`)) invalid.push(f);
         } else if (!f.value.trim()) invalid.push(f);
       });
+      if (step === 1) {
+        if (getRadioValue('price_tier') === 'member' && !memberConfirmChk.checked) {
+          alert('会員価格をご選択の場合、「トヨピー会員に登録済み」のチェックが必要です。');
+          memberConfirmChk.focus();
+          return false;
+        }
+      }
       if (step === 6) {
         const checked = stepEl.querySelectorAll('input[name="safety"]:checked');
         const all = stepEl.querySelectorAll('input[name="safety"]');
@@ -707,12 +820,28 @@ const termsHtml = terms
           body: JSON.stringify(payload),
         });
         const body = await res.json();
-        if (!res.ok) throw new Error(body?.error || 'unknown');
+        if (!res.ok) {
+          const e: any = new Error(body?.error || 'unknown');
+          e.detail = body?.detail;
+          throw e;
+        }
         window.location.href = `/reserve/complete/${body.reservation_id}`;
       } catch (err: any) {
         submitOverlay.hidden = true;
         submitBtn.disabled = false;
-        submitError.textContent = `送信に失敗しました: ${err.message || err}`;
+        submitError.innerHTML = '';
+        const p = document.createElement('div');
+        p.textContent = `送信に失敗しました: ${err.message || err}`;
+        submitError.appendChild(p);
+        if (err.detail) {
+          const small = document.createElement('code');
+          small.style.fontSize = '.7rem';
+          small.style.opacity = '.7';
+          small.style.display = 'block';
+          small.style.marginTop = '.4rem';
+          small.textContent = err.detail;
+          submitError.appendChild(small);
+        }
         submitError.hidden = false;
       }
     });
@@ -833,6 +962,27 @@ const termsHtml = terms
     color: var(--sky-deep);
   }
   .radio-row { display: flex; gap: .4rem; flex-wrap: wrap; }
+
+  .member-confirm, .same-as-guardian {
+    margin-top: .8rem; padding: .8rem .9rem;
+    background: rgba(255,201,67,.1); border: 1px solid rgba(255,201,67,.4);
+    border-radius: 8px;
+  }
+  .member-confirm label, .same-as-guardian label {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .84rem; cursor: pointer;
+  }
+  .member-confirm input[type="checkbox"],
+  .same-as-guardian input[type="checkbox"] {
+    width: 20px; height: 20px; accent-color: var(--orange);
+    flex: none;
+  }
+  .same-as-guardian {
+    background: rgba(58,169,232,.08); border-color: var(--sky);
+    margin-bottom: 1rem;
+  }
+  .same-as-guardian input[type="checkbox"] { accent-color: var(--sky); }
+  .zip-hint { margin-top: .3rem; }
 
   .total-preview {
     text-align: right; font-size: 1rem; padding: .6rem 0;
