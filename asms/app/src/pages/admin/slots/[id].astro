@@ -1,0 +1,405 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import {
+  ATTENDANCE_STATUSES,
+  SKILL_LEVELS,
+  SYSTEM_ADMIN_UUID,
+  ageOn,
+  attendanceClass,
+  attendanceLabel,
+  jaDateLabel,
+  skillLabel,
+} from '@lib/admin';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const { id } = Astro.params;
+if (!id) return new Response('missing id', { status: 400 });
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const op = form.get('op') as string;
+
+  const back = (msg = '', err = '') => {
+    const q = new URLSearchParams();
+    if (msg) q.set('msg', msg);
+    if (err) q.set('err', err);
+    return Astro.redirect(`/admin/slots/${id}${q.toString() ? '?' + q.toString() : ''}`);
+  };
+  const fmt = (e: any) =>
+    `${e?.code ?? ''} ${e?.message ?? ''} ${e?.details ?? ''}`.trim();
+
+  if (op === 'set_attendance') {
+    const partId = form.get('participant_id') as string;
+    const status = form.get('status') as string;
+    if (!partId || !status) return back('', 'participant_id と status は必須です');
+    const { error } = await supabase
+      .from('reservation_participants')
+      .update({ attendance_status: status })
+      .eq('id', partId);
+    return error ? back('', fmt(error)) : back(`出欠を「${attendanceLabel(status)}」に更新しました`);
+  }
+
+  if (op === 'set_level') {
+    const partId = form.get('participant_id') as string;
+    const customerId = form.get('customer_id') as string;
+    const fromLevel = ((form.get('from_level') as string) || '') || null;
+    const toLevel = form.get('to_level') as string;
+    const reason = ((form.get('reason') as string) || '').trim() || null;
+    if (!partId || !customerId || !toLevel) return back('', '必要な項目が不足しています');
+
+    const { error: pErr } = await supabase.from('customer_progressions').insert({
+      customer_id: customerId,
+      reservation_participant_id: partId,
+      from_level: fromLevel,
+      to_level: toLevel,
+      reason,
+      changed_by: SYSTEM_ADMIN_UUID,
+    });
+    if (pErr) return back('', fmt(pErr));
+
+    const { error: cErr } = await supabase
+      .from('customers')
+      .update({ current_skill_level: toLevel })
+      .eq('id', customerId);
+    if (cErr) return back('', fmt(cErr));
+
+    return back(`習熟度を「${skillLabel(toLevel)}」に更新しました`);
+  }
+
+  return back('', `未対応の操作: ${op}`);
+}
+
+const url = new URL(Astro.request.url);
+const msg = url.searchParams.get('msg');
+const err = url.searchParams.get('err');
+
+// Load slot
+const { data: slot } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, status, note, courses(id, name, code, vehicle)')
+  .eq('id', id)
+  .maybeSingle();
+
+if (!slot) {
+  return new Response(null, { status: 302, headers: { Location: '/admin/reservations' } });
+}
+
+// All reservations on this slot (not cancelled)
+const { data: reservations } = await supabase
+  .from('reservations')
+  .select(`
+    id, reservation_number, status, price_tier, total_amount,
+    guardians(name, kana, phone, email),
+    reservation_participants(id, customer_id, name_snapshot, kana_snapshot,
+                             birth_date_snapshot, age_at_booking, height_cm,
+                             gender_snapshot, photo_consent, attendance_status,
+                             kart_experience_note,
+                             customers(id, current_skill_level, next_recommendation,
+                                       staff_notes, total_participations))
+  `)
+  .eq('slot_id', id)
+  .neq('status', 'cancelled')
+  .order('created_at');
+
+const course: any = slot.courses ?? {};
+const dateLabel = jaDateLabel(slot.date);
+const timeLabel = `${slot.start_time.slice(0, 5)}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}`;
+
+const allParts: any[] = [];
+for (const r of (reservations ?? []) as any[]) {
+  for (const p of r.reservation_participants ?? []) {
+    allParts.push({ ...p, reservation: r });
+  }
+}
+
+const summary = {
+  total: allParts.length,
+  expected: allParts.filter((p) => p.attendance_status === 'expected').length,
+  attended: allParts.filter((p) => p.attendance_status === 'attended').length,
+  no_show: allParts.filter((p) => p.attendance_status === 'no_show').length,
+  cancelled: allParts.filter((p) => p.attendance_status === 'cancelled').length,
+};
+
+const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他' } as any)[g] ?? g;
+const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' } as any)[p] ?? p;
+---
+<Base title={`${dateLabel} ${timeLabel} · ${course.name} — ASMS`}>
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin/reservations">← 予約一覧へ</a>
+      <h1>スロット詳細 · 参加者管理</h1>
+      <div class="slot-summary">
+        <div class="ss-course">{course.name}</div>
+        <div class="ss-meta">
+          <span class="mono">{dateLabel}</span>
+          <span class="sep">·</span>
+          <span class="mono">{timeLabel}</span>
+        </div>
+        <div class="ss-caps">
+          <span>定員 <strong>{slot.capacity}</strong> 名</span>
+          <span>予約 <strong>{summary.total}</strong> 名</span>
+          {summary.attended > 0 && <span class="chip chip-ok">✓ 出席 {summary.attended}</span>}
+          {summary.expected > 0 && <span class="chip chip-wait">予約中 {summary.expected}</span>}
+          {summary.no_show > 0 && <span class="chip chip-warn">無断欠席 {summary.no_show}</span>}
+        </div>
+      </div>
+    </header>
+
+    {msg && <div class="ok-banner">{msg}</div>}
+    {err && <div class="err">{err}</div>}
+
+    {allParts.length === 0 ? (
+      <p class="empty">この枠にはまだ予約がありません。</p>
+    ) : (
+      <ul class="p-list">
+        {allParts.map((p) => {
+          const c = p.customers ?? {};
+          const r = p.reservation;
+          const g = r.guardians ?? {};
+          return (
+            <li class="p-card">
+              <div class="p-head">
+                <div class="p-nm">
+                  <span class="p-name">{p.name_snapshot}</span>
+                  <span class="p-kana">（{p.kana_snapshot}）</span>
+                  <span class="p-age">{p.age_at_booking}歳 · {genderJa(p.gender_snapshot)}</span>
+                  <span class="p-height">{p.height_cm}cm</span>
+                </div>
+                <a class="p-detail" href={`/admin/customers/${p.customer_id}`}>カルテ →</a>
+              </div>
+
+              <div class="p-status">
+                <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
+                  {attendanceLabel(p.attendance_status)}
+                </span>
+                <span class="p-cur-level">{skillLabel(c.current_skill_level)}</span>
+                <span class="p-parts">🏁 {c.total_participations ?? 0}回目</span>
+              </div>
+
+              {c.next_recommendation && (
+                <div class="p-rec">💡 <strong>申し送り:</strong> {c.next_recommendation}</div>
+              )}
+              {c.staff_notes && (
+                <div class="p-notes">📝 {c.staff_notes}</div>
+              )}
+              {p.kart_experience_note && (
+                <div class="p-exp">🚙 経験: {p.kart_experience_note}</div>
+              )}
+
+              <div class="p-actions">
+                <form method="post" class="a-form">
+                  <input type="hidden" name="op" value="set_attendance" />
+                  <input type="hidden" name="participant_id" value={p.id} />
+                  <div class="btn-group">
+                    {ATTENDANCE_STATUSES.map((s) => (
+                      <button type="submit" name="status" value={s.code}
+                              class={`btn-attend ${p.attendance_status === s.code ? 'active' : ''}`}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </form>
+
+                <details class="lvl-details">
+                  <summary>🎯 習熟度を更新</summary>
+                  <form method="post" class="lvl-form">
+                    <input type="hidden" name="op" value="set_level" />
+                    <input type="hidden" name="participant_id" value={p.id} />
+                    <input type="hidden" name="customer_id" value={p.customer_id} />
+                    <input type="hidden" name="from_level" value={c.current_skill_level ?? ''} />
+                    <div class="field">
+                      <label>新しい習熟度</label>
+                      <select name="to_level" required>
+                        <option value="">— 選択 —</option>
+                        {SKILL_LEVELS.map((s) => (
+                          <option value={s.code} disabled={s.code === c.current_skill_level}>
+                            {s.emoji} {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>理由（任意）</label>
+                      <input type="text" name="reason" maxlength="200" placeholder="今日の走行での判断" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">更新</button>
+                  </form>
+                </details>
+              </div>
+
+              <div class="p-guardian">
+                <span>👤 {g.name}（{g.kana}）</span>
+                {g.phone && <a href={`tel:${g.phone.replace(/[^0-9+]/g, '')}`}>📞 {g.phone}</a>}
+                <span class="p-num mono">{r.reservation_number}</span>
+              </div>
+
+              <div class="p-photo mono">写真: {photoJa(p.photo_consent)}</div>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .5rem; font-size: 1.4rem; font-weight: 800; }
+
+  .slot-summary {
+    background: var(--sky-mist);
+    border: 1px solid var(--sky-light);
+    border-radius: 10px;
+    padding: .7rem .9rem;
+    font-size: .82rem;
+  }
+  .ss-course { font-weight: 800; font-size: .95rem; }
+  .ss-meta { font-family: var(--mono); color: var(--ink-2); }
+  .ss-meta .sep { margin: 0 .3rem; color: var(--ink-3); }
+  .ss-caps {
+    display: flex; gap: .5rem; flex-wrap: wrap;
+    margin-top: .4rem; font-size: .74rem;
+    color: var(--ink-2);
+  }
+  .ss-caps strong { font-family: var(--mono); color: var(--ink); font-size: .82rem; margin: 0 .2rem; }
+  .chip {
+    padding: 2px 8px; border-radius: 100px; font-weight: 700; font-size: .68rem;
+  }
+  .chip-ok { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .chip-wait { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+  .chip-warn { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+
+  .ok-banner {
+    background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem; font-weight: 700;
+  }
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  }
+  .empty {
+    text-align: center; padding: 2rem 1rem; color: var(--ink-3);
+    font-size: .88rem; background: var(--bg-2); border-radius: 10px;
+  }
+
+  .p-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+  .p-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: .9rem 1.1rem;
+  }
+  .p-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+  .p-nm { display: flex; align-items: baseline; gap: .3rem; flex-wrap: wrap; }
+  .p-name { font-size: 1.05rem; font-weight: 800; }
+  .p-kana { color: var(--ink-3); font-size: .74rem; }
+  .p-age { color: var(--ink-2); font-size: .74rem; margin-left: .4rem; }
+  .p-height { color: var(--ink-2); font-size: .74rem; font-family: var(--mono); }
+  .p-detail {
+    font-size: .74rem; color: var(--sky-deep); text-decoration: none;
+    padding: 3px 10px; border-radius: 100px; background: var(--sky-mist);
+    font-weight: 700; white-space: nowrap;
+  }
+
+  .p-status {
+    display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+    margin-bottom: .5rem; font-size: .78rem;
+  }
+  .p-cur-level {
+    padding: 2px 8px; border-radius: 100px;
+    background: rgba(58,169,232,.1); color: var(--sky-deep);
+    font-weight: 700;
+  }
+  .p-parts { color: var(--ink-3); font-family: var(--mono); font-size: .72rem; }
+
+  .p-rec {
+    padding: .5rem .7rem; background: rgba(255,201,67,.12);
+    border: 1px solid rgba(255,201,67,.3);
+    border-radius: 6px; font-size: .82rem; color: var(--ink);
+    margin-bottom: .4rem;
+  }
+  .p-rec strong { color: var(--orange-deep); }
+  .p-notes {
+    padding: .5rem .7rem; background: var(--bg-2);
+    border-radius: 6px; font-size: .78rem; color: var(--ink-2);
+    margin-bottom: .4rem;
+  }
+  .p-exp {
+    padding: .3rem .6rem; font-size: .74rem; color: var(--ink-3);
+    margin-bottom: .4rem;
+  }
+
+  .p-actions {
+    padding-top: .5rem; border-top: 1px dashed var(--line); margin-top: .5rem;
+  }
+  .a-form { margin: 0 0 .5rem; }
+  .btn-group {
+    display: flex; gap: .3rem; flex-wrap: wrap;
+  }
+  .btn-attend {
+    padding: .5rem .9rem; font-size: .8rem; font-weight: 700;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink-2); cursor: pointer;
+    transition: all .1s;
+  }
+  .btn-attend:hover { background: var(--bg-2); }
+  .btn-attend.active {
+    background: var(--sky); color: #fff; border-color: var(--sky-deep);
+    box-shadow: 0 2px 6px rgba(58,169,232,.3);
+  }
+
+  .lvl-details {
+    background: var(--bg-2); border-radius: 8px;
+    padding: .5rem .8rem;
+  }
+  .lvl-details > summary {
+    cursor: pointer; font-size: .8rem; font-weight: 700; color: var(--sky-deep);
+    list-style: none; padding: .2rem 0;
+  }
+  .lvl-details > summary::-webkit-details-marker { display: none; }
+  .lvl-form { display: grid; gap: .5rem; margin-top: .5rem; }
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field label { font-size: .7rem; font-weight: 700; color: var(--ink-2); }
+  .field input, .field select {
+    padding: .5rem .65rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+
+  .p-guardian {
+    display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+    margin-top: .6rem; padding-top: .5rem; border-top: 1px dashed var(--line);
+    font-size: .74rem; color: var(--ink-2);
+  }
+  .p-guardian a { color: var(--sky-deep); text-decoration: none; }
+  .p-num { margin-left: auto; color: var(--ink-3); font-size: .68rem; }
+  .p-photo { font-size: .68rem; color: var(--ink-3); margin-top: .3rem; }
+
+  .badge {
+    padding: 3px 10px; border-radius: 100px;
+    font-size: .68rem; font-weight: 800;
+  }
+  .badge-expected { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+  .badge-attended { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .badge-noshow { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+  .badge-cancelled { background: rgba(160,160,160,.15); color: var(--ink-3); }
+  .badge-muted { background: var(--bg-3); color: var(--ink-3); }
+
+  .btn {
+    padding: .5rem 1rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .82rem; font-weight: 800;
+    border: none; cursor: pointer;
+    justify-self: start;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; box-shadow: 0 3px 10px rgba(58,169,232,.25);
+  }
+  .mono { font-family: var(--mono); }
+</style>

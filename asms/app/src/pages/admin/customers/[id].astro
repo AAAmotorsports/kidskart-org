@@ -1,0 +1,547 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import {
+  SKILL_LEVELS,
+  SYSTEM_ADMIN_UUID,
+  ageOn,
+  attendanceClass,
+  attendanceLabel,
+  formatMs,
+  jaDateLabel,
+  jaDateShort,
+  skillLabel,
+} from '@lib/admin';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const { id } = Astro.params;
+if (!id) return new Response('missing id', { status: 400 });
+
+// POST — inline handlers for karte edits. PRG pattern with ?msg=/?err=
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const op = form.get('op') as string;
+
+  const back = (msg = '', err = '') => {
+    const q = new URLSearchParams();
+    if (msg) q.set('msg', msg);
+    if (err) q.set('err', err);
+    return Astro.redirect(`/admin/customers/${id}${q.toString() ? '?' + q.toString() : ''}`);
+  };
+  const fmt = (e: any) =>
+    `${e?.code ?? ''} ${e?.message ?? ''} ${e?.details ?? ''}`.trim();
+
+  if (op === 'update_notes') {
+    const notes = ((form.get('staff_notes') as string) || '').trim() || null;
+    const rec = ((form.get('next_recommendation') as string) || '').trim() || null;
+    const { error } = await supabase
+      .from('customers')
+      .update({ staff_notes: notes, next_recommendation: rec })
+      .eq('id', id);
+    return error ? back('', fmt(error)) : back('メモを更新しました');
+  }
+
+  if (op === 'add_progression') {
+    const toLevel = form.get('to_level') as string;
+    const fromLevel = ((form.get('from_level') as string) || '') || null;
+    const reason = ((form.get('reason') as string) || '').trim() || null;
+    if (!toLevel) return back('', 'to_level は必須です');
+
+    const { error: pErr } = await supabase.from('customer_progressions').insert({
+      customer_id: id,
+      from_level: fromLevel,
+      to_level: toLevel,
+      reason,
+      changed_by: SYSTEM_ADMIN_UUID,
+    });
+    if (pErr) return back('', fmt(pErr));
+
+    const { error: cErr } = await supabase
+      .from('customers')
+      .update({ current_skill_level: toLevel })
+      .eq('id', id);
+    if (cErr) return back('', fmt(cErr));
+
+    return back(`習熟度を「${skillLabel(toLevel)}」に更新しました`);
+  }
+
+  if (op === 'add_best') {
+    const recordType = ((form.get('record_type') as string) || '').trim();
+    const minutes = parseInt((form.get('minutes') as string) || '0', 10);
+    const seconds = parseFloat((form.get('seconds') as string) || '0');
+    const vehicle = ((form.get('vehicle_name') as string) || '').trim() || null;
+    const note = ((form.get('note') as string) || '').trim() || null;
+    if (!recordType) return back('', '記録種別は必須です');
+    const totalMs = Math.round(minutes * 60000 + seconds * 1000);
+    if (totalMs <= 0) return back('', 'タイムは 0 より大きい値を入力してください');
+
+    const { error } = await supabase.from('customer_bests').insert({
+      customer_id: id,
+      record_type: recordType,
+      value_ms: totalMs,
+      vehicle_name: vehicle,
+      note,
+      recorded_by: SYSTEM_ADMIN_UUID,
+    });
+    return error ? back('', fmt(error)) : back('ベストタイムを追加しました');
+  }
+
+  if (op === 'delete_best') {
+    const bestId = form.get('best_id') as string;
+    if (!bestId) return back('', 'best_id が指定されていません');
+    const { error } = await supabase.from('customer_bests').delete().eq('id', bestId);
+    return error ? back('', fmt(error)) : back('ベストタイムを削除しました');
+  }
+
+  return back('', `未対応の操作: ${op}`);
+}
+
+const url = new URL(Astro.request.url);
+const msg = url.searchParams.get('msg');
+const err = url.searchParams.get('err');
+
+// Load the customer
+const { data: customer, error: cErr } = await supabase
+  .from('customers')
+  .select('*')
+  .eq('id', id)
+  .maybeSingle();
+
+if (!customer) {
+  return new Response(null, { status: 302, headers: { Location: '/admin/customers' } });
+}
+
+// Guardians via link table
+const { data: linkRows } = await supabase
+  .from('guardian_customer_links')
+  .select('relation, is_primary, guardians(id, name, kana, phone, email, address)')
+  .eq('customer_id', id);
+const guardians = (linkRows ?? [])
+  .map((l: any) => ({ ...l.guardians, relation: l.relation, is_primary: l.is_primary }))
+  .filter((g: any) => g.id);
+
+// Progression timeline (newest first)
+const { data: progressions } = await supabase
+  .from('customer_progressions')
+  .select('id, from_level, to_level, reason, changed_at')
+  .eq('customer_id', id)
+  .order('changed_at', { ascending: false })
+  .limit(50);
+
+// Best times
+const { data: bests } = await supabase
+  .from('customer_bests')
+  .select('id, record_type, value_ms, vehicle_name, note, recorded_at')
+  .eq('customer_id', id)
+  .order('recorded_at', { ascending: false })
+  .limit(50);
+
+// Participation history (via reservation_participants)
+const { data: participations } = await supabase
+  .from('reservation_participants')
+  .select(`
+    id, attendance_status, height_cm, age_at_booking, created_at,
+    reservations(id, reservation_number, status,
+                 slots(date, start_time, courses(name, code)))
+  `)
+  .eq('customer_id', id)
+  .order('created_at', { ascending: false })
+  .limit(100);
+
+const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他' } as any)[g] ?? g;
+---
+<Base title={`${customer.name} — カルテ · ASMS`}>
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin/customers">← 顧客一覧へ</a>
+      <div class="hd-name">
+        <h1>{customer.name}</h1>
+        <span class="hd-kana">（{customer.kana}）</span>
+      </div>
+      <div class="hd-meta">
+        <span class="hd-num">{customer.customer_number}</span>
+        <span>{customer.birth_date} · {ageOn(customer.birth_date)}歳 · {genderJa(customer.gender)}</span>
+      </div>
+    </header>
+
+    {msg && <div class="ok-banner">{msg}</div>}
+    {err && <div class="err">{err}</div>}
+
+    <section class="card level-card">
+      <div class="card-h">
+        <h2>🎯 現在の習熟度</h2>
+        <div class="cur-level">{skillLabel(customer.current_skill_level)}</div>
+      </div>
+
+      <details>
+        <summary>➕ 習熟度を変更</summary>
+        <form method="post" class="prog-form">
+          <input type="hidden" name="op" value="add_progression" />
+          <input type="hidden" name="from_level" value={customer.current_skill_level} />
+          <div class="field">
+            <label>新しい習熟度 *</label>
+            <select name="to_level" required>
+              <option value="">— 選択 —</option>
+              {SKILL_LEVELS.map((s) => (
+                <option value={s.code} disabled={s.code === customer.current_skill_level}>
+                  {s.emoji} {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div class="field">
+            <label>理由（任意）</label>
+            <input type="text" name="reason" maxlength="200"
+              placeholder="例: 単独走行 5 周ミス無し達成、コーナリング安定" />
+          </div>
+          <button type="submit" class="btn btn-primary">習熟度を更新</button>
+        </form>
+      </details>
+
+      {progressions && progressions.length > 0 && (
+        <details class="prog-history">
+          <summary>📈 習熟度履歴（{progressions.length}件）</summary>
+          <ul class="timeline">
+            {progressions.map((p: any) => (
+              <li>
+                <span class="tl-date mono">{p.changed_at?.slice(0, 10)}</span>
+                <span class="tl-arrow">
+                  {p.from_level ? <span class="tl-from">{skillLabel(p.from_level)}</span> : <span class="tl-from">（新規）</span>}
+                  →
+                  <span class="tl-to">{skillLabel(p.to_level)}</span>
+                </span>
+                {p.reason && <div class="tl-reason">{p.reason}</div>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+
+    <section class="card">
+      <h2>📝 スタッフメモ · 次回おすすめ</h2>
+      <form method="post" class="notes-form">
+        <input type="hidden" name="op" value="update_notes" />
+        <div class="field">
+          <label>スタッフメモ（体調・性格・注意事項など）</label>
+          <textarea name="staff_notes" maxlength="1000" rows="3">{customer.staff_notes ?? ''}</textarea>
+        </div>
+        <div class="field">
+          <label>次回おすすめ（当日申し送り）</label>
+          <textarea name="next_recommendation" maxlength="500" rows="2">{customer.next_recommendation ?? ''}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">メモを保存</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-h">
+        <h2>⏱ ベストタイム</h2>
+        <span class="c-sub">{bests?.length ?? 0}件</span>
+      </div>
+
+      {bests && bests.length > 0 && (
+        <ul class="best-list">
+          {bests.map((b: any) => (
+            <li>
+              <div class="best-l">
+                <div class="best-type">{b.record_type}</div>
+                <div class="best-time mono">{formatMs(b.value_ms)}</div>
+              </div>
+              <div class="best-r">
+                {b.vehicle_name && <span class="best-vehicle">🚙 {b.vehicle_name}</span>}
+                <span class="best-date mono">{b.recorded_at?.slice(0, 10)}</span>
+                {b.note && <div class="best-note">{b.note}</div>}
+              </div>
+              <form method="post" class="best-del" onsubmit="return confirm('このタイム記録を削除しますか？');">
+                <input type="hidden" name="op" value="delete_best" />
+                <input type="hidden" name="best_id" value={b.id} />
+                <button type="submit" class="del-btn" aria-label="削除">×</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <details>
+        <summary>➕ タイムを追加</summary>
+        <form method="post" class="best-form">
+          <input type="hidden" name="op" value="add_best" />
+          <div class="grid-2">
+            <div class="field">
+              <label>記録種別 *</label>
+              <input type="text" name="record_type" required maxlength="40"
+                placeholder="例: ベストラップ、5周合計" />
+            </div>
+            <div class="field">
+              <label>車両（任意）</label>
+              <input type="text" name="vehicle_name" maxlength="40"
+                placeholder="例: ミニカート 3号車" />
+            </div>
+            <div class="field">
+              <label>分 : 秒（例 1:23.456 → 1 と 23.456）</label>
+              <div class="time-row">
+                <input type="number" name="minutes" min="0" max="59" step="1" value="0" />
+                <span>:</span>
+                <input type="number" name="seconds" min="0" max="59.999" step="0.001" value="0" />
+              </div>
+            </div>
+            <div class="field">
+              <label>メモ（任意）</label>
+              <input type="text" name="note" maxlength="120" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">タイムを追加</button>
+        </form>
+      </details>
+    </section>
+
+    <section class="card">
+      <div class="card-h">
+        <h2>🏁 参加履歴</h2>
+        <span class="c-sub">{participations?.length ?? 0}件</span>
+      </div>
+
+      {(!participations || participations.length === 0) ? (
+        <p class="empty-inline">まだ参加履歴がありません。</p>
+      ) : (
+        <ul class="part-list">
+          {participations.map((p: any) => {
+            const r = p.reservations ?? {};
+            const s = r.slots ?? {};
+            const c = s.courses ?? {};
+            return (
+              <li>
+                <a class="part-link" href={r.id ? `/admin/slots/${s.id ?? ''}` : '#'}>
+                  <div class="part-l">
+                    <div class="part-date mono">
+                      {s.date ? jaDateShort(s.date) : '?'} {s.start_time?.slice(0, 5) ?? ''}
+                    </div>
+                    <div class="part-course">{c.name ?? ''}</div>
+                  </div>
+                  <div class="part-r">
+                    <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
+                      {attendanceLabel(p.attendance_status)}
+                    </span>
+                    <span class="part-meta mono">
+                      {p.height_cm}cm · {p.age_at_booking}歳
+                    </span>
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+
+    <section class="card">
+      <div class="card-h">
+        <h2>👤 保護者</h2>
+      </div>
+      {guardians.length === 0 ? (
+        <p class="empty-inline">保護者情報が登録されていません。</p>
+      ) : (
+        <ul class="g-list">
+          {guardians.map((g: any) => (
+            <li>
+              <div class="g-hd">
+                <span class="g-name">{g.name}</span>
+                <span class="g-kana">（{g.kana}）</span>
+                {g.relation && <span class="g-rel">{g.relation}</span>}
+                {g.is_primary && <span class="g-primary">主連絡先</span>}
+              </div>
+              <div class="g-contact">
+                {g.phone && <span>📞 {g.phone}</span>}
+                {g.email && <span>✉️ {g.email}</span>}
+              </div>
+              {g.address && <div class="g-addr">{g.address}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  .hd-name { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
+  .hd-kana { color: var(--ink-3); font-size: .84rem; }
+  .hd-meta {
+    display: flex; gap: .8rem; margin-top: .3rem;
+    font-size: .78rem; color: var(--ink-2);
+    font-family: var(--mono);
+  }
+  .hd-num { color: var(--ink-3); }
+
+  .ok-banner {
+    background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem; font-weight: 700;
+  }
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  }
+
+  .card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1.2rem; margin-bottom: 1rem;
+  }
+  .card-h {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .5rem; margin-bottom: .7rem;
+  }
+  .card h2 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--ink); }
+  .c-sub { font-size: .74rem; color: var(--ink-3); font-family: var(--mono); }
+
+  .level-card .cur-level {
+    font-size: 1rem; font-weight: 800;
+    padding: 6px 14px; border-radius: 100px;
+    background: linear-gradient(135deg, rgba(58,169,232,.15), rgba(58,169,232,.05));
+    color: var(--sky-deep);
+  }
+
+  details {
+    margin-top: .6rem; padding: .5rem .8rem;
+    background: var(--bg-2); border-radius: 8px;
+  }
+  details > summary {
+    cursor: pointer; font-size: .82rem; font-weight: 700; color: var(--ink-2);
+    list-style: none; padding: .2rem 0;
+  }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary { margin-bottom: .6rem; color: var(--sky-deep); }
+
+  .prog-form, .notes-form, .best-form { display: grid; gap: .6rem; }
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field label {
+    font-size: .72rem; font-weight: 700; color: var(--ink-2);
+  }
+  .field input, .field select, .field textarea {
+    padding: .55rem .7rem; font-size: .9rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--jp);
+  }
+  .field textarea { font-family: var(--jp); resize: vertical; }
+  .field input[type="number"] { font-family: var(--mono); }
+
+  .time-row { display: flex; align-items: center; gap: .5rem; }
+  .time-row input { width: 5rem; }
+  .time-row span { font-family: var(--mono); font-size: 1.1rem; color: var(--ink-3); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+  @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+  .timeline li {
+    padding: .5rem .7rem; background: var(--bg); border-radius: 6px;
+    border-left: 3px solid var(--sky);
+    font-size: .82rem;
+  }
+  .tl-date { font-size: .68rem; color: var(--ink-3); margin-right: .5rem; }
+  .tl-arrow { display: inline-flex; align-items: center; gap: .3rem; }
+  .tl-from { color: var(--ink-3); }
+  .tl-to { color: var(--sky-deep); font-weight: 700; }
+  .tl-reason { margin-top: .3rem; font-size: .76rem; color: var(--ink-2); }
+
+  .best-list { list-style: none; margin: 0 0 .8rem; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .best-list li {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: .7rem;
+    padding: .55rem .8rem; background: var(--bg-2); border-radius: 8px;
+    align-items: center;
+  }
+  .best-type { font-size: .74rem; color: var(--ink-3); font-weight: 700; }
+  .best-time { font-size: 1.15rem; font-weight: 800; color: var(--orange-deep); }
+  .best-r { font-size: .74rem; color: var(--ink-3); }
+  .best-vehicle { margin-right: .5rem; }
+  .best-date { }
+  .best-note { color: var(--ink-2); margin-top: .2rem; }
+  .del-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--bg);
+    color: var(--ink-3); font-size: 1rem; line-height: 1;
+    cursor: pointer; transition: all .15s;
+    padding: 0;
+  }
+  .del-btn:hover {
+    background: rgba(229,85,111,.1); border-color: var(--rose);
+    color: var(--rose-deep);
+  }
+  .best-del { margin: 0; }
+
+  .part-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .part-list li {
+    background: var(--bg-2); border-radius: 8px;
+    transition: background .1s;
+  }
+  .part-list li:hover { background: var(--bg-3); }
+  .part-link {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .55rem .8rem;
+    text-decoration: none; color: inherit;
+  }
+  .part-l { flex: 1; }
+  .part-date { font-weight: 700; font-size: .82rem; }
+  .part-course { font-size: .74rem; color: var(--ink-2); }
+  .part-r { display: flex; align-items: center; gap: .5rem; }
+  .part-meta { font-size: .68rem; color: var(--ink-3); }
+
+  .badge {
+    padding: 2px 8px; border-radius: 100px;
+    font-size: .68rem; font-weight: 800;
+  }
+  .badge-expected { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+  .badge-attended { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .badge-noshow { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+  .badge-cancelled { background: rgba(160,160,160,.15); color: var(--ink-3); }
+  .badge-muted { background: var(--bg-3); color: var(--ink-3); }
+
+  .g-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .g-list li { padding: .6rem .8rem; background: var(--bg-2); border-radius: 8px; }
+  .g-hd { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; margin-bottom: .3rem; }
+  .g-name { font-weight: 800; }
+  .g-kana { color: var(--ink-3); font-size: .74rem; }
+  .g-rel {
+    font-size: .68rem; background: var(--bg-3); color: var(--ink-2);
+    padding: 1px 6px; border-radius: 100px; font-weight: 700;
+  }
+  .g-primary {
+    font-size: .64rem; background: var(--sky); color: #fff;
+    padding: 1px 6px; border-radius: 100px; font-weight: 700;
+  }
+  .g-contact {
+    display: flex; gap: .8rem; flex-wrap: wrap;
+    font-size: .78rem; color: var(--ink-2);
+    font-family: var(--mono);
+  }
+  .g-addr { font-size: .74rem; color: var(--ink-3); margin-top: .3rem; }
+
+  .empty-inline {
+    text-align: center; padding: 1rem;
+    color: var(--ink-3); font-size: .82rem;
+  }
+
+  .btn {
+    padding: .55rem 1.1rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .85rem; font-weight: 800;
+    border: none; cursor: pointer;
+    justify-self: start;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(58,169,232,.3);
+  }
+  .mono { font-family: var(--mono); }
+</style>

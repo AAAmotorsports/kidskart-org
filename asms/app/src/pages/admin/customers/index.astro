@@ -1,0 +1,169 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { ageOn, skillLabel, jaDateShort, SKILL_LEVELS } from '@lib/admin';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const url = new URL(Astro.request.url);
+const search = (url.searchParams.get('q') ?? '').trim();
+const levelFilter = url.searchParams.get('level') ?? '';
+const sort = url.searchParams.get('sort') ?? 'last'; // last | participations | name
+
+// Load customers. Supabase's OR/ilike works on plain columns but not
+// across joins, so we filter client-side after fetching a bounded pool.
+let query = supabase
+  .from('customers')
+  .select('id, customer_number, name, kana, birth_date, gender, current_skill_level, total_participations, first_participation_at, last_participation_at, staff_notes, next_recommendation')
+  .eq('is_deleted', false)
+  .limit(500);
+
+if (levelFilter) query = query.eq('current_skill_level', levelFilter);
+
+if (sort === 'participations') query = query.order('total_participations', { ascending: false });
+else if (sort === 'name') query = query.order('kana');
+else query = query.order('last_participation_at', { ascending: false, nullsFirst: false });
+
+const { data: rows, error } = await query;
+let customers = (rows ?? []) as Array<any>;
+
+if (search) {
+  const q = search.toLowerCase();
+  customers = customers.filter((c) =>
+    c.name?.toLowerCase().includes(q) ||
+    c.kana?.toLowerCase().includes(q) ||
+    c.customer_number?.toLowerCase().includes(q)
+  );
+}
+---
+<Base title="顧客カルテ — ASMS">
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin">← 管理トップ</a>
+      <h1>顧客カルテ</h1>
+      <p class="sub">{customers.length}名（登録済 {rows?.length ?? 0}名 · アクティブのみ）</p>
+    </header>
+
+    <form class="toolbar" method="get">
+      <input type="search" name="q" placeholder="🔍 名前 · カナ · 顧客番号" value={search} />
+      <select name="level">
+        <option value="">習熟度 全て</option>
+        {SKILL_LEVELS.map((s) => (
+          <option value={s.code} selected={levelFilter === s.code}>{s.emoji} {s.label}</option>
+        ))}
+      </select>
+      <select name="sort">
+        <option value="last" selected={sort === 'last'}>最終参加日 順</option>
+        <option value="participations" selected={sort === 'participations'}>参加回数 順</option>
+        <option value="name" selected={sort === 'name'}>カナ順</option>
+      </select>
+      <button type="submit" class="btn-apply">適用</button>
+      {(search || levelFilter || sort !== 'last') && (
+        <a href="/admin/customers" class="btn-clear">× 全解除</a>
+      )}
+    </form>
+
+    {error && <div class="err">{error.code} {error.message}</div>}
+
+    {customers.length === 0 ? (
+      <p class="empty">
+        {search || levelFilter
+          ? '条件に一致する顧客はいません。'
+          : 'まだ顧客登録はありません。予約フローで顧客が生成されるとここに表示されます。'}
+      </p>
+    ) : (
+      <ul class="c-list">
+        {customers.map((c) => (
+          <li class="c-card">
+            <a class="c-link" href={`/admin/customers/${c.id}`}>
+              <div class="c-hd">
+                <span class="c-name">{c.name}</span>
+                <span class="c-kana">（{c.kana}）</span>
+                <span class="c-level">{skillLabel(c.current_skill_level)}</span>
+              </div>
+              <div class="c-meta">
+                <span class="c-age">{ageOn(c.birth_date)}歳</span>
+                <span class="c-num">{c.customer_number}</span>
+                <span class="c-parts">🏁 {c.total_participations}回</span>
+                {c.last_participation_at && (
+                  <span class="c-last">最終 {jaDateShort(c.last_participation_at.slice(0, 10))}</span>
+                )}
+              </div>
+              {c.next_recommendation && (
+                <div class="c-rec">💡 {c.next_recommendation}</div>
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .3rem; font-size: 1.5rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .toolbar {
+    display: flex; gap: .4rem; flex-wrap: wrap; align-items: center;
+    margin-bottom: 1rem;
+  }
+  .toolbar input, .toolbar select {
+    padding: .5rem .65rem; font-size: .84rem;
+    border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg);
+  }
+  .toolbar input[type="search"] { flex: 1; min-width: 180px; }
+  .btn-apply {
+    padding: .5rem 1rem; font-size: .82rem; font-weight: 700;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: var(--sky); color: #fff;
+  }
+  .btn-clear {
+    padding: .5rem .8rem; font-size: .74rem;
+    color: var(--rose-deep); text-decoration: none;
+    border: 1px solid rgba(229,85,111,.3); border-radius: 8px;
+    background: rgba(229,85,111,.05);
+  }
+
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  }
+  .empty {
+    text-align: center; padding: 2rem 1rem; color: var(--ink-3);
+    font-size: .88rem; background: var(--bg-2); border-radius: 10px;
+  }
+
+  .c-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .c-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    transition: transform .1s, box-shadow .15s;
+  }
+  .c-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(58,169,232,.1); }
+  .c-link { display: block; padding: .7rem 1rem; text-decoration: none; color: var(--ink); }
+  .c-hd { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; margin-bottom: .3rem; }
+  .c-name { font-size: 1rem; font-weight: 800; }
+  .c-kana { font-size: .74rem; color: var(--ink-3); }
+  .c-level {
+    margin-left: auto; font-size: .74rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 100px;
+    background: var(--sky-mist); color: var(--sky-deep);
+  }
+  .c-meta {
+    display: flex; gap: .8rem; flex-wrap: wrap;
+    font-size: .74rem; color: var(--ink-3);
+    font-family: var(--mono);
+  }
+  .c-age { color: var(--ink-2); font-weight: 700; }
+  .c-parts { color: var(--lime-deep); font-weight: 700; }
+  .c-rec {
+    margin-top: .4rem; padding: .4rem .6rem;
+    background: rgba(255,201,67,.1); border-radius: 6px;
+    font-size: .78rem; color: var(--ink);
+  }
+</style>
