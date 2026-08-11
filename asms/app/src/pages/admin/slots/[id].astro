@@ -42,6 +42,40 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back(`出欠を「${attendanceLabel(status)}」に更新しました`);
   }
 
+  if (op === 'set_slot_status') {
+    const newStatus = form.get('slot_status') as string;
+    const cascade = form.get('cascade') === '1';
+    if (!['open', 'closed', 'cancelled'].includes(newStatus)) {
+      return back('', '無効な状態です');
+    }
+    const { error: sErr } = await supabase
+      .from('slots')
+      .update({ status: newStatus })
+      .eq('id', id);
+    if (sErr) return back('', fmt(sErr));
+
+    let cascadeMsg = '';
+    if (cascade && newStatus === 'cancelled') {
+      // Cascade the cancellation to all reservations on this slot that
+      // aren't already terminal. This is opt-in because sometimes staff
+      // just want to mark the slot cancelled but resolve reservations
+      // manually.
+      const { error: rErr, count } = await supabase
+        .from('reservations')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancelled_reason: '運営側キャンセル（雨天・車両不備・スタッフ都合等）',
+        }, { count: 'exact' })
+        .eq('slot_id', id)
+        .not('status', 'in', '(cancelled,attended,no_show)');
+      if (rErr) return back(`枠を「${newStatus}」に変更しましたが、予約側の更新でエラー: ${fmt(rErr)}`, '');
+      cascadeMsg = `（既存予約 ${count ?? 0} 件も cancelled に更新）`;
+    }
+    const label = { open: '受付中', closed: '募集停止', cancelled: 'キャンセル' }[newStatus];
+    return back(`枠を「${label}」に変更しました ${cascadeMsg}`);
+  }
+
   if (op === 'set_level') {
     const partId = form.get('participant_id') as string;
     const customerId = form.get('customer_id') as string;
@@ -150,6 +184,49 @@ const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしの�
 
     {msg && <div class="ok-banner">{msg}</div>}
     {err && <div class="err">{err}</div>}
+
+    <section class="slot-actions">
+      <div class="sa-hd">
+        <span class="sa-label">現在の枠状態:</span>
+        <span class={`sa-status sa-${slot.status}`}>
+          {slot.status === 'open' ? '🟢 受付中'
+            : slot.status === 'closed' ? '🟡 募集停止'
+            : '🔴 キャンセル'}
+        </span>
+      </div>
+      <div class="sa-btns">
+        {slot.status !== 'closed' && (
+          <form method="post" class="sa-form"
+                onsubmit="return confirm('この枠を「募集停止」にしますか？（新規予約が入らなくなります。既存予約はそのままです）');">
+            <input type="hidden" name="op" value="set_slot_status" />
+            <input type="hidden" name="slot_status" value="closed" />
+            <button type="submit" class="btn-close">🟡 募集を停止する</button>
+          </form>
+        )}
+        {slot.status !== 'cancelled' && (
+          <form method="post" class="sa-form"
+                onsubmit="return confirm('この枠をキャンセルしますか？（新規予約もできなくなり、既存予約も自動でキャンセルされます）');">
+            <input type="hidden" name="op" value="set_slot_status" />
+            <input type="hidden" name="slot_status" value="cancelled" />
+            <input type="hidden" name="cascade" value="1" />
+            <button type="submit" class="btn-cancel">🔴 枠をキャンセル（既存予約も cancel）</button>
+          </form>
+        )}
+        {slot.status !== 'open' && (
+          <form method="post" class="sa-form"
+                onsubmit="return confirm('この枠を「受付中」に戻しますか？');">
+            <input type="hidden" name="op" value="set_slot_status" />
+            <input type="hidden" name="slot_status" value="open" />
+            <button type="submit" class="btn-reopen">🟢 受付を再開する</button>
+          </form>
+        )}
+      </div>
+      {slot.status === 'cancelled' && (
+        <p class="sa-note">
+          ⚠️ キャンセル後、参加者への連絡は電話で個別に行ってください（Phase 2 で自動通知メール予定）。
+        </p>
+      )}
+    </section>
 
     {allParts.length === 0 ? (
       <p class="empty">この枠にはまだ予約がありません。</p>
@@ -402,4 +479,50 @@ const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしの�
     color: #fff; box-shadow: 0 3px 10px rgba(58,169,232,.25);
   }
   .mono { font-family: var(--mono); }
+
+  .slot-actions {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: .9rem 1.1rem; margin-bottom: 1rem;
+  }
+  .sa-hd {
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    margin-bottom: .7rem;
+  }
+  .sa-label { font-size: .78rem; color: var(--ink-3); font-weight: 700; }
+  .sa-status {
+    font-size: .85rem; font-weight: 800;
+    padding: 4px 12px; border-radius: 100px;
+  }
+  .sa-open { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .sa-closed { background: rgba(255,201,67,.2); color: var(--orange-deep); }
+  .sa-cancelled { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+
+  .sa-btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .sa-form { margin: 0; }
+  .btn-close, .btn-cancel, .btn-reopen {
+    padding: .5rem 1rem; font-size: .82rem; font-weight: 700;
+    border-radius: 8px; border: 1.5px solid; cursor: pointer;
+    font-family: var(--jp);
+  }
+  .btn-close {
+    background: rgba(255,201,67,.15); color: var(--orange-deep);
+    border-color: var(--sun);
+  }
+  .btn-close:hover { background: var(--sun); color: #fff; }
+  .btn-cancel {
+    background: rgba(229,85,111,.1); color: var(--rose-deep);
+    border-color: var(--rose);
+  }
+  .btn-cancel:hover { background: var(--rose); color: #fff; }
+  .btn-reopen {
+    background: rgba(164,214,94,.15); color: var(--lime-deep);
+    border-color: var(--lime-deep);
+  }
+  .btn-reopen:hover { background: var(--lime-deep); color: #fff; }
+
+  .sa-note {
+    margin: .7rem 0 0; padding: .5rem .8rem;
+    background: rgba(229,85,111,.06); border: 1px solid rgba(229,85,111,.25);
+    border-radius: 6px; font-size: .74rem; color: var(--ink-2);
+  }
 </style>

@@ -114,30 +114,87 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     .maybeSingle();
   if (!term) return json({ error: '利用規約バージョンが見つかりません' }, 400);
 
-  // --- Insert guardian --------------------------------------------------
-  const { data: gRow, error: gErr } = await supabase
-    .from('guardians')
-    .insert({
-      name: guardian.name,
-      kana: guardian.kana,
-      phone: guardian.phone,
-      email: guardian.email,
-      postal_code: guardian.postal_code || null,
-      address: guardian.address || null,
-      emergency_contact_name: emergency.name,
-      emergency_contact_phone: emergency.phone,
-      emergency_contact_relation: emergency.relation || null,
-    })
-    .select('id')
-    .single();
-  if (gErr || !gRow) return json({ error: `保護者情報の登録に失敗しました: ${gErr?.message ?? '不明'}`, detail: gErr?.details }, 500);
+  // --- Guardian dedup: match by lower-cased email --------------------------
+  // Same email ≒ same person. Not perfect (typos, shared addresses) but
+  // prevents the "each booking creates a new guardian row" bloat we saw
+  // in early testing. If contact info drifted since last time (address
+  // change etc.), UPDATE the existing row so the karte reflects current
+  // reality.
+  const guardianEmail = (guardian.email ?? '').trim();
+  let guardianId: string | null = null;
+  if (guardianEmail) {
+    const { data: existing } = await supabase
+      .from('guardians')
+      .select('id')
+      .ilike('email', guardianEmail)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing?.id) {
+      const { error: uErr } = await supabase
+        .from('guardians')
+        .update({
+          name: guardian.name,
+          kana: guardian.kana,
+          phone: guardian.phone,
+          postal_code: guardian.postal_code || null,
+          address: guardian.address || null,
+          emergency_contact_name: emergency.name,
+          emergency_contact_phone: emergency.phone,
+          emergency_contact_relation: emergency.relation || null,
+        })
+        .eq('id', existing.id);
+      if (uErr) return json({ error: `保護者情報の更新に失敗しました: ${uErr.message}`, detail: uErr.details }, 500);
+      guardianId = existing.id;
+    }
+  }
+  if (!guardianId) {
+    const { data: gRow, error: gErr } = await supabase
+      .from('guardians')
+      .insert({
+        name: guardian.name,
+        kana: guardian.kana,
+        phone: guardian.phone,
+        email: guardianEmail,
+        postal_code: guardian.postal_code || null,
+        address: guardian.address || null,
+        emergency_contact_name: emergency.name,
+        emergency_contact_phone: emergency.phone,
+        emergency_contact_relation: emergency.relation || null,
+      })
+      .select('id')
+      .single();
+    if (gErr || !gRow) return json({ error: `保護者情報の登録に失敗しました: ${gErr?.message ?? '不明'}`, detail: gErr?.details }, 500);
+    guardianId = gRow.id;
+  }
 
-  // --- Insert one customer per participant -------------------------------
+  // --- Customer dedup: reuse an existing customer if same guardian has
+  //     already registered a child with the exact same (name, kana,
+  //     birth_date) triplet. Two different families with a same-named
+  //     same-birthday child would collide only within one guardian scope,
+  //     which is unlikely enough for MVP. Same guardian, different kana
+  //     writing would miss and create a dup — admin can merge later.
   const customerIds: string[] = [];
   for (const p of participants) {
     if (!p.name || !p.kana || !p.birth_date || !p.gender || !p.height_cm) {
       return json({ error: '参加者情報に不足があります' }, 400);
     }
+    const { data: linkedCustomers } = await supabase
+      .from('guardian_customer_links')
+      .select('customer_id, customers(id, name, kana, birth_date, is_deleted)')
+      .eq('guardian_id', guardianId);
+    const reused = (linkedCustomers ?? []).find((l: any) => {
+      const c = l.customers;
+      return c && !c.is_deleted
+        && c.name === p.name
+        && c.kana === p.kana
+        && c.birth_date === p.birth_date;
+    });
+    if (reused) {
+      customerIds.push((reused as any).customers.id);
+      continue;
+    }
+
     const customerNumber = 'C-' +
       Date.now().toString(36).toUpperCase() + '-' +
       Math.floor(Math.random() * 100000).toString().padStart(5, '0');
@@ -156,13 +213,12 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       return json({ error: `顧客情報の登録に失敗しました: ${cErr?.message ?? '不明'}`, detail: cErr?.details }, 500);
     }
     customerIds.push(c.id);
-  }
 
-  // --- Guardian ↔ customers links ---------------------------------------
-  for (const cid of customerIds) {
+    // Only create the link for newly-inserted customers; existing links
+    // are preserved on reuse.
     await supabase.from('guardian_customer_links').insert({
-      guardian_id: gRow.id,
-      customer_id: cid,
+      guardian_id: guardianId,
+      customer_id: c.id,
       relation: emergency.relation || '保護者',
       is_primary: true,
     });
@@ -179,7 +235,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     .from('reservations')
     .insert({
       slot_id: slot.id,
-      guardian_id: gRow.id,
+      guardian_id: guardianId,
       status,
       price_tier: price_tier === 'member' ? 'member' : 'regular',
       total_amount: totalAmount,
@@ -241,6 +297,26 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     return json({ error: '同意履歴の登録に失敗しました', detail: consentErr.message }, 500);
   }
 
+  // --- Fire-and-forget confirmation email (Resend) ---------------------
+  // If RESEND_API_KEY isn't configured, just skip silently — reservation
+  // creation must never fail because email delivery failed.
+  const apiUrl = new URL(request.url);
+  sendConfirmationEmail(env, {
+    to: guardianEmail,
+    guardianName: guardian.name,
+    reservationNumber: rRow.reservation_number,
+    status,
+    dateIso: slot.date,
+    startTime: slot.start_time,
+    endTime: slot.end_time,
+    courseName: course.name,
+    participants: participants.map((p: any) => p.name),
+    totalAmount,
+    priceTier: price_tier,
+    origin: `${apiUrl.protocol}//${apiUrl.host}`,
+    reservationId: rRow.id,
+  }).catch((e) => console.warn('[reserve/create] email send failed:', e));
+
   return json({
     ok: true,
     reservation_id: rRow.id,
@@ -248,6 +324,133 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     status,
   });
 };
+
+async function sendConfirmationEmail(env: Env, args: {
+  to: string;
+  guardianName: string;
+  reservationNumber: string;
+  status: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  participants: string[];
+  totalAmount: number;
+  priceTier: string;
+  origin: string;
+  reservationId: string;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey || !args.to) return;
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+  const replyTo = env.MAIL_REPLY_TO || undefined;
+
+  const isPending = args.status === 'pending_approval';
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+
+  const [h, m] = args.startTime.split(':').map(Number);
+  const totalMin = Math.max(0, h * 60 + m - 15);
+  const checkIn = `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
+
+  const subject = isPending
+    ? `【承認待ち】ご予約を受付けました — ${args.reservationNumber}`
+    : `【予約確定】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`;
+
+  const detailUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
+
+  const text = [
+    `${args.guardianName} 様`,
+    '',
+    isPending
+      ? '福岡キッズカートアカデミーへのご予約を受付けました。'
+      : 'ご予約が確定しました。ご参加をお待ちしております。',
+    '',
+    `▼ 予約内容`,
+    `予約番号: ${args.reservationNumber}`,
+    `状態: ${isPending ? '承認待ち' : '確定'}`,
+    `コース: ${args.courseName}`,
+    `日付: ${dateLabel}`,
+    `時間: ${timeLabel}`,
+    `受付開始: ${checkIn}（開始15分前）`,
+    `参加者: ${args.participants.join('・')} (${args.participants.length}名)`,
+    `料金: ¥${args.totalAmount.toLocaleString()}（${args.priceTier === 'member' ? '会員' : '一般'}）`,
+    '',
+    `▼ 予約詳細ページ`,
+    detailUrl,
+    '',
+    isPending
+      ? '当社確認のうえ、あらためて確定通知をお送りします。'
+      : '当日は動きやすい服装（長袖・長ズボン・運動靴）でお越しください。ヘルメット・グローブは貸出可能です。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '福岡キッズカートアカデミー / エーワンサーキット',
+    '📞 092-927-1177',
+    '🌐 https://kidskart.org/',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
+<body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">${isPending ? '⏳' : '✅'}</div>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.2rem">${isPending ? 'ご予約を受付けました' : 'ご予約が確定しました'}</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.9rem">${escapeHtml(args.guardianName)} 様</p>
+    <table style="width:100%;border-collapse:collapse;font-size:.88rem;margin-bottom:1rem">
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;color:#1a7fb8;font-weight:800">${escapeHtml(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">状態</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${isPending ? '<span style="background:rgba(255,201,67,.2);color:#e5631a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">承認待ち</span>' : '<span style="background:rgba(164,214,94,.2);color:#7eb13a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">確定</span>'}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.courseName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">日付</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(dateLabel)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">時間</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(timeLabel)}</td></tr>
+      <tr style="background:rgba(255,201,67,.1)"><td style="padding:.5rem .5rem;color:#7d8fa0;font-size:.74rem;font-weight:700">受付開始</td><td style="padding:.5rem .5rem;text-align:right;font-family:monospace;color:#e5631a;font-weight:800">${escapeHtml(checkIn)} <span style="font-size:.68rem;color:#7d8fa0;font-weight:400;font-family:sans-serif">（開始15分前）</span></td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">参加者</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.participants.join('・'))} (${args.participants.length}名)</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">料金</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">¥${args.totalAmount.toLocaleString()}（${args.priceTier === 'member' ? '会員' : '一般'}）</td></tr>
+    </table>
+    <p style="text-align:center;margin:1rem 0">
+      <a href="${detailUrl}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">予約詳細を開く</a>
+    </p>
+    ${isPending
+      ? '<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">当社にて内容を確認のうえ、あらためて確定通知をお送りします。</p>'
+      : '<p style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.7rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem">当日は動きやすい服装（長袖・長ズボン・運動靴）でお越しください。ヘルメット・グローブは貸出可能です。</p>'}
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
+      福岡キッズカートアカデミー / エーワンサーキット<br>
+      📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
+    </p>
+  </div>
+</body></html>`;
+
+  const body: any = {
+    from: `${fromName} <${from}>`,
+    to: [args.to],
+    subject,
+    text,
+    html,
+  };
+  if (replyTo) body.reply_to = replyTo;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`);
+  }
+}
+
+function escapeHtml(s: string): string {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+}
 
 function json(obj: any, status = 200) {
   return new Response(JSON.stringify(obj), {
