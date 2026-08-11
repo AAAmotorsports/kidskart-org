@@ -95,6 +95,62 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back('ベストタイムを削除しました');
   }
 
+  if (op === 'merge_into') {
+    const targetId = form.get('target_id') as string;
+    if (!targetId) return back('', '統合先が指定されていません');
+    if (targetId === id) return back('', '自分自身には統合できません');
+
+    // Verify target exists and is not itself deleted
+    const { data: target } = await supabase
+      .from('customers')
+      .select('id, is_deleted')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (!target) return back('', '統合先のカルテが見つかりません');
+    if (target.is_deleted) return back('', '統合先のカルテは既に削除されています');
+
+    // Move all history to target
+    const moves = [
+      supabase.from('reservation_participants').update({ customer_id: targetId }).eq('customer_id', id),
+      supabase.from('customer_progressions').update({ customer_id: targetId }).eq('customer_id', id),
+      supabase.from('customer_bests').update({ customer_id: targetId }).eq('customer_id', id),
+      supabase.from('guardian_customer_links').update({ customer_id: targetId }).eq('customer_id', id),
+    ];
+    for (const p of moves) {
+      const { error } = await p;
+      if (error) return back('', `統合中にエラー: ${fmt(error)}`);
+    }
+
+    // Mark source as merged + deleted
+    const { error: mErr } = await supabase
+      .from('customers')
+      .update({ merged_into_id: targetId, is_deleted: true })
+      .eq('id', id);
+    if (mErr) return back('', `統合フラグ更新に失敗: ${fmt(mErr)}`);
+
+    // Best-effort: recompute target's total_participations from
+    // reservation_participants (the recalc trigger only fires on
+    // participant UPDATE, and we just re-parented rows). One touch
+    // triggers the recalc.
+    const { data: anyPart } = await supabase
+      .from('reservation_participants')
+      .select('id, attendance_status')
+      .eq('customer_id', targetId)
+      .limit(1)
+      .maybeSingle();
+    if (anyPart) {
+      await supabase
+        .from('reservation_participants')
+        .update({ attendance_status: anyPart.attendance_status })
+        .eq('id', anyPart.id);
+    }
+
+    // Redirect to the target's karte
+    const q = new URLSearchParams();
+    q.set('msg', `統合完了：このカルテは統合先へ移動されました`);
+    return Astro.redirect(`/admin/customers/${targetId}?${q.toString()}`);
+  }
+
   return back('', `未対応の操作: ${op}`);
 }
 
@@ -151,6 +207,18 @@ const { data: participations } = await supabase
   .limit(100);
 
 const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他' } as any)[g] ?? g;
+
+// Merge candidates: other alive customers with same name OR same kana
+// OR same birth_date. Same-birth-date alone is a weaker signal but
+// still worth surfacing (typos in name / kana).
+const { data: candidatesRaw } = await supabase
+  .from('customers')
+  .select('id, customer_number, name, kana, birth_date, gender, current_skill_level, total_participations, last_participation_at')
+  .eq('is_deleted', false)
+  .neq('id', id)
+  .or(`name.eq.${customer.name},kana.eq.${customer.kana},birth_date.eq.${customer.birth_date}`)
+  .limit(20);
+const candidates = (candidatesRaw ?? []) as any[];
 ---
 <Base title={`${customer.name} — カルテ · ASMS`}>
   <main>
@@ -336,6 +404,50 @@ const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他
         </ul>
       )}
     </section>
+
+    {candidates.length > 0 && (
+      <section class="card merge-card">
+        <div class="card-h">
+          <h2>🔗 統合候補（{candidates.length}件）</h2>
+          <span class="c-sub">同姓・同カナ・同誕生日で自動抽出</span>
+        </div>
+        <p class="merge-hint">同一人物が複数のカルテに分かれている場合、下から「このカルテに統合」を選ぶと、参加履歴・習熟度履歴・ベストタイム・保護者リンクが統合先に集約されます。<strong>元のカルテは削除フラグが立ちます</strong>。</p>
+        <ul class="cand-list">
+          {candidates.map((c: any) => {
+            const matches = [
+              c.name === customer.name && '名前一致',
+              c.kana === customer.kana && 'カナ一致',
+              c.birth_date === customer.birth_date && '誕生日一致',
+            ].filter(Boolean);
+            return (
+              <li>
+                <div class="cand-head">
+                  <a class="cand-link" href={`/admin/customers/${c.id}`}>
+                    <span class="cand-name">{c.name}</span>
+                    <span class="cand-kana">（{c.kana}）</span>
+                    <span class="cand-num">{c.customer_number}</span>
+                  </a>
+                  <div class="cand-matches">
+                    {matches.map((m) => <span class="match">{m}</span>)}
+                  </div>
+                </div>
+                <div class="cand-meta">
+                  <span>{c.birth_date} · {ageOn(c.birth_date)}歳 · {genderJa(c.gender)}</span>
+                  <span class="mono">🏁 {c.total_participations}回</span>
+                  <span>{skillLabel(c.current_skill_level)}</span>
+                </div>
+                <form method="post"
+                      onsubmit={`return confirm('このカルテ (${customer.name} ${customer.customer_number}) を「${c.name} ${c.customer_number}」に統合します。よろしいですか？（元は削除フラグが立ちます）');`}>
+                  <input type="hidden" name="op" value="merge_into" />
+                  <input type="hidden" name="target_id" value={c.id} />
+                  <button type="submit" class="btn-merge">← このカルテに統合</button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    )}
 
     <section class="card">
       <div class="card-h">
@@ -531,6 +643,46 @@ const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他
   .empty-inline {
     text-align: center; padding: 1rem;
     color: var(--ink-3); font-size: .82rem;
+  }
+
+  .merge-card {
+    border-color: var(--sun);
+    background: linear-gradient(135deg, rgba(255,201,67,.06), rgba(255,201,67,.02));
+  }
+  .merge-hint {
+    font-size: .78rem; color: var(--ink-2); line-height: 1.6;
+    margin: 0 0 .8rem;
+  }
+  .merge-hint strong { color: var(--rose-deep); }
+  .cand-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .cand-list li {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: .7rem .9rem;
+  }
+  .cand-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; flex-wrap: wrap; }
+  .cand-link { text-decoration: none; color: var(--ink); }
+  .cand-name { font-weight: 800; }
+  .cand-kana { color: var(--ink-3); font-size: .74rem; margin-left: .2rem; }
+  .cand-num { color: var(--ink-3); font-size: .68rem; font-family: var(--mono); margin-left: .5rem; }
+  .cand-matches { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .match {
+    font-size: .64rem; font-weight: 700;
+    background: rgba(255,201,67,.2); color: var(--orange-deep);
+    padding: 2px 6px; border-radius: 100px;
+  }
+  .cand-meta {
+    display: flex; gap: .8rem; flex-wrap: wrap;
+    font-size: .74rem; color: var(--ink-2);
+    margin-bottom: .5rem;
+  }
+  .btn-merge {
+    padding: .5rem 1rem; font-size: .8rem; font-weight: 700;
+    background: var(--sun); color: var(--ink);
+    border: 1.5px solid var(--orange); border-radius: 8px;
+    cursor: pointer;
+  }
+  .btn-merge:hover {
+    background: var(--orange); color: #fff;
   }
 
   .btn {
