@@ -281,7 +281,7 @@ CREATE TABLE reservations (
   price_tier           price_tier NOT NULL DEFAULT 'regular',
   total_amount         INT NOT NULL DEFAULT 0,
   note                 TEXT,
-  cancel_token         TEXT NOT NULL DEFAULT encode(gen_random_bytes(24), 'base64url'),
+  cancel_token         TEXT NOT NULL DEFAULT translate(encode(gen_random_bytes(24), 'base64'), '+/', '-_'),
   approved_at          TIMESTAMPTZ,
   approved_by          UUID,
   approval_note        TEXT,
