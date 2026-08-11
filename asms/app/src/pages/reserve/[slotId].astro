@@ -157,18 +157,14 @@ const termsHtml = terms
           <section class="step" data-step="1">
             <h2>1. 予約内容の確認</h2>
 
-            <details class="repeat-lookup" open>
-              <summary>🔁 以前ご利用ですか？（電話番号で情報を呼び出す）</summary>
-              <div class="rl-body">
-                <p class="hint">以前ご登録の電話番号を入力すると、保護者・お子様情報を自動入力します。</p>
-                <div class="rl-row">
-                  <input type="tel" id="lookupPhone" placeholder="09012345678"
-                    maxlength="20" inputmode="numeric" autocomplete="tel" />
-                  <button type="button" id="lookupBtn" class="btn btn-ghost">🔍 検索</button>
-                </div>
-                <div id="lookupResult" hidden></div>
+            <div id="prefillPanel" hidden class="prefill-panel">
+              <div class="pp-h">🔁 このブラウザに前回のご予約情報が保存されています</div>
+              <div class="pp-actions">
+                <button type="button" id="prefillApply" class="btn btn-primary">前回の情報を使う</button>
+                <button type="button" id="prefillClear" class="btn btn-ghost">情報を削除</button>
               </div>
-            </details>
+              <p class="hint">※ この端末のブラウザ内にのみ保存されています。他の端末や他人のブラウザからは見えません。署名は毎回必要です。</p>
+            </div>
 
             <div class="field">
               <label>参加人数</label>
@@ -660,129 +656,100 @@ const termsHtml = terms
       sigDrawn = false;
     });
 
-    // "以前ご利用ですか?" 電話番号ルックアップ (repeat-customer prefill)
-    const lookupBtn = document.getElementById('lookupBtn') as HTMLButtonElement | null;
-    const lookupPhone = document.getElementById('lookupPhone') as HTMLInputElement | null;
-    const lookupResult = document.getElementById('lookupResult');
-    if (lookupBtn && lookupPhone && lookupResult) {
-      let cachedCustomers: any[] = [];
-      let cachedGuardian: any = null;
+    // localStorage-based repeat-customer prefill. Zero server calls,
+    // zero privacy leakage risk — data stays on the user's own device.
+    // Saved on successful submission (see submit handler below).
+    const LS_KEY = 'asms:lastReservation';
+    const prefillPanel = document.getElementById('prefillPanel');
+    const prefillApply = document.getElementById('prefillApply') as HTMLButtonElement | null;
+    const prefillClear = document.getElementById('prefillClear') as HTMLButtonElement | null;
 
-      const escape = (s: any) => String(s ?? '').replace(/[&<>"']/g, (c) => (
-        { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' } as Record<string, string>
-      )[c]);
+    let savedPrefill: any = null;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) savedPrefill = JSON.parse(raw);
+    } catch {}
+    if (savedPrefill && prefillPanel) prefillPanel.hidden = false;
 
-      const setFieldValue = (name: string, value: string | null | undefined) => {
-        const el = form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
-        if (el) el.value = value ?? '';
+    const setFieldValue = (name: string, value: string | null | undefined) => {
+      const el = form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
+      if (el) el.value = value ?? '';
+    };
+
+    prefillApply?.addEventListener('click', () => {
+      if (!savedPrefill) return;
+      const g = savedPrefill.guardian || {};
+      setFieldValue('g_name', g.name);
+      setFieldValue('g_kana', g.kana);
+      setFieldValue('g_phone', g.phone);
+      setFieldValue('g_email', g.email);
+      setFieldValue('g_postal', g.postal_code);
+      setFieldValue('g_address', g.address);
+
+      // Emergency contact
+      if (savedPrefill.sameAsGuardian || !savedPrefill.emergency) {
+        // handled in the sameChk block below
+      } else {
+        const e = savedPrefill.emergency;
+        setFieldValue('e_name', e.name);
+        setFieldValue('e_phone', e.phone);
+        setFieldValue('e_relation', e.relation);
+      }
+
+      // Wait for sameChk to be defined; it's declared later in the same
+      // function scope. Retry once on next tick if not yet available.
+      const applySame = () => {
+        const same = !!savedPrefill.sameAsGuardian;
+        // @ts-ignore closure over sameChk declared later
+        if (typeof sameChk !== 'undefined' && sameChk) {
+          sameChk.checked = same;
+          // @ts-ignore
+          syncSame();
+        } else {
+          setTimeout(applySame, 0);
+        }
       };
+      applySame();
 
-      const applyLookup = () => {
-        if (!cachedGuardian) return;
-        const g = cachedGuardian;
-        setFieldValue('g_name', g.name);
-        setFieldValue('g_kana', g.kana);
-        setFieldValue('g_phone', g.phone);
-        setFieldValue('g_email', g.email);
-        setFieldValue('g_postal', g.postal_code);
-        setFieldValue('g_address', g.address);
-        setFieldValue('e_name', g.emergency_contact_name);
-        setFieldValue('e_phone', g.emergency_contact_phone);
-        setFieldValue('e_relation', g.emergency_contact_relation);
-
-        // If emergency mirrors guardian, keep "same" checkbox on; else off.
-        const emerSame = !g.emergency_contact_name
-          || (g.emergency_contact_name === g.name && g.emergency_contact_phone === g.phone);
-        if (sameChk) { sameChk.checked = emerSame; syncSame(); }
-
-        // Which children were selected via the lookup result checkboxes?
-        const selected: any[] = cachedCustomers.filter((_c, i) => {
-          const chk = document.querySelector<HTMLInputElement>(`input[data-lookup-kid="${i}"]`);
-          return chk?.checked;
+      // Participants
+      const parts = savedPrefill.participants || [];
+      if (parts.length > 0) {
+        const maxP = parseInt(form.dataset.maxParticipants || '1', 10);
+        const desiredCount = Math.min(parts.length, maxP);
+        const countRadio = form.querySelector<HTMLInputElement>(`input[name="participant_count"][value="${desiredCount}"]`);
+        if (countRadio) {
+          countRadio.checked = true;
+          updateTotal();
+        }
+        renderParticipants();
+        const pEls = host.querySelectorAll<HTMLElement>('.participant');
+        parts.slice(0, desiredCount).forEach((p: any, i: number) => {
+          const el = pEls[i];
+          if (!el) return;
+          const setP = (name: string, v: string | null | undefined) => {
+            const f = el.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
+            if (f && v != null && v !== '') f.value = String(v);
+          };
+          setP('p_name', p.name);
+          setP('p_kana', p.kana);
+          setP('p_birth', p.birth_date);
+          setP('p_gender', p.gender);
+          if (p.height_cm) setP('p_height', String(p.height_cm));
+          setP('p_experience', p.kart_experience_note);
+          const photoRadio = el.querySelector<HTMLInputElement>(`input[name="p_photo"][value="${p.photo_consent || 'allow'}"]`);
+          if (photoRadio) photoRadio.checked = true;
         });
+      }
 
-        if (selected.length > 0) {
-          const desiredCount = Math.min(selected.length, parseInt(form.dataset.maxParticipants || '1', 10));
-          const countRadio = form.querySelector<HTMLInputElement>(`input[name="participant_count"][value="${desiredCount}"]`);
-          if (countRadio) {
-            countRadio.checked = true;
-            updateTotal();
-          }
-          renderParticipants();
-          const pEls = host.querySelectorAll<HTMLElement>('.participant');
-          selected.slice(0, desiredCount).forEach((c, i) => {
-            const el = pEls[i];
-            if (!el) return;
-            const setP = (name: string, v: string | null | undefined) => {
-              const f = el.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
-              if (f && v != null && v !== '') f.value = String(v);
-            };
-            setP('p_name', c.name);
-            setP('p_kana', c.kana);
-            setP('p_birth', c.birth_date);
-            setP('p_gender', c.gender);
-            if (c.height_cm) setP('p_height', String(c.height_cm));
-            setP('p_experience', c.kart_experience_note);
-            const photoRadio = el.querySelector<HTMLInputElement>(`input[name="p_photo"][value="${c.photo_consent || 'allow'}"]`);
-            if (photoRadio) photoRadio.checked = true;
-          });
-        }
+      if (prefillPanel) prefillPanel.hidden = true;
+    });
 
-        lookupResult.innerHTML = '<div class="rl-applied">✅ 前回の情報を反映しました。「次へ」で参加者情報の確認 → 規約へ進めます。</div>';
-      };
-
-      lookupBtn.addEventListener('click', async () => {
-        const phone = lookupPhone.value.trim();
-        if (!phone) return;
-        lookupBtn.disabled = true;
-        const orig = lookupBtn.textContent;
-        lookupBtn.textContent = '検索中…';
-        try {
-          const r = await fetch('/api/reserve/lookup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone }),
-          });
-          const d = await r.json();
-          if (!r.ok) {
-            lookupResult.innerHTML = `<div class="rl-err">${escape(d?.error || '検索エラー')}</div>`;
-            lookupResult.hidden = false;
-            return;
-          }
-          if (!d.found) {
-            lookupResult.innerHTML = '<div class="rl-err">該当する予約情報が見つかりませんでした。下のフォームからご入力ください。</div>';
-            lookupResult.hidden = false;
-            return;
-          }
-          cachedGuardian = d.guardian;
-          cachedCustomers = d.customers ?? [];
-          const kidsHtml = cachedCustomers.length > 0
-            ? `<div class="rl-kids-h">今日の参加者を選択（複数可）:</div>
-               <div class="rl-kids">${cachedCustomers.map((c: any, i: number) => `
-                 <label class="cp-choice small">
-                   <input type="checkbox" data-lookup-kid="${i}" ${i === 0 ? 'checked' : ''} />
-                   <span>${escape(c.name)}${c.kana ? ` (${escape(c.kana)})` : ''}${c.birth_date ? ` · ${escape(c.birth_date)}` : ''}</span>
-                 </label>
-               `).join('')}</div>`
-            : '<div class="rl-hint">お子様の登録履歴は見つかりませんでした。参加者情報は次のステップで入力してください。</div>';
-          lookupResult.innerHTML = `
-            <div class="rl-found">
-              <div class="rl-h">✅ <strong>${escape(cachedGuardian.name)} 様</strong>のご予約情報が見つかりました</div>
-              ${kidsHtml}
-              <button type="button" class="btn btn-primary" id="lookupApplyBtn">この情報を使う</button>
-            </div>
-          `;
-          lookupResult.hidden = false;
-          document.getElementById('lookupApplyBtn')?.addEventListener('click', applyLookup);
-        } catch (err: any) {
-          lookupResult.innerHTML = `<div class="rl-err">検索に失敗しました: ${escape(err?.message || err)}</div>`;
-          lookupResult.hidden = false;
-        } finally {
-          lookupBtn.disabled = false;
-          lookupBtn.textContent = orig;
-        }
-      });
-    }
+    prefillClear?.addEventListener('click', () => {
+      if (!confirm('このブラウザに保存されている予約情報を削除しますか？')) return;
+      try { localStorage.removeItem(LS_KEY); } catch {}
+      savedPrefill = null;
+      if (prefillPanel) prefillPanel.hidden = true;
+    });
 
     // "緊急連絡先は保護者と同じ" toggle: reveal / hide the emergency
     // form and skip its required validation when checked.
@@ -962,6 +929,19 @@ const termsHtml = terms
           e.detail = body?.detail;
           throw e;
         }
+        // On success, save non-sensitive form data for next-time prefill
+        // on this browser only. Signature is intentionally NOT saved —
+        // each booking requires a fresh consent.
+        try {
+          const toSave = {
+            guardian: payload.guardian,
+            emergency: payload.emergency,
+            sameAsGuardian: !!sameChk?.checked,
+            participants: payload.participants,
+            savedAt: new Date().toISOString(),
+          };
+          localStorage.setItem(LS_KEY, JSON.stringify(toSave));
+        } catch {}
         window.location.href = `/reserve/complete/${body.reservation_id}`;
       } catch (err: any) {
         submitOverlay.hidden = true;
@@ -1100,42 +1080,22 @@ const termsHtml = terms
   }
   .radio-row { display: flex; gap: .4rem; flex-wrap: wrap; }
 
-  .repeat-lookup {
-    background: linear-gradient(135deg, rgba(58,169,232,.08), rgba(58,169,232,.02));
-    border: 1px solid var(--sky-light);
+  .prefill-panel {
+    background: linear-gradient(135deg, rgba(58,169,232,.10), rgba(58,169,232,.02));
+    border: 1px solid var(--sky);
     border-radius: 10px;
-    padding: .7rem .9rem;
+    padding: .9rem 1rem;
     margin-bottom: 1rem;
   }
-  .repeat-lookup > summary {
-    cursor: pointer; font-weight: 700; font-size: .85rem;
-    color: var(--sky-deep); list-style: none;
-    padding: .2rem 0;
+  .pp-h {
+    font-weight: 700; font-size: .88rem; color: var(--sky-deep);
+    margin-bottom: .6rem;
   }
-  .repeat-lookup > summary::-webkit-details-marker { display: none; }
-  .rl-body { margin-top: .6rem; }
-  .rl-row {
-    display: flex; gap: .5rem; align-items: stretch;
-    margin-bottom: .5rem;
+  .pp-actions {
+    display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .4rem;
   }
-  .rl-row input {
-    flex: 1; padding: .55rem .7rem; font-size: .9rem;
-    border: 1.5px solid var(--line); border-radius: 8px;
-    background: var(--bg); font-family: var(--mono);
-  }
-  .rl-row .btn { padding: .55rem 1rem; font-size: .82rem; margin-left: 0; white-space: nowrap; }
-  .rl-found, .rl-err, .rl-applied {
-    padding: .7rem .9rem; border-radius: 8px; font-size: .82rem;
-    margin-top: .5rem; line-height: 1.6;
-  }
-  .rl-found { background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep); color: var(--ink); }
-  .rl-err { background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3); color: var(--rose-deep); }
-  .rl-applied { background: rgba(164,214,94,.18); border: 1px solid var(--lime-deep); color: var(--lime-deep); font-weight: 700; }
-  .rl-h { margin-bottom: .5rem; }
-  .rl-kids-h { font-size: .74rem; color: var(--ink-2); font-weight: 700; margin: .5rem 0 .3rem; }
-  .rl-kids { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .7rem; }
-  .rl-hint { font-size: .76rem; color: var(--ink-3); margin-bottom: .5rem; }
-  .rl-found .btn-primary { margin-left: 0; width: 100%; padding: .6rem 1rem; font-size: .9rem; }
+  .pp-actions .btn { margin: 0; padding: .55rem 1rem; font-size: .84rem; }
+  .pp-actions .btn-primary { flex: 1; min-width: 160px; }
 
   .member-confirm, .same-as-guardian {
     margin-top: .8rem; padding: .8rem .9rem;
