@@ -341,7 +341,16 @@ async function sendConfirmationEmail(env: Env, args: {
   reservationId: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
-  if (!apiKey || !args.to) return;
+  const envKeys = Object.keys(env).sort();
+  if (!apiKey) {
+    console.warn('[reserve/create] SKIP email: RESEND_API_KEY not set in runtime env. Available env keys:', envKeys);
+    return;
+  }
+  if (!args.to) {
+    console.warn('[reserve/create] SKIP email: no recipient address');
+    return;
+  }
+  console.log('[reserve/create] sending email to', args.to, 'via Resend (key ends with', apiKey.slice(-4), ')');
   const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
   const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
   const replyTo = env.MAIL_REPLY_TO || undefined;
