@@ -53,17 +53,36 @@
 - 電子署名エリアなど、指ジェスチャを吸収したい要素には `touch-action: none` **と** `touchstart/touchmove` の `preventDefault({ passive: false })` を**両方**適用する（片方だけだと古い WebView で漏れる）
 
 ### 環境変数の source of truth
-- **Cloudflare Dashboard の「変数とシークレット」が唯一の設定場所**
-- `wrangler.jsonc` の `vars` は空 `{}` にしておく（過去に `vars` に書いたら Runtime に届かない事故があった）
-- Astro の `envFrom(locals)` で `locals.runtime.env` から読む（`import.meta.env` は dev 用フォールバックのみ）
-- 新しい環境変数を追加するときは:
-  1. Dashboard の 変数とシークレット に追加（変数 or シークレット）
-  2. `env.d.ts` の `Env` 型に追加
-  3. **既存のバージョンを再展開 or 新規コミット** で bind し直す（Dashboard 追加だけでは古い version には反映されない）
-  4. `wrangler.jsonc` のコメント欄「VARIABLES THAT MUST EXIST IN THE DASHBOARD」に追記
+2 層構造:
+
+**wrangler.jsonc `vars`** — 非機微な設定の source of truth
+- 変更は git 経由（PR + deploy）でだけ行う
+- Dashboard から見ると読み取り専用に見える（deploy のたび上書きされる）
+- ここに書けるもの:
+  - PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY（anon key は公開前提）
+  - ADMIN_USERNAME / ADMIN_PASSWORD_HASH（hash なので漏洩しても password 復元不可）
+  - MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO
+
+**Cloudflare Dashboard「変数とシークレット」（シークレット型のみ）** — 真の機密
+- git に載せられないもの:
+  - RESEND_API_KEY
+  - SUPABASE_SERVICE_ROLE_KEY
+- Dashboard 追加後は「デプロイ タブ → 現バージョン再展開」で bind し直す
+  （新規シークレットは既存 version には自動反映されない）
+
+### `wrangler.jsonc` の `vars` は絶対に空 `{}` にしない
+`vars: {}` は「変数ゼロを push」を意味し、Dashboard 変数を deploy 時に全削除する。
+削除操作: `vars` セクション自体を削除する（キーごと消す）。空オブジェクトを残さない。
+
+### Astro での読み方
+- `envFrom(locals)` で `locals.runtime.env` から読む
+- `import.meta.env` は dev 用フォールバックのみ（本番では runtime env 経由）
+
+### 新しい環境変数を追加するときの手順
+- **非機微なら**: wrangler.jsonc `vars` に追加 → env.d.ts の Env 型に追加 → PR → deploy
+- **機密なら**: env.d.ts の Env 型に追加（`?` 付き optional） → Dashboard に Secret 追加 → 現バージョン再展開 → コード側で使用開始
 
 ### Cloudflare 設定のバックアップ
-Cloudflare Dashboard の変数を誤って全削除するとサイトが即死する。1 人運用でも:
-- 追加/変更したら wrangler.jsonc のコメントブロックを更新（値以外の一覧を残す）
-- シークレット値は 1Password 等の別レイヤに保管
+Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
+- Secret 値は 1Password 等の別レイヤに保管
 - 削除操作の前に別タブでリストのスクショを撮る
