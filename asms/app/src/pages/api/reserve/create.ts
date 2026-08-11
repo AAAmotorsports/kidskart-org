@@ -402,7 +402,7 @@ async function sendConfirmationEmail(env: Env, args: {
     '',
     isPending
       ? '当社確認のうえ、あらためて確定通知をお送りします。'
-      : '当日は動きやすい服装（長袖・長ズボン・運動靴）でお越しください。ヘルメット・グローブは貸出可能です。',
+      : '当日は運動靴でお越しください。つなぎ・ヘルメットは当社で無料貸出します（長袖長ズボン不要）。軍手は初回のみプレゼント、2 回目以降はご持参をお願いします。',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '福岡キッズカートアカデミー / エーワンサーキット',
@@ -433,7 +433,7 @@ async function sendConfirmationEmail(env: Env, args: {
     </p>
     ${isPending
       ? '<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">当社にて内容を確認のうえ、あらためて確定通知をお送りします。</p>'
-      : '<p style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.7rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem">当日は動きやすい服装（長袖・長ズボン・運動靴）でお越しください。ヘルメット・グローブは貸出可能です。</p>'}
+      : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>（ご持参ください）</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>（長袖長ズボン不要）</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>'}
     <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
       福岡キッズカートアカデミー / エーワンサーキット<br>
       📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
