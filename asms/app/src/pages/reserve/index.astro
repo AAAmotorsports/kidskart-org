@@ -206,6 +206,7 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
             )}
           </div>
 
+          <p class="cal-legend">緑の日をタップ → 下に時間帯一覧が表示されます</p>
           <div class="cal-grid">
             {weekdayJa.map((w, i) => (
               <div class={`cal-dow ${i === 0 ? 'sun' : ''} ${i === 6 ? 'sat' : ''}`}>{w}</div>
@@ -472,6 +473,10 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
     font-weight: 800; font-size: 1rem; color: var(--ink);
     font-family: var(--mono);
   }
+  .cal-legend {
+    text-align: center; font-size: .72rem; color: var(--ink-3);
+    margin: 0 0 .6rem;
+  }
   .cal-grid {
     display: grid; grid-template-columns: repeat(7, 1fr);
     gap: 2px;
@@ -524,10 +529,24 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
   .day-list { display: flex; flex-direction: column; gap: .7rem; }
   .day-card {
     background: var(--bg);
-    border: 1px solid var(--line);
+    border: 1.5px solid var(--line);
     border-radius: 12px;
     padding: .9rem 1.1rem;
-    scroll-margin-top: .8rem;
+    scroll-margin-top: 1rem;
+    transition: border-color .3s;
+  }
+  /* Pulse-highlight the day card the user just tapped on the calendar,
+     so they immediately see that the tap did something and where to go
+     next. Fires via `:target` — the `#day-YYYY-MM-DD` anchor in the
+     calendar cell href. */
+  .day-card:target {
+    border-color: var(--sky);
+    animation: pulseHighlight 1.8s ease-out;
+  }
+  @keyframes pulseHighlight {
+    0%   { box-shadow: 0 0 0 0     rgba(58, 169, 232, .55); background: rgba(58,169,232,.10); }
+    30%  { box-shadow: 0 0 0 10px  rgba(58, 169, 232, .35); background: rgba(58,169,232,.06); }
+    100% { box-shadow: 0 0 0 0     rgba(58, 169, 232, 0);   background: var(--bg); }
   }
   .day-head { font-weight: 800; color: var(--ink); font-family: var(--mono); margin-bottom: .5rem; }
   .slot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
