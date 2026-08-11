@@ -1,0 +1,951 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabase, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabase(env);
+const admin = getSupabaseAdmin(env);
+
+const { slotId } = Astro.params;
+
+const { data: slot } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, status, course_id, courses(id, code, name, description, duration_min, price_regular, price_member, vehicle, requires_approval)')
+  .eq('id', slotId)
+  .maybeSingle();
+
+if (!slot || slot.status !== 'open') {
+  return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
+}
+
+// Count participants already reserved on this slot (admin so nothing is
+// hidden by RLS — reservations are staff-only otherwise).
+const { data: existingRes } = await admin
+  .from('reservations')
+  .select('id')
+  .eq('slot_id', slot.id)
+  .neq('status', 'cancelled');
+const resIds = (existingRes ?? []).map((r: any) => r.id);
+let reservedCount = 0;
+if (resIds.length > 0) {
+  const { count } = await admin
+    .from('reservation_participants')
+    .select('*', { count: 'exact', head: true })
+    .in('reservation_id', resIds);
+  reservedCount = count ?? 0;
+}
+const remaining = Math.max(0, slot.capacity - reservedCount);
+
+const { data: terms } = await supabase
+  .from('terms')
+  .select('id, version, body_markdown, body_summary, weather_policy_md, cancel_policy_md, safety_items')
+  .eq('is_current', true)
+  .maybeSingle();
+
+const course = (slot.courses as any) ?? {};
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+const d = new Date(slot.date + 'T00:00:00');
+const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+const timeLabel = `${slot.start_time.slice(0, 5)}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}`;
+
+const priceRegular = course.price_regular ?? 0;
+const priceMember = course.price_member ?? 0;
+const requiresApproval = !!course.requires_approval;
+const maxParticipants = Math.min(3, remaining);
+const safetyItems = (terms?.safety_items as Array<{ id: number; text: string }>) ?? [];
+
+// Tiny markdown → HTML for the seeded terms. Covers only what the seed
+// uses: ATX headings, unordered lists, bold, paragraphs. Escapes HTML
+// input, so it's safe to feed the raw terms body straight in.
+function renderMarkdown(src: string): string {
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+  const lines = esc(src).split(/\r?\n/);
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line) { closeList(); continue; }
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      out.push(`<h${level}>${h[2]}</h${level}>`);
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFormat(line.slice(2))}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${inlineFormat(line)}</p>`);
+  }
+  closeList();
+  return out.join('\n');
+
+  function inlineFormat(s: string): string {
+    return s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+}
+
+const termsHtml = terms
+  ? [terms.body_markdown, terms.cancel_policy_md, terms.weather_policy_md]
+      .map(renderMarkdown)
+      .join('<hr />')
+  : '';
+---
+<Base title={`予約フロー — ${course.name} · ${dateLabel}`}>
+  <main class="wizard">
+    <header class="wz-hd">
+      <a class="back" href="/reserve/">← 予約枠一覧へ戻る</a>
+      <h1>予約フロー</h1>
+      <div class="slot-summary">
+        <div class="ss-course">{course.name}</div>
+        <div class="ss-meta">
+          <span class="mono">{dateLabel}</span>
+          <span class="sep">·</span>
+          <span class="mono">{timeLabel}</span>
+        </div>
+        <div class="ss-price">
+          料金: <strong>¥{priceRegular.toLocaleString()}</strong> / 会員 ¥{priceMember.toLocaleString()}
+          {priceRegular === priceMember && <span class="ss-note">（一般・会員同額）</span>}
+        </div>
+        <div class="ss-remaining">残 <strong>{remaining}</strong> 名</div>
+      </div>
+    </header>
+
+    {remaining === 0 && (
+      <div class="err">
+        <strong>満席です。</strong> 他の日程からお選びください。
+      </div>
+    )}
+
+    {!terms && (
+      <div class="err">
+        <strong>利用規約が未登録です。</strong> 管理者にお問い合わせください。
+      </div>
+    )}
+
+    {remaining > 0 && terms && (
+      <>
+        <div class="progress-wrap" aria-label="進行状況">
+          <ol class="progress">
+            <li data-step="1"><span>1</span>予約内容</li>
+            <li data-step="2"><span>2</span>参加者</li>
+            <li data-step="3"><span>3</span>保護者</li>
+            <li data-step="4"><span>4</span>緊急連絡先</li>
+            <li data-step="5"><span>5</span>規約</li>
+            <li data-step="6"><span>6</span>安全確認</li>
+            <li data-step="7"><span>7</span>署名</li>
+            <li data-step="8"><span>8</span>確認</li>
+          </ol>
+        </div>
+
+        <form id="wz" novalidate
+              data-slot-id={slot.id}
+              data-term-id={terms.id}
+              data-max-participants={maxParticipants}
+              data-price-regular={priceRegular}
+              data-price-member={priceMember}
+              data-course-name={course.name}
+              data-slot-label={`${dateLabel} ${timeLabel}`}
+              data-requires-approval={requiresApproval ? '1' : '0'}>
+
+          <section class="step" data-step="1">
+            <h2>1. 予約内容の確認</h2>
+
+            <div class="field">
+              <label>参加人数</label>
+              <div class="count-picker">
+                {Array.from({ length: maxParticipants }, (_, i) => i + 1).map((n) => (
+                  <label class="cp-choice">
+                    <input type="radio" name="participant_count" value={n} checked={n === 1} />
+                    <span>{n} 名</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div class="field">
+              <label>会員種別</label>
+              <div class="count-picker">
+                <label class="cp-choice">
+                  <input type="radio" name="price_tier" value="regular" checked />
+                  <span>一般 ¥{priceRegular.toLocaleString()}/名</span>
+                </label>
+                <label class="cp-choice">
+                  <input type="radio" name="price_tier" value="member" />
+                  <span>会員 ¥{priceMember.toLocaleString()}/名</span>
+                </label>
+              </div>
+              <p class="hint">会員未登録の方でも当日受付で会員登録可能です。</p>
+            </div>
+
+            <div class="total-preview">
+              合計: <strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
+            </div>
+
+            {requiresApproval && (
+              <div class="notice">
+                💡 このコースは<strong>承認制</strong>です。予約送信後、当社確認後に確定通知をお送りします。
+              </div>
+            )}
+
+            <div class="nav-btns">
+              <button type="button" class="btn btn-primary" data-goto="2">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="2" hidden>
+            <h2>2. 参加者情報</h2>
+            <p class="hint">走行される全員の情報をご入力ください。</p>
+
+            <div id="participantsHost"></div>
+
+            <template id="participantTpl">
+              <div class="participant" data-p-index="">
+                <h3 class="p-hd">参加者 <span class="p-num"></span></h3>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>お名前 *</label>
+                    <input type="text" name="p_name" required maxlength="40" />
+                  </div>
+                  <div class="field">
+                    <label>フリガナ *</label>
+                    <input type="text" name="p_kana" required maxlength="40" placeholder="ヤマダタロウ" />
+                  </div>
+                  <div class="field">
+                    <label>生年月日 *</label>
+                    <input type="date" name="p_birth" required />
+                  </div>
+                  <div class="field">
+                    <label>性別 *</label>
+                    <select name="p_gender" required>
+                      <option value="">— 選択 —</option>
+                      <option value="male">男</option>
+                      <option value="female">女</option>
+                      <option value="other">その他</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>身長 (cm) *</label>
+                    <input type="number" name="p_height" required min="80" max="200" step="1" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>カート経験（任意）</label>
+                  <input type="text" name="p_experience" maxlength="120" placeholder="例: 初めて／〇〇でN回" />
+                </div>
+                <div class="field">
+                  <label>写真撮影同意 *</label>
+                  <div class="radio-row">
+                    <label class="cp-choice small">
+                      <input type="radio" name="p_photo" value="allow" checked />
+                      <span>OK</span>
+                    </label>
+                    <label class="cp-choice small">
+                      <input type="radio" name="p_photo" value="face_blur_only" />
+                      <span>顔ぼかしのみ OK</span>
+                    </label>
+                    <label class="cp-choice small">
+                      <input type="radio" name="p_photo" value="deny" />
+                      <span>不可</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="1">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="3">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="3" hidden>
+            <h2>3. 保護者情報</h2>
+            <div class="grid-2">
+              <div class="field">
+                <label>お名前 *</label>
+                <input type="text" name="g_name" required maxlength="40" />
+              </div>
+              <div class="field">
+                <label>フリガナ *</label>
+                <input type="text" name="g_kana" required maxlength="40" />
+              </div>
+              <div class="field">
+                <label>電話番号 *</label>
+                <input type="tel" name="g_phone" required maxlength="20" placeholder="09012345678" />
+              </div>
+              <div class="field">
+                <label>メールアドレス *</label>
+                <input type="email" name="g_email" required maxlength="120" />
+              </div>
+              <div class="field">
+                <label>郵便番号</label>
+                <input type="text" name="g_postal" maxlength="10" placeholder="811-0011" />
+              </div>
+              <div class="field field-wide">
+                <label>住所</label>
+                <input type="text" name="g_address" maxlength="200" placeholder="福岡県福岡市…" />
+              </div>
+            </div>
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="2">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="4">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="4" hidden>
+            <h2>4. 緊急連絡先</h2>
+            <p class="hint">当日、保護者ご本人と連絡が取れない場合の連絡先です。</p>
+            <div class="grid-2">
+              <div class="field">
+                <label>お名前 *</label>
+                <input type="text" name="e_name" required maxlength="40" />
+              </div>
+              <div class="field">
+                <label>続柄 *</label>
+                <input type="text" name="e_relation" required maxlength="20" placeholder="祖父母／配偶者 など" />
+              </div>
+              <div class="field field-wide">
+                <label>電話番号 *</label>
+                <input type="tel" name="e_phone" required maxlength="20" />
+              </div>
+            </div>
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="3">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="5">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="5" hidden>
+            <h2>5. 利用規約 · キャンセルポリシー · 天候対応</h2>
+            <div class="terms-scroll" id="termsScroll" tabindex="0" set:html={termsHtml}></div>
+            <p class="hint scroll-hint" id="scrollHint">📄 最後までスクロールして次へお進みください</p>
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="4">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="6" id="agreeBtn" disabled>同意して次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="6" hidden>
+            <h2>6. 安全ルール確認</h2>
+            <p class="hint">全ての項目にご同意ください。</p>
+            <ul class="safety-list">
+              {safetyItems.map((it) => (
+                <li>
+                  <label>
+                    <input type="checkbox" name="safety" value={it.id} />
+                    <span>{it.text}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="5">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="7">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="7" hidden>
+            <h2>7. 電子署名</h2>
+            <p class="hint">下の枠内に保護者様のお名前を署名してください（PC・スマホ共に対応）。</p>
+
+            <div class="sig-mode">
+              <label class="cp-choice small">
+                <input type="radio" name="sig_mode" value="drawn" checked />
+                <span>✍️ 手書き</span>
+              </label>
+              <label class="cp-choice small">
+                <input type="radio" name="sig_mode" value="typed" />
+                <span>⌨ タイプ入力</span>
+              </label>
+            </div>
+
+            <div class="sig-drawn" id="sigDrawn">
+              <canvas id="sigCanvas"></canvas>
+              <div class="sig-actions">
+                <button type="button" id="sigClear" class="btn btn-ghost">🗑 クリア</button>
+              </div>
+            </div>
+
+            <div class="sig-typed" id="sigTyped" hidden>
+              <div class="field">
+                <label>お名前をタイプ *</label>
+                <input type="text" name="sig_typed_name" maxlength="40" placeholder="山田 太郎" />
+              </div>
+            </div>
+
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="6">← 戻る</button>
+              <button type="button" class="btn btn-primary" data-goto="8">次へ →</button>
+            </div>
+          </section>
+
+          <section class="step" data-step="8" hidden>
+            <h2>8. 内容確認 → 予約確定</h2>
+            <div id="reviewHost"></div>
+
+            <div id="submitError" class="err" hidden></div>
+
+            <div class="nav-btns">
+              <button type="button" class="btn btn-ghost" data-goto="7">← 戻る</button>
+              <button type="button" class="btn btn-primary btn-big" id="submitBtn">
+                {requiresApproval ? '📩 承認依頼を送信する' : '✅ 予約を確定する'}
+              </button>
+            </div>
+          </section>
+        </form>
+
+        <div id="submitOverlay" hidden>
+          <div class="overlay-card">
+            <div class="spinner"></div>
+            <p>予約を送信しています…</p>
+          </div>
+        </div>
+      </>
+    )}
+  </main>
+</Base>
+
+<script>
+  const form = document.getElementById('wz') as HTMLFormElement | null;
+  if (form) initWizard(form);
+
+  function initWizard(form: HTMLFormElement) {
+    const slotId = form.dataset.slotId!;
+    const termId = form.dataset.termId!;
+    const priceRegular = parseInt(form.dataset.priceRegular || '0', 10);
+    const priceMember = parseInt(form.dataset.priceMember || '0', 10);
+    const courseName = form.dataset.courseName || '';
+    const slotLabel = form.dataset.slotLabel || '';
+
+    const steps = Array.from(form.querySelectorAll<HTMLElement>('section.step'));
+    const progressItems = Array.from(document.querySelectorAll<HTMLElement>('.progress li'));
+    let currentStep = 1;
+
+    const showStep = (n: number) => {
+      currentStep = n;
+      steps.forEach((s) => {
+        const st = parseInt(s.dataset.step || '0', 10);
+        s.hidden = st !== n;
+      });
+      progressItems.forEach((li) => {
+        const st = parseInt(li.dataset.step || '0', 10);
+        li.classList.toggle('done', st < n);
+        li.classList.toggle('active', st === n);
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      history.replaceState({ step: n }, '', `#step-${n}`);
+    };
+
+    form.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const gotoAttr = t.getAttribute('data-goto');
+      if (!gotoAttr) return;
+      const next = parseInt(gotoAttr, 10);
+      if (next > currentStep && !validateStep(currentStep)) return;
+      if (next === 2) renderParticipants();
+      if (next === 8) renderReview();
+      showStep(next);
+    });
+
+    const totalPreviewEl = document.getElementById('totalPreview')!;
+    const updateTotal = () => {
+      const count = getRadioValue('participant_count') || '1';
+      const tier = getRadioValue('price_tier') || 'regular';
+      const per = tier === 'member' ? priceMember : priceRegular;
+      totalPreviewEl.textContent = `¥${(per * parseInt(count, 10)).toLocaleString()}`;
+    };
+    form.querySelectorAll<HTMLInputElement>('input[name="participant_count"], input[name="price_tier"]')
+      .forEach((el) => el.addEventListener('change', updateTotal));
+
+    function getRadioValue(name: string): string {
+      const el = form.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`);
+      return el ? el.value : '';
+    }
+
+    const host = document.getElementById('participantsHost')!;
+    const tpl = document.getElementById('participantTpl') as HTMLTemplateElement;
+    const renderParticipants = () => {
+      const count = parseInt(getRadioValue('participant_count') || '1', 10);
+      const captured: Record<string, string>[] = [];
+      host.querySelectorAll<HTMLElement>('.participant').forEach((el) => {
+        const idx = parseInt(el.dataset.pIndex || '0', 10);
+        captured[idx] = {};
+        el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
+          if ((f as HTMLInputElement).type === 'radio') {
+            if ((f as HTMLInputElement).checked) captured[idx][f.name] = f.value;
+          } else {
+            captured[idx][f.name] = f.value;
+          }
+        });
+      });
+      host.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const frag = tpl.content.cloneNode(true) as DocumentFragment;
+        const wrap = frag.querySelector('.participant') as HTMLElement;
+        wrap.dataset.pIndex = String(i);
+        (frag.querySelector('.p-num') as HTMLElement).textContent = String(i + 1);
+        wrap.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
+          const prev = captured[i]?.[f.name];
+          if (prev == null) return;
+          if ((f as HTMLInputElement).type === 'radio') {
+            if ((f as HTMLInputElement).value === prev) (f as HTMLInputElement).checked = true;
+          } else {
+            f.value = prev;
+          }
+        });
+        host.appendChild(frag);
+      }
+    };
+
+    const scroll = document.getElementById('termsScroll')!;
+    const scrollHint = document.getElementById('scrollHint')!;
+    const agreeBtn = document.getElementById('agreeBtn') as HTMLButtonElement;
+    const enableAgree = () => {
+      agreeBtn.disabled = false;
+      scrollHint.textContent = '✅ ご確認ありがとうございました。同意して次へ進めます。';
+      scrollHint.classList.add('ok');
+    };
+    scroll.addEventListener('scroll', () => {
+      if (scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 6) enableAgree();
+    });
+    const termsStep = steps.find((s) => s.dataset.step === '5')!;
+    new MutationObserver(() => {
+      if (!termsStep.hidden && scroll.scrollHeight <= scroll.clientHeight + 4) enableAgree();
+    }).observe(termsStep, { attributes: true, attributeFilter: ['hidden'] });
+
+    const canvas = document.getElementById('sigCanvas') as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d')!;
+    let sigDrawn = false;
+    const setupCanvas = () => {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0) return;
+      canvas.width = rect.width * ratio;
+      canvas.height = rect.height * ratio;
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.strokeStyle = '#0a2540';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    };
+    // Set up once the signature step is first shown (canvas has 0 width while hidden).
+    const sigStep = steps.find((s) => s.dataset.step === '7')!;
+    new MutationObserver(() => {
+      if (!sigStep.hidden && canvas.width === 0) setTimeout(setupCanvas, 0);
+    }).observe(sigStep, { attributes: true, attributeFilter: ['hidden'] });
+    window.addEventListener('resize', () => {
+      if (!sigStep.hidden) setupCanvas();
+    });
+
+    let drawing = false;
+    let lastX = 0, lastY = 0;
+    const pointerPos = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      drawing = true;
+      sigDrawn = true;
+      const p = pointerPos(e);
+      lastX = p.x; lastY = p.y;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#0a2540';
+      ctx.fill();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const p = pointerPos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      lastX = p.x; lastY = p.y;
+    });
+    const endStroke = (e: PointerEvent) => {
+      if (!drawing) return;
+      drawing = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    };
+    canvas.addEventListener('pointerup', endStroke);
+    canvas.addEventListener('pointercancel', endStroke);
+    canvas.addEventListener('pointerleave', endStroke);
+
+    document.getElementById('sigClear')!.addEventListener('click', () => {
+      const rect = canvas.getBoundingClientRect();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      sigDrawn = false;
+    });
+
+    const modeInputs = form.querySelectorAll<HTMLInputElement>('input[name="sig_mode"]');
+    const drawnHost = document.getElementById('sigDrawn')!;
+    const typedHost = document.getElementById('sigTyped')!;
+    modeInputs.forEach((r) => r.addEventListener('change', () => {
+      const mode = getRadioValue('sig_mode');
+      drawnHost.hidden = mode !== 'drawn';
+      typedHost.hidden = mode !== 'typed';
+    }));
+
+    const reviewHost = document.getElementById('reviewHost')!;
+    const renderReview = () => {
+      const data = collect();
+      const rows: string[] = [];
+      rows.push(`<div class="rv-block"><div class="rv-h">予約枠</div><div>${escapeHtml(slotLabel)}</div><div>${escapeHtml(courseName)}</div><div class="rv-price">合計: <strong>¥${data.totalAmount.toLocaleString()}</strong>（${data.priceTier === 'member' ? '会員' : '一般'} × ${data.participants.length}名）</div></div>`);
+      data.participants.forEach((p: any, i: number) => {
+        rows.push(`<div class="rv-block"><div class="rv-h">参加者 ${i + 1}</div><div>${escapeHtml(p.name)}（${escapeHtml(p.kana)}）</div><div>${escapeHtml(p.birth_date)} · ${genderLabel(p.gender)} · ${p.height_cm}cm</div>${p.kart_experience_note ? `<div>経験: ${escapeHtml(p.kart_experience_note)}</div>` : ''}<div>写真同意: ${photoLabel(p.photo_consent)}</div></div>`);
+      });
+      rows.push(`<div class="rv-block"><div class="rv-h">保護者</div><div>${escapeHtml(data.guardian.name)}（${escapeHtml(data.guardian.kana)}）</div><div>📞 ${escapeHtml(data.guardian.phone)}</div><div>✉️ ${escapeHtml(data.guardian.email)}</div>${data.guardian.address ? `<div>${escapeHtml(data.guardian.postal_code || '')} ${escapeHtml(data.guardian.address)}</div>` : ''}</div>`);
+      rows.push(`<div class="rv-block"><div class="rv-h">緊急連絡先</div><div>${escapeHtml(data.emergency.name)}（${escapeHtml(data.emergency.relation)}）</div><div>📞 ${escapeHtml(data.emergency.phone)}</div></div>`);
+      rows.push(`<div class="rv-block"><div class="rv-h">署名</div><div>${data.signature.type === 'drawn' ? '✍️ 手書き署名済み' : '⌨ ' + escapeHtml(data.signature.typed_name || '')}</div></div>`);
+      reviewHost.innerHTML = rows.join('');
+    };
+
+    function genderLabel(g: string) { return ({ male: '男', female: '女', other: 'その他' } as Record<string, string>)[g] ?? g; }
+    function photoLabel(p: string) { return ({ allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' } as Record<string, string>)[p] ?? p; }
+    function escapeHtml(s: string) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' } as Record<string, string>)[c]);
+    }
+
+    const collect = () => {
+      const gd = (n: string) => (form.elements.namedItem(n) as HTMLInputElement)?.value?.trim() ?? '';
+      const count = parseInt(getRadioValue('participant_count') || '1', 10);
+      const tier = getRadioValue('price_tier') || 'regular';
+      const participants: any[] = [];
+      host.querySelectorAll<HTMLElement>('.participant').forEach((el) => {
+        const get = (n: string) => (el.querySelector(`[name="${n}"]`) as HTMLInputElement | HTMLSelectElement)?.value?.trim() ?? '';
+        const getR = (n: string) => (el.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement)?.value ?? '';
+        participants.push({
+          name: get('p_name'),
+          kana: get('p_kana'),
+          birth_date: get('p_birth'),
+          gender: get('p_gender'),
+          height_cm: parseInt(get('p_height') || '0', 10),
+          kart_experience_note: get('p_experience') || null,
+          photo_consent: getR('p_photo') || 'allow',
+        });
+      });
+      const safety = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="safety"]:checked')).map((c) => parseInt(c.value, 10));
+      const sigMode = getRadioValue('sig_mode') || 'drawn';
+      const signature = sigMode === 'drawn'
+        ? { type: 'drawn', image_data: sigDrawn ? canvas.toDataURL('image/png') : null }
+        : { type: 'typed', typed_name: gd('sig_typed_name') };
+      const per = tier === 'member' ? priceMember : priceRegular;
+      return {
+        slot_id: slotId,
+        term_id: termId,
+        price_tier: tier,
+        totalAmount: per * count,
+        participants,
+        guardian: {
+          name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
+          email: gd('g_email'), postal_code: gd('g_postal'), address: gd('g_address'),
+        },
+        emergency: {
+          name: gd('e_name'), phone: gd('e_phone'), relation: gd('e_relation'),
+        },
+        signature,
+        checked_safety_items: safety,
+      };
+    };
+
+    function validateStep(step: number): boolean {
+      const stepEl = steps.find((s) => parseInt(s.dataset.step || '0', 10) === step);
+      if (!stepEl) return true;
+      const invalid: (HTMLInputElement | HTMLSelectElement)[] = [];
+      stepEl.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
+        if (!f.required) return;
+        if ((f as HTMLInputElement).type === 'radio') {
+          if (!stepEl.querySelector(`input[name="${f.name}"]:checked`)) invalid.push(f);
+        } else if (!f.value.trim()) invalid.push(f);
+      });
+      if (step === 6) {
+        const checked = stepEl.querySelectorAll('input[name="safety"]:checked');
+        const all = stepEl.querySelectorAll('input[name="safety"]');
+        if (checked.length !== all.length) { alert('全ての安全ルールにチェックしてください。'); return false; }
+      }
+      if (step === 7) {
+        const mode = getRadioValue('sig_mode');
+        if (mode === 'drawn' && !sigDrawn) { alert('署名を入力してください。'); return false; }
+        if (mode === 'typed' && !(form.elements.namedItem('sig_typed_name') as HTMLInputElement)?.value.trim()) {
+          alert('お名前を入力してください。'); return false;
+        }
+      }
+      if (invalid.length) {
+        invalid[0].focus();
+        invalid[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        alert('未入力の項目があります。');
+        return false;
+      }
+      return true;
+    }
+
+    const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
+    const submitOverlay = document.getElementById('submitOverlay')!;
+    const submitError = document.getElementById('submitError')!;
+    submitBtn.addEventListener('click', async () => {
+      submitError.hidden = true;
+      submitOverlay.hidden = false;
+      submitBtn.disabled = true;
+      try {
+        const payload = collect();
+        const res = await fetch('/api/reserve/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || 'unknown');
+        window.location.href = `/reserve/complete/${body.reservation_id}`;
+      } catch (err: any) {
+        submitOverlay.hidden = true;
+        submitBtn.disabled = false;
+        submitError.textContent = `送信に失敗しました: ${err.message || err}`;
+        submitError.hidden = false;
+      }
+    });
+
+    renderParticipants();
+    updateTotal();
+    showStep(1);
+  }
+</script>
+
+<style>
+  main.wizard { max-width: 720px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+
+  .wz-hd { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .5rem; font-size: 1.35rem; font-weight: 800; }
+
+  .slot-summary {
+    background: var(--sky-mist);
+    border: 1px solid var(--sky-light);
+    border-radius: 10px;
+    padding: .7rem .9rem;
+    font-size: .82rem;
+    line-height: 1.7;
+  }
+  .ss-course { font-weight: 800; font-size: .95rem; color: var(--ink); }
+  .ss-meta { font-family: var(--mono); color: var(--ink-2); }
+  .ss-meta .sep { margin: 0 .35rem; color: var(--ink-3); }
+  .ss-price { color: var(--ink-2); }
+  .ss-price strong { color: var(--sky-deep); font-family: var(--mono); }
+  .ss-note { color: var(--ink-3); font-size: .74rem; }
+  .ss-remaining { color: var(--ink-3); font-size: .78rem; }
+  .ss-remaining strong { font-family: var(--mono); color: var(--lime-deep); }
+
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .85rem;
+  }
+  .notice {
+    background: rgba(255,201,67,.1); border: 1px solid rgba(255,201,67,.4);
+    padding: .7rem .9rem; border-radius: 8px; font-size: .82rem;
+    color: var(--ink); margin: .8rem 0;
+  }
+
+  .progress-wrap { overflow-x: auto; margin-bottom: 1.2rem; padding-bottom: 4px; }
+  .progress {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; gap: .3rem;
+    min-width: max-content;
+  }
+  .progress li {
+    display: flex; flex-direction: column; align-items: center; gap: .2rem;
+    padding: .4rem .5rem;
+    font-size: .62rem; color: var(--ink-3);
+    min-width: 54px;
+    border-radius: 6px;
+  }
+  .progress li span {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--bg-2); border: 1.5px solid var(--line);
+    font-weight: 800; font-family: var(--mono); font-size: .72rem;
+  }
+  .progress li.done { color: var(--lime-deep); }
+  .progress li.done span { background: var(--lime); color: #fff; border-color: var(--lime-deep); }
+  .progress li.active { color: var(--sky-deep); }
+  .progress li.active span { background: var(--sky); color: #fff; border-color: var(--sky-deep); box-shadow: 0 0 0 3px rgba(58,169,232,.15); }
+
+  section.step {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.2rem 1.1rem; margin-bottom: 1rem;
+  }
+  section.step h2 { margin: 0 0 .8rem; font-size: 1.05rem; font-weight: 800; color: var(--ink); }
+  section.step h3.p-hd {
+    margin: 0 0 .5rem; font-size: .88rem; font-weight: 800;
+    color: var(--sky-deep);
+  }
+
+  .participant {
+    background: var(--bg-2); border-radius: 8px; padding: .9rem 1rem;
+    margin-bottom: .7rem;
+  }
+
+  .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .7rem; }
+  .field label {
+    font-size: .72rem; font-weight: 700; color: var(--ink-2);
+  }
+  .field input, .field select, .field textarea {
+    padding: .55rem .7rem; font-size: .92rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--jp);
+  }
+  .field input[type="date"], .field input[type="tel"], .field input[type="number"] {
+    font-family: var(--mono);
+  }
+  .field.field-wide { grid-column: 1 / -1; }
+  .hint { font-size: .72rem; color: var(--ink-3); margin: -.2rem 0 .7rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+  @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .count-picker { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .cp-choice {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .55rem .9rem; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--bg);
+    cursor: pointer; font-size: .88rem; font-weight: 700;
+    transition: all .1s;
+    position: relative;
+  }
+  .cp-choice.small { padding: .45rem .7rem; font-size: .8rem; font-weight: 600; }
+  .cp-choice input { position: absolute; opacity: 0; pointer-events: none; }
+  .cp-choice:has(input:checked) {
+    background: var(--sky-mist); border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(58,169,232,.12);
+    color: var(--sky-deep);
+  }
+  .radio-row { display: flex; gap: .4rem; flex-wrap: wrap; }
+
+  .total-preview {
+    text-align: right; font-size: 1rem; padding: .6rem 0;
+    color: var(--ink-2);
+  }
+  .total-preview strong {
+    font-family: var(--mono); font-size: 1.4rem; color: var(--orange-deep);
+    margin-left: .5rem;
+  }
+
+  .terms-scroll {
+    height: 320px; overflow-y: auto;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    padding: 1rem 1.1rem; background: var(--bg);
+    font-size: .82rem; line-height: 1.75;
+  }
+  .terms-scroll :global(h1),
+  .terms-scroll :global(h2),
+  .terms-scroll :global(h3) { font-weight: 800; margin: 1rem 0 .4rem; }
+  .terms-scroll :global(h1) { font-size: 1rem; }
+  .terms-scroll :global(h2) { font-size: .92rem; color: var(--sky-deep); }
+  .terms-scroll :global(h3) { font-size: .85rem; }
+  .terms-scroll :global(ul) { padding-left: 1.2rem; }
+  .terms-scroll :global(li) { margin: .2rem 0; }
+  .terms-scroll :global(p) { margin: .4rem 0; }
+  .terms-scroll :global(hr) { border: none; border-top: 1px dashed var(--line); margin: 1.2rem 0; }
+  .terms-scroll :global(strong) { color: var(--rose-deep); }
+  .scroll-hint {
+    background: var(--bg-2); padding: .5rem .8rem; border-radius: 6px;
+    text-align: center; margin-top: .5rem;
+  }
+  .scroll-hint.ok { background: rgba(164,214,94,.15); color: var(--lime-deep); font-weight: 700; }
+
+  .safety-list { list-style: none; margin: 0; padding: 0; }
+  .safety-list li {
+    padding: .55rem .8rem; margin-bottom: .4rem;
+    background: var(--bg-2); border-radius: 8px;
+  }
+  .safety-list label {
+    display: flex; gap: .55rem; align-items: flex-start;
+    cursor: pointer; font-size: .84rem; line-height: 1.55;
+  }
+  .safety-list input[type="checkbox"] {
+    width: 20px; height: 20px; accent-color: var(--sky);
+    flex: none; margin-top: 1px;
+  }
+
+  .sig-mode { display: flex; gap: .4rem; margin-bottom: .8rem; flex-wrap: wrap; }
+  #sigCanvas {
+    display: block; width: 100%; max-width: 600px;
+    aspect-ratio: 3 / 1;
+    background: #fff; border: 2px dashed var(--line);
+    border-radius: 8px; touch-action: none; cursor: crosshair;
+  }
+  .sig-actions { margin-top: .5rem; text-align: right; }
+  .sig-actions .btn { padding: .45rem .9rem; font-size: .8rem; }
+
+  .rv-block {
+    background: var(--bg-2); border-radius: 8px;
+    padding: .7rem .9rem; margin-bottom: .55rem;
+    font-size: .84rem; line-height: 1.7;
+  }
+  .rv-block .rv-h {
+    font-size: .68rem; font-weight: 800; color: var(--sky-deep);
+    letter-spacing: .05em; margin-bottom: .3rem;
+    text-transform: uppercase;
+  }
+  .rv-block .rv-price {
+    margin-top: .3rem; color: var(--ink-2);
+  }
+  .rv-block .rv-price strong {
+    font-family: var(--mono); color: var(--orange-deep); font-size: 1.1rem;
+  }
+
+  .nav-btns {
+    display: flex; gap: .6rem; margin-top: 1.2rem; flex-wrap: wrap;
+  }
+  .btn {
+    padding: .7rem 1.2rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .9rem; font-weight: 800;
+    border: none; cursor: pointer;
+    text-decoration: none; display: inline-block;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229,99,26,.3);
+    margin-left: auto;
+  }
+  .btn-primary:disabled {
+    background: var(--bg-3); color: var(--ink-3);
+    box-shadow: none; cursor: not-allowed;
+  }
+  .btn-big { padding: 1rem 1.4rem; font-size: 1rem; width: 100%; margin-left: 0 !important; }
+  .btn-ghost {
+    background: var(--bg-2); color: var(--ink);
+    border: 1.5px solid var(--line);
+  }
+
+  #submitOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .overlay-card {
+    background: var(--bg); padding: 2rem 2.5rem;
+    border-radius: 12px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid var(--bg-3); border-top-color: var(--sky);
+    border-radius: 50%; margin: 0 auto 1rem;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
