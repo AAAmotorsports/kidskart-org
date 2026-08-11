@@ -74,26 +74,24 @@ Magic Link は localStorage プリフィルで日常のリピーターは楽に�
 - 電子署名エリアなど、指ジェスチャを吸収したい要素には `touch-action: none` **と** `touchstart/touchmove` の `preventDefault({ passive: false })` を**両方**適用する（片方だけだと古い WebView で漏れる）
 
 ### 環境変数の source of truth
-**すべて Cloudflare Dashboard で管理**。wrangler.jsonc には `vars` キーを一切書かない。
+2 層構造。3 回の wipe 事故（2026-08-11）を経ての最終形:
 
-2026-08 に何度も踏んだ罠:
-- `wrangler.jsonc` に `vars: { X: "..." }` と書いても、Workers Builds デプロイ経由では `env.X` に届かない
-- `vars: {}` (空オブジェクト) は「変数ゼロを push」の意味で、既存の Dashboard 変数を **全削除する**
-- `vars` キーごと省略すると Dashboard 変数はそのまま保持される ← これが正解
+**wrangler.jsonc の `vars`** — 非機微な設定の source of truth
+- 7 変数: PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY / ADMIN_USERNAME / ADMIN_PASSWORD_HASH / MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO
+- 変更は git 経由（PR + deploy）で
+- ANON key・SHA-256 hash 等、漏洩しても致命傷にならないもの
 
-したがって:
-- **絶対禁止**: `wrangler.jsonc` に `vars: {}` を書く
-- **推奨**: `wrangler.jsonc` から `vars` キー自体を省略する
-- **必要な変数のリスト**は `wrangler.jsonc` のコメントブロックに documentation として残す
+**Cloudflare Dashboard「変数とシークレット」（シークレット型のみ）** — 真の機密
+- SUPABASE_SERVICE_ROLE_KEY
+- RESEND_API_KEY
+- Dashboard 追加後は「デプロイ タブ → 現バージョン再展開」で bind し直す
 
-### Dashboard 変数のカテゴリ
-- **変数 (plain text)**: 公開しても実害無いもの
-  - PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY (anon は公開前提)
-  - ADMIN_USERNAME / ADMIN_PASSWORD_HASH (SHA-256 hash なので原文復元不可)
-  - MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO
-- **シークレット (encrypted)**: 真の機密
-  - RESEND_API_KEY
-  - SUPABASE_SERVICE_ROLE_KEY
+### 絶対に踏んではいけない地雷
+- **`vars: {}` (空オブジェクト)**: deploy 時に Dashboard の非機密変数を全削除する
+- **`vars` キーごと省略**: 同上、全削除する（Cloudflare docs と挙動が違う、実測でそう）
+- **Dashboard で「変数」タイプの vars を追加してもダメ**: wrangler.jsonc に無ければ deploy で消える。Dashboard の「シークレット」タイプだけが deploy を生き延びる。
+
+したがって、**wrangler.jsonc の `vars` は必ず 7 変数入りで維持する**。空にも消しにもしない。
 
 ### Astro での読み方
 - `envFrom(locals)` で `locals.runtime.env` から読む
