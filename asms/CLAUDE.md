@@ -53,26 +53,26 @@
 - 電子署名エリアなど、指ジェスチャを吸収したい要素には `touch-action: none` **と** `touchstart/touchmove` の `preventDefault({ passive: false })` を**両方**適用する（片方だけだと古い WebView で漏れる）
 
 ### 環境変数の source of truth
-2 層構造:
+**すべて Cloudflare Dashboard で管理**。wrangler.jsonc には `vars` キーを一切書かない。
 
-**wrangler.jsonc `vars`** — 非機微な設定の source of truth
-- 変更は git 経由（PR + deploy）でだけ行う
-- Dashboard から見ると読み取り専用に見える（deploy のたび上書きされる）
-- ここに書けるもの:
-  - PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY（anon key は公開前提）
-  - ADMIN_USERNAME / ADMIN_PASSWORD_HASH（hash なので漏洩しても password 復元不可）
+2026-08 に何度も踏んだ罠:
+- `wrangler.jsonc` に `vars: { X: "..." }` と書いても、Workers Builds デプロイ経由では `env.X` に届かない
+- `vars: {}` (空オブジェクト) は「変数ゼロを push」の意味で、既存の Dashboard 変数を **全削除する**
+- `vars` キーごと省略すると Dashboard 変数はそのまま保持される ← これが正解
+
+したがって:
+- **絶対禁止**: `wrangler.jsonc` に `vars: {}` を書く
+- **推奨**: `wrangler.jsonc` から `vars` キー自体を省略する
+- **必要な変数のリスト**は `wrangler.jsonc` のコメントブロックに documentation として残す
+
+### Dashboard 変数のカテゴリ
+- **変数 (plain text)**: 公開しても実害無いもの
+  - PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY (anon は公開前提)
+  - ADMIN_USERNAME / ADMIN_PASSWORD_HASH (SHA-256 hash なので原文復元不可)
   - MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO
-
-**Cloudflare Dashboard「変数とシークレット」（シークレット型のみ）** — 真の機密
-- git に載せられないもの:
+- **シークレット (encrypted)**: 真の機密
   - RESEND_API_KEY
   - SUPABASE_SERVICE_ROLE_KEY
-- Dashboard 追加後は「デプロイ タブ → 現バージョン再展開」で bind し直す
-  （新規シークレットは既存 version には自動反映されない）
-
-### `wrangler.jsonc` の `vars` は絶対に空 `{}` にしない
-`vars: {}` は「変数ゼロを push」を意味し、Dashboard 変数を deploy 時に全削除する。
-削除操作: `vars` セクション自体を削除する（キーごと消す）。空オブジェクトを残さない。
 
 ### Astro での読み方
 - `envFrom(locals)` で `locals.runtime.env` から読む
