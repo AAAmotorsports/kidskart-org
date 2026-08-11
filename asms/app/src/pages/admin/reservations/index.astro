@@ -1,0 +1,244 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { jaDateShort, attendanceLabel, attendanceClass } from '@lib/admin';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const url = new URL(Astro.request.url);
+const scope = url.searchParams.get('scope') ?? 'upcoming'; // upcoming | today | past
+const search = (url.searchParams.get('q') ?? '').trim();
+
+const today = new Date().toISOString().slice(0, 10);
+
+// Query reservations. Join to slot for date + course, guardian for name,
+// and count participants via a nested select.
+let query = supabase
+  .from('reservations')
+  .select(`
+    id, reservation_number, status, price_tier, total_amount, created_at,
+    slots(id, date, start_time, end_time, courses(name, code)),
+    guardians(name, kana, phone, email),
+    reservation_participants(id, name_snapshot, attendance_status)
+  `)
+  .order('created_at', { ascending: false })
+  .limit(200);
+
+// Search overrides scope entirely
+if (search) {
+  // Look for guardian name/phone/email or reservation_number match
+  const like = `%${search}%`;
+  query = query.or(`reservation_number.ilike.${like}`);
+}
+
+const { data: reservationsRaw, error } = await query;
+type Reservation = NonNullable<typeof reservationsRaw>[number];
+let reservations = (reservationsRaw ?? []) as Reservation[];
+
+// Client-side filtering for guardian/participant name (Supabase doesn't
+// easily support joined-table ilike in a single query without RPCs).
+if (search) {
+  const q = search.toLowerCase();
+  reservations = reservations.filter((r: any) =>
+    r.reservation_number?.toLowerCase().includes(q) ||
+    r.guardians?.name?.toLowerCase().includes(q) ||
+    r.guardians?.kana?.toLowerCase().includes(q) ||
+    r.guardians?.phone?.replace(/[^0-9]/g, '').includes(q.replace(/[^0-9]/g, '')) ||
+    r.guardians?.email?.toLowerCase().includes(q) ||
+    (r.reservation_participants ?? []).some((p: any) =>
+      p.name_snapshot?.toLowerCase().includes(q))
+  );
+} else if (scope === 'today') {
+  reservations = reservations.filter((r: any) => (r.slots as any)?.date === today);
+} else if (scope === 'upcoming') {
+  reservations = reservations.filter((r: any) => (r.slots as any)?.date >= today);
+} else if (scope === 'past') {
+  reservations = reservations.filter((r: any) => (r.slots as any)?.date < today);
+}
+
+const statusLabel: Record<string, string> = {
+  draft: '下書き',
+  pending_approval: '承認待ち',
+  confirmed: '確定',
+  attended: '出席済み',
+  no_show: '無断欠席',
+  cancelled: 'キャンセル',
+};
+const statusColor: Record<string, string> = {
+  pending_approval: 'pending',
+  confirmed: 'confirmed',
+  attended: 'attended',
+  no_show: 'noshow',
+  cancelled: 'cancelled',
+  draft: 'muted',
+};
+---
+<Base title="予約一覧 — ASMS">
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin">← 管理トップ</a>
+      <h1>予約一覧</h1>
+      <p class="sub">全予約 · 直近200件</p>
+    </header>
+
+    <div class="toolbar">
+      <div class="scope-tabs">
+        <a class={`tab ${scope === 'upcoming' && !search ? 'active' : ''}`} href="/admin/reservations?scope=upcoming">📆 今後</a>
+        <a class={`tab ${scope === 'today' && !search ? 'active' : ''}`} href="/admin/reservations?scope=today">🎯 本日</a>
+        <a class={`tab ${scope === 'past' && !search ? 'active' : ''}`} href="/admin/reservations?scope=past">📜 過去</a>
+      </div>
+      <form class="search" method="get">
+        <input type="hidden" name="scope" value={scope} />
+        <input type="search" name="q" placeholder="🔍 予約番号・保護者名・電話・参加者名" value={search} />
+        <button type="submit" class="btn-search">検索</button>
+      </form>
+    </div>
+
+    {error && <div class="err">{error.code} {error.message}</div>}
+
+    {reservations.length === 0 ? (
+      <p class="empty">
+        {search
+          ? `「${search}」に一致する予約はありません。`
+          : scope === 'today' ? '本日の予約はありません。'
+          : scope === 'upcoming' ? '今後の予約はありません。'
+          : '過去の予約はありません。'}
+      </p>
+    ) : (
+      <ul class="res-list">
+        {reservations.map((r: any) => {
+          const slot = r.slots ?? {};
+          const guardian = r.guardians ?? {};
+          const parts = r.reservation_participants ?? [];
+          return (
+            <li class="res-card">
+              <a class="res-link" href={`/admin/slots/${slot.id}`}>
+                <div class="res-row-1">
+                  <span class={`badge badge-${statusColor[r.status] ?? 'muted'}`}>
+                    {statusLabel[r.status] ?? r.status}
+                  </span>
+                  <span class="res-num">{r.reservation_number}</span>
+                </div>
+                <div class="res-row-2">
+                  <span class="res-date">{slot.date ? jaDateShort(slot.date) : '?'}</span>
+                  <span class="res-time">{slot.start_time?.slice(0, 5) ?? ''}</span>
+                  <span class="res-course">{slot.courses?.name ?? ''}</span>
+                </div>
+                <div class="res-row-3">
+                  <span class="res-guardian">👤 {guardian.name}</span>
+                  <span class="res-parts">
+                    {parts.map((p: any) => p.name_snapshot).join('・')} ({parts.length}名)
+                  </span>
+                </div>
+                <div class="res-row-4">
+                  <span class="res-amount">¥{(r.total_amount ?? 0).toLocaleString()}</span>
+                  <span class="res-tier">{r.price_tier === 'member' ? '会員' : '一般'}</span>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .3rem; font-size: 1.5rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .toolbar {
+    display: flex; flex-direction: column; gap: .6rem;
+    margin-bottom: 1rem;
+  }
+  @media (min-width: 640px) {
+    .toolbar { flex-direction: row; align-items: center; justify-content: space-between; }
+  }
+  .scope-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .tab {
+    padding: .5rem .9rem; border-radius: 100px;
+    font-size: .8rem; font-weight: 700;
+    text-decoration: none; color: var(--ink-2);
+    background: var(--bg-2); border: 1px solid var(--line);
+    transition: background .15s;
+  }
+  .tab:hover { background: var(--bg-3); }
+  .tab.active {
+    background: var(--sky); color: #fff; border-color: var(--sky-deep);
+    box-shadow: 0 0 0 3px rgba(58,169,232,.15);
+  }
+  .search { display: flex; gap: .3rem; }
+  .search input {
+    flex: 1; min-width: 200px;
+    padding: .55rem .7rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg);
+  }
+  .btn-search {
+    padding: .55rem 1rem; font-size: .82rem; font-weight: 700;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: var(--sky); color: #fff;
+  }
+
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  }
+  .empty {
+    text-align: center; padding: 2rem 1rem; color: var(--ink-3);
+    font-size: .88rem; background: var(--bg-2); border-radius: 10px;
+  }
+
+  .res-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+  .res-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    transition: transform .1s, box-shadow .15s;
+  }
+  .res-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(58,169,232,.1); }
+  .res-link {
+    display: block; padding: .8rem 1rem;
+    text-decoration: none; color: var(--ink);
+  }
+  .res-row-1 {
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: .4rem;
+  }
+  .res-num { font-family: var(--mono); font-size: .74rem; color: var(--ink-3); margin-left: auto; }
+  .res-row-2 {
+    display: flex; gap: .6rem; align-items: baseline;
+    font-size: .88rem;
+    margin-bottom: .3rem;
+    flex-wrap: wrap;
+  }
+  .res-date { font-family: var(--mono); font-weight: 700; color: var(--ink); }
+  .res-time { font-family: var(--mono); color: var(--sky-deep); font-weight: 700; }
+  .res-course { color: var(--ink-2); }
+  .res-row-3 {
+    display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+    font-size: .78rem; color: var(--ink-2);
+    margin-bottom: .3rem;
+  }
+  .res-guardian { font-weight: 700; }
+  .res-parts { color: var(--ink-3); }
+  .res-row-4 {
+    display: flex; gap: .5rem; align-items: baseline;
+    font-size: .74rem; color: var(--ink-3);
+  }
+  .res-amount { font-family: var(--mono); color: var(--orange-deep); font-weight: 700; }
+
+  .badge {
+    padding: 3px 10px; border-radius: 100px;
+    font-size: .68rem; font-weight: 800;
+  }
+  .badge-confirmed { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .badge-pending { background: rgba(255,201,67,.2); color: var(--orange-deep); }
+  .badge-attended { background: rgba(58,169,232,.2); color: var(--sky-deep); }
+  .badge-noshow { background: rgba(229,85,111,.15); color: var(--rose-deep); }
+  .badge-cancelled { background: rgba(160,160,160,.15); color: var(--ink-3); }
+  .badge-muted { background: var(--bg-2); color: var(--ink-3); }
+</style>
