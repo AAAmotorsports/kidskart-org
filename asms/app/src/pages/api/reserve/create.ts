@@ -298,10 +298,12 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   }
 
   // --- Fire-and-forget confirmation email (Resend) ---------------------
-  // If RESEND_API_KEY isn't configured, just skip silently — reservation
-  // creation must never fail because email delivery failed.
+  // Wrapped in ctx.waitUntil so Cloudflare Workers keeps the async fetch
+  // alive after we return the response. Without waitUntil the runtime
+  // cancels pending work as soon as the response is sent, which silently
+  // drops the email AND the console output.
   const apiUrl = new URL(request.url);
-  sendConfirmationEmail(env, {
+  const emailPromise = sendConfirmationEmail(env, {
     to: guardianEmail,
     guardianName: guardian.name,
     reservationNumber: rRow.reservation_number,
@@ -316,6 +318,13 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     origin: `${apiUrl.protocol}//${apiUrl.host}`,
     reservationId: rRow.id,
   }).catch((e) => console.warn('[reserve/create] email send failed:', e));
+
+  const runtimeCtx = (locals as any).runtime?.ctx;
+  if (runtimeCtx && typeof runtimeCtx.waitUntil === 'function') {
+    runtimeCtx.waitUntil(emailPromise);
+  } else {
+    console.warn('[reserve/create] no runtime.ctx.waitUntil — email may be cancelled after response');
+  }
 
   return json({
     ok: true,
