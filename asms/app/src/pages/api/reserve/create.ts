@@ -130,7 +130,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     })
     .select('id')
     .single();
-  if (gErr || !gRow) return json({ error: '保護者情報の登録に失敗しました', detail: gErr?.message }, 500);
+  if (gErr || !gRow) return json({ error: `保護者情報の登録に失敗しました: ${gErr?.message ?? '不明'}`, detail: gErr?.details }, 500);
 
   // --- Insert one customer per participant -------------------------------
   const customerIds: string[] = [];
@@ -153,7 +153,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       .select('id')
       .single();
     if (cErr || !c) {
-      return json({ error: '顧客情報の登録に失敗しました', detail: cErr?.message }, 500);
+      return json({ error: `顧客情報の登録に失敗しました: ${cErr?.message ?? '不明'}`, detail: cErr?.details }, 500);
     }
     customerIds.push(c.id);
   }
@@ -187,7 +187,10 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     .select('id, reservation_number')
     .single();
   if (rErr || !rRow) {
-    return json({ error: '予約の登録に失敗しました', detail: rErr?.message }, 500);
+    return json({
+      error: `予約の登録に失敗しました: ${rErr?.message ?? '不明なエラー'}`,
+      detail: `${rErr?.code ?? ''} ${rErr?.details ?? ''} ${rErr?.hint ?? ''}`.trim(),
+    }, 500);
   }
 
   // --- Insert participants snapshot -------------------------------------
