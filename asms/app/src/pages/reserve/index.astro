@@ -25,8 +25,20 @@ const { data: slots } = await supabase
   .limit(400);
 
 type Slot = NonNullable<typeof slots>[number];
+
+// URL params: ?course=CODE filters the calendar/list to one course only,
+// so hard-to-spot offerings (challenge classes run twice a month) surface
+// on their own. ?month=YYYY-MM navigates the calendar view.
+const url = new URL(Astro.request.url);
+const courseFilter = url.searchParams.get('course') ?? '';
+const activeCourse = courses?.find((c) => c.code === courseFilter) ?? null;
+
+const filteredSlots = activeCourse
+  ? (slots ?? []).filter((s) => (s.courses as any)?.code === activeCourse.code)
+  : (slots ?? []);
+
 const byDate = new Map<string, Slot[]>();
-for (const s of slots ?? []) {
+for (const s of filteredSlots) {
   const arr = byDate.get(s.date) ?? [];
   arr.push(s);
   byDate.set(s.date, arr);
@@ -34,15 +46,14 @@ for (const s of slots ?? []) {
 const hasSlots = byDate.size > 0;
 
 // Which month to render the calendar for
-const url = new URL(Astro.request.url);
 const urlMonth = url.searchParams.get('month');
 let visYear: number;
 let visMonth: number;
 if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
   const [y, m] = urlMonth.split('-').map(Number);
   visYear = y; visMonth = m;
-} else if (slots && slots.length > 0) {
-  const d = new Date(slots[0].date + 'T00:00:00');
+} else if (filteredSlots.length > 0) {
+  const d = new Date(filteredSlots[0].date + 'T00:00:00');
   visYear = d.getFullYear();
   visMonth = d.getMonth() + 1;
 } else {
@@ -55,7 +66,7 @@ const monthStart = `${visYear}-${String(visMonth).padStart(2, '0')}-01`;
 const daysInMonth = new Date(visYear, visMonth, 0).getDate();
 const monthEnd = `${visYear}-${String(visMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
-const visSlots = (slots ?? []).filter((s) => s.date >= monthStart && s.date <= monthEnd);
+const visSlots = filteredSlots.filter((s) => s.date >= monthStart && s.date <= monthEnd);
 const visByDate = new Map<string, Slot[]>();
 for (const s of visSlots) {
   const arr = visByDate.get(s.date) ?? [];
@@ -65,13 +76,25 @@ for (const s of visSlots) {
 
 const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
 const monthsWithSlots = new Set<string>();
-for (const s of slots ?? []) {
+for (const s of filteredSlots) {
   monthsWithSlots.add(s.date.slice(0, 7));
 }
 const prevM = visMonth === 1 ? { y: visYear - 1, m: 12 } : { y: visYear, m: visMonth - 1 };
 const nextM = visMonth === 12 ? { y: visYear + 1, m: 1 } : { y: visYear, m: visMonth + 1 };
 const hasPrev = monthsWithSlots.has(monthKey(prevM.y, prevM.m));
 const hasNext = monthsWithSlots.has(monthKey(nextM.y, nextM.m));
+
+// Build URLs preserving the current course filter.
+function makeUrl(params: Record<string, string | number>): string {
+  const p = new URLSearchParams();
+  if (activeCourse) p.set('course', activeCourse.code);
+  for (const [k, v] of Object.entries(params)) p.set(k, String(v));
+  const q = p.toString();
+  return q ? `/reserve/?${q}` : '/reserve/';
+}
+function courseHref(code: string): string {
+  return activeCourse?.code === code ? '/reserve/' : `/reserve/?course=${code}`;
+}
 
 // Calendar cells: leading blanks then day entries. Sunday-start (JS default).
 type Cell = { date: string; dayNum: number; count: number; dow: number } | null;
@@ -130,23 +153,25 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
     <section class="courses">
       <div class="section-h">
         <h2>コース一覧</h2>
-        <p>お子様の経験や目的に合わせて選べます</p>
+        <p>コース名をタップすると開催カレンダーがそのコースに絞り込まれます</p>
       </div>
       <div class="course-grid">
         {courses?.map((c) => (
-          <div class={`course c-${c.code}`}>
+          <a class={`course c-${c.code} ${activeCourse?.code === c.code ? 'active' : ''}`}
+             href={courseHref(c.code)}>
             <div class="course-name">
               {c.name}
               {c.vehicle !== 'mini_default' && (
                 <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
               )}
+              {activeCourse?.code === c.code && <span class="course-active">✓ 表示中</span>}
             </div>
             <div class="course-meta">
               <span class="course-dur">{c.duration_min}分</span>
               <span class="course-price">{priceLabel(c.price_regular, c.price_member)}</span>
             </div>
             {c.description && <p class="course-desc">{c.description}</p>}
-          </div>
+          </a>
         ))}
       </div>
       <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。</p>
@@ -156,19 +181,26 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
       <section class="dates">
         <div class="section-h">
           <h2>開催予定日を選ぶ</h2>
-          <p>カレンダーの緑の日をタップして時間帯を選んでください</p>
+          {activeCourse ? (
+            <div class="filter-chip">
+              <span>🔍 <strong>{activeCourse.name}</strong> で絞り込み中</span>
+              <a href="/reserve/" class="clear-filter">✕ 全て表示</a>
+            </div>
+          ) : (
+            <p>カレンダーの緑の日をタップして時間帯を選んでください</p>
+          )}
         </div>
 
         <div class="cal-wrap">
           <div class="cal-hd">
             {hasPrev ? (
-              <a class="cal-nav" href={`/reserve/?month=${monthKey(prevM.y, prevM.m)}`}>← {prevM.m}月</a>
+              <a class="cal-nav" href={makeUrl({ month: monthKey(prevM.y, prevM.m) })}>← {prevM.m}月</a>
             ) : (
               <span class="cal-nav disabled">← {prevM.m}月</span>
             )}
             <div class="cal-title">{visYear}年 {visMonth}月</div>
             {hasNext ? (
-              <a class="cal-nav" href={`/reserve/?month=${monthKey(nextM.y, nextM.m)}`}>{nextM.m}月 →</a>
+              <a class="cal-nav" href={makeUrl({ month: monthKey(nextM.y, nextM.m) })}>{nextM.m}月 →</a>
             ) : (
               <span class="cal-nav disabled">{nextM.m}月 →</span>
             )}
@@ -200,7 +232,12 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
         </div>
 
         {visSortedDates.length === 0 ? (
-          <p class="no-in-month">{visYear}年{visMonth}月は開催予定がありません。前月/翌月をお試しください。</p>
+          <p class="no-in-month">
+            {activeCourse
+              ? `${activeCourse.name} の ${visYear}年${visMonth}月 開催予定はありません。`
+              : `${visYear}年${visMonth}月は開催予定がありません。`}
+            {(hasPrev || hasNext) && '前月/翌月をお試しください。'}
+          </p>
         ) : (
           <div class="day-list">
             {visSortedDates.map((date) => (
@@ -227,9 +264,19 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
       <section class="empty">
         <div class="empty-card">
           <div class="empty-icon">📅</div>
-          <h2>現在、公開中の開催予定はありません</h2>
-          <p class="notice">{scheduleNotice}</p>
-          <p class="policy">スケジュール更新は原則毎月 <strong>25 日頃</strong>です。</p>
+          {activeCourse ? (
+            <>
+              <h2>{activeCourse.name} の開催予定はありません</h2>
+              <p class="notice">現時点で予定登録がありません。次回開催をお待ちください。</p>
+              <p class="policy"><a href="/reserve/">← 全てのコースの開催予定を見る</a></p>
+            </>
+          ) : (
+            <>
+              <h2>現在、公開中の開催予定はありません</h2>
+              <p class="notice">{scheduleNotice}</p>
+              <p class="policy">スケジュール更新は原則毎月 <strong>25 日頃</strong>です。</p>
+            </>
+          )}
         </div>
 
         <div class="cta-card">
@@ -306,6 +353,26 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
   .section-h h2 { margin: 0 0 .2rem; font-size: 1.1rem; font-weight: 800; letter-spacing: -.005em; }
   .section-h p { margin: 0; font-size: .78rem; color: var(--ink-3); }
 
+  .filter-chip {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .5rem; padding: .55rem .8rem;
+    background: linear-gradient(135deg, rgba(58,169,232,.12), rgba(58,169,232,.04));
+    border: 1px solid var(--sky);
+    border-radius: 100px;
+    font-size: .78rem; color: var(--sky-deep);
+    margin-top: .3rem;
+  }
+  .filter-chip strong { font-weight: 800; color: var(--ink); }
+  .clear-filter {
+    font-size: .72rem; font-weight: 700; color: var(--rose-deep);
+    text-decoration: none;
+    padding: 2px 8px; border-radius: 100px;
+    background: rgba(229,85,111,.1);
+    transition: background .1s;
+    white-space: nowrap;
+  }
+  .clear-filter:hover { background: rgba(229,85,111,.2); }
+
   /* Courses */
   .course-grid {
     display: flex;
@@ -323,6 +390,26 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
   .course.c-repeat_30 { border-left-color: var(--lime); }
   .course.c-challenge_ts { border-left-color: var(--sun); }
   .course.c-challenge_rx { border-left-color: var(--orange); }
+  a.course {
+    text-decoration: none; color: inherit;
+    transition: transform .1s, box-shadow .15s;
+    position: relative;
+  }
+  a.course:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0,0,0,.06);
+  }
+  a.course.active {
+    background: var(--sky-mist);
+    border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(58,169,232,.15);
+  }
+  .course-active {
+    font-size: .64rem; font-weight: 800;
+    background: var(--sky); color: #fff;
+    padding: 2px 8px; border-radius: 100px;
+    margin-left: auto;
+  }
   .course-name {
     font-weight: 800;
     font-size: .95rem;
