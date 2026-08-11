@@ -39,9 +39,19 @@
     // beyond the fact that the site has admin auth. To rotate: pick a new
     // password, `printf '<pw>' | sha256sum` on any Unix box, replace here.
     "ADMIN_USERNAME": "masaaki0820",
-    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88"
-    // SUPABASE_SERVICE_ROLE_KEY must still be added as a proper Cloudflare
-    // secret — write endpoints that bypass RLS need it and it must not
-    // land in this file.
+    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88",
+    // Outbound mail. The FROM / NAME / REPLY-TO are non-sensitive so they
+    // live in git; the RESEND_API_KEY itself must be added as a proper
+    // Cloudflare secret (Dashboard → 変数とシークレット → シークレット追加).
+    // Adding it in git would let anyone with repo access send mail as us.
+    "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
+    "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
+    "MAIL_REPLY_TO": "info@kidskart.org"
+    // SUPABASE_SERVICE_ROLE_KEY and RESEND_API_KEY must be added as
+    // Cloudflare secrets — write endpoints that bypass RLS need the
+    // former and outbound Resend calls need the latter. Dashboard-added
+    // secrets bind on the next code deploy, not on manual re-deploy of
+    // an existing version; push a commit to force a rebind if a new
+    // secret isn't visible at runtime.
   }
 }
