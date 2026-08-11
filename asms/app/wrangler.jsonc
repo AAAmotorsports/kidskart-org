@@ -30,38 +30,37 @@
     "enabled": true
   },
   // ---- Environment variables --------------------------------------------
-  // Intentionally NO `vars` key in this file.
+  // Non-secret runtime env lives HERE (single source of truth). Dashboard
+  // holds only the two real secrets.
   //
-  // Empirically, on this project's Cloudflare Workers Builds setup:
-  //   - `vars: {...}` values do NOT reach `env.XXX` at runtime
-  //   - `vars: {}` (empty) DELETES existing Dashboard variables on deploy
-  //   - Omitting the `vars` key entirely leaves Dashboard variables untouched
+  // Learned (3 wipe accidents on 2026-08-11):
+  //   - `vars: {A: "x", ...}` here → gets pushed to runtime AND survives
+  //     deploys ✅
+  //   - `vars: {}` (empty)      → wipes all Dashboard non-secret vars ❌
+  //   - No `vars` key at all    → ALSO wipes Dashboard non-secret vars ❌
+  //     (contrary to what Cloudflare docs suggest — empirically confirmed
+  //     on this project's Workers Builds setup)
+  //   - Dashboard シークレット (SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY)
+  //     always survive deploys, regardless of this file
   //
-  // So the ONLY reliable place for env config is the Cloudflare Dashboard:
-  //   Workers & Pages → kidskart-asms → 設定 → 変数とシークレット
+  // Therefore: NEVER remove or empty this `vars` block. Every deploy
+  // rewrites the Worker's non-secret env to match what's here.
   //
-  // ==== VARIABLES THAT MUST EXIST IN THE DASHBOARD ====
-  //
-  // Type: 変数 (plain text)
-  //   ADMIN_USERNAME           = masaaki0820
-  //   ADMIN_PASSWORD_HASH      = 9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88
-  //   PUBLIC_SUPABASE_URL      = https://qwwrhesgbytefxufeiwj.supabase.co
-  //   PUBLIC_SUPABASE_ANON_KEY = sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq
-  //   MAIL_FROM_ADDRESS        = noreply@kidskart.org
-  //   MAIL_FROM_NAME           = 福岡キッズカートアカデミー
-  //   MAIL_REPLY_TO            = info@kidskart.org
-  //
-  // Type: シークレット (encrypted)
-  //   SUPABASE_SERVICE_ROLE_KEY = sb_secret_...     (never commit)
-  //   RESEND_API_KEY            = re_...            (never commit)
-  //
-  // To rotate the admin password:
+  // ADMIN_PASSWORD_HASH is a SHA-256 digest, not the password itself.
+  // Rotating the password:
   //   printf '<newpass>' | sha256sum
-  //   → paste hex into ADMIN_PASSWORD_HASH in the Dashboard
+  //   → replace ADMIN_PASSWORD_HASH below, commit, push.
+  "vars": {
+    "PUBLIC_SUPABASE_URL": "https://qwwrhesgbytefxufeiwj.supabase.co",
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq",
+    "ADMIN_USERNAME": "masaaki0820",
+    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88",
+    "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
+    "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
+    "MAIL_REPLY_TO": "info@kidskart.org"
+  }
   //
-  // When adding a new variable:
-  //   1. Add to Dashboard (変数 or シークレット)
-  //   2. Add to `Env` interface in src/env.d.ts
-  //   3. If secret: Dashboard → デプロイ → 最新版「⋯」→ このバージョンを展開する
-  //      (new secrets don't auto-bind to existing deployments)
+  // Secrets (stay in Cloudflare Dashboard, encrypted):
+  //   SUPABASE_SERVICE_ROLE_KEY
+  //   RESEND_API_KEY
 }
