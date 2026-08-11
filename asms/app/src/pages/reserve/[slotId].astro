@@ -647,7 +647,19 @@ const termsHtml = terms
     };
     canvas.addEventListener('pointerup', endStroke);
     canvas.addEventListener('pointercancel', endStroke);
-    canvas.addEventListener('pointerleave', endStroke);
+    // NOTE: intentionally NO pointerleave handler here. With
+    // setPointerCapture the pointer never really "leaves" the canvas
+    // — but on some browsers pointerleave still fires when the finger
+    // just barely crosses the edge, which would end the stroke early.
+
+    // Extra belt-and-suspenders touch handling for stubborn mobile
+    // browsers where `touch-action: none` alone doesn't suppress
+    // scrolling (some Android WebView + old iOS Safari). Cancels the
+    // native scroll on any touch inside the signature area.
+    const sigWrap = document.getElementById('sigDrawn');
+    const suppress = (e: TouchEvent) => e.preventDefault();
+    sigWrap?.addEventListener('touchstart', suppress, { passive: false });
+    sigWrap?.addEventListener('touchmove', suppress, { passive: false });
 
     document.getElementById('sigClear')!.addEventListener('click', () => {
       const rect = canvas.getBoundingClientRect();
@@ -1165,14 +1177,36 @@ const termsHtml = terms
   }
 
   .sig-mode { display: flex; gap: .4rem; margin-bottom: .8rem; flex-wrap: wrap; }
+  .sig-drawn {
+    /* Absorb touches on the whole signature area, not just the canvas,
+       so a finger drifting past the edge still can't scroll the page. */
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    overscroll-behavior: contain;
+    padding: 0;
+  }
   #sigCanvas {
     display: block; width: 100%; max-width: 600px;
+    /* On phones the 3:1 ratio produced a ~110px-tall strip — too small
+       to sign in comfortably. Enforce a min height and use a squarer
+       ratio on narrow screens. */
     aspect-ratio: 3 / 1;
+    min-height: 200px;
     background: #fff; border: 2px dashed var(--line);
     border-radius: 8px; touch-action: none; cursor: crosshair;
+    overscroll-behavior: contain;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  @media (max-width: 520px) {
+    #sigCanvas { aspect-ratio: 2 / 1; min-height: 220px; }
   }
   .sig-actions { margin-top: .5rem; text-align: right; }
   .sig-actions .btn { padding: .45rem .9rem; font-size: .8rem; }
+  .sig-hint {
+    font-size: .72rem; color: var(--ink-3); margin: .3rem 0 0;
+    text-align: center;
+  }
 
   .rv-block {
     background: var(--bg-2); border-radius: 8px;
