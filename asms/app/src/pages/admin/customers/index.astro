@@ -6,10 +6,101 @@ import { ageOn, skillLabel, jaDateShort, SKILL_LEVELS } from '@lib/admin';
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
 
+// POST — batch merge multiple customers into a chosen target.
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const op = form.get('op') as string;
+  const back = (msg = '', err = '') => {
+    const q = new URLSearchParams();
+    if (msg) q.set('msg', msg);
+    if (err) q.set('err', err);
+    return Astro.redirect(`/admin/customers${q.toString() ? '?' + q.toString() : ''}`);
+  };
+  const fmt = (e: any) => `${e?.code ?? ''} ${e?.message ?? ''} ${e?.details ?? ''}`.trim();
+
+  if (op === 'merge_batch') {
+    const targetId = (form.get('target_id') as string) || '';
+    const sourceIds = form.getAll('source_ids').filter((v) => typeof v === 'string' && v && v !== targetId) as string[];
+    if (!targetId) return back('', '統合先が選択されていません');
+    if (sourceIds.length === 0) return back('', '統合元がありません（統合先以外を 1 件以上選んでください）');
+
+    const { data: target } = await supabase
+      .from('customers')
+      .select('id, is_deleted, name, customer_number')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (!target) return back('', '統合先のカルテが見つかりません');
+    if (target.is_deleted) return back('', '統合先のカルテは既に削除されています');
+
+    let mergedCount = 0;
+    for (const sourceId of sourceIds) {
+      // Move history rows
+      const moves = [
+        supabase.from('reservation_participants').update({ customer_id: targetId }).eq('customer_id', sourceId),
+        supabase.from('customer_progressions').update({ customer_id: targetId }).eq('customer_id', sourceId),
+        supabase.from('customer_bests').update({ customer_id: targetId }).eq('customer_id', sourceId),
+      ];
+      for (const p of moves) {
+        const { error } = await p;
+        if (error) return back(`${mergedCount} 件統合済 · ${sourceId} で失敗: ${fmt(error)}`, '');
+      }
+      // guardian_customer_links dedup on the fly (UNIQUE(guardian_id, customer_id)):
+      // for each source link, if target already has a link to that guardian,
+      // just delete the source link; otherwise repoint it.
+      const { data: srcLinks } = await supabase
+        .from('guardian_customer_links')
+        .select('id, guardian_id')
+        .eq('customer_id', sourceId);
+      for (const l of (srcLinks ?? []) as any[]) {
+        const { data: dupe } = await supabase
+          .from('guardian_customer_links')
+          .select('id')
+          .eq('guardian_id', l.guardian_id)
+          .eq('customer_id', targetId)
+          .maybeSingle();
+        if (dupe) {
+          await supabase.from('guardian_customer_links').delete().eq('id', l.id);
+        } else {
+          await supabase.from('guardian_customer_links').update({ customer_id: targetId }).eq('id', l.id);
+        }
+      }
+
+      const { error: mErr } = await supabase
+        .from('customers')
+        .update({ merged_into_id: targetId, is_deleted: true })
+        .eq('id', sourceId);
+      if (mErr) return back(`${mergedCount} 件統合済 · ${sourceId} フラグ更新に失敗: ${fmt(mErr)}`, '');
+      mergedCount++;
+    }
+
+    // Nudge trigger to recalc target's total_participations
+    const { data: anyPart } = await supabase
+      .from('reservation_participants')
+      .select('id, attendance_status')
+      .eq('customer_id', targetId)
+      .limit(1)
+      .maybeSingle();
+    if (anyPart) {
+      await supabase
+        .from('reservation_participants')
+        .update({ attendance_status: anyPart.attendance_status })
+        .eq('id', anyPart.id);
+    }
+
+    const q = new URLSearchParams();
+    q.set('msg', `${mergedCount} 件のカルテを「${target.name} ${target.customer_number}」に統合しました`);
+    return Astro.redirect(`/admin/customers/${targetId}?${q.toString()}`);
+  }
+
+  return back('', `未対応の操作: ${op}`);
+}
+
 const url = new URL(Astro.request.url);
 const search = (url.searchParams.get('q') ?? '').trim();
 const levelFilter = url.searchParams.get('level') ?? '';
 const sort = url.searchParams.get('sort') ?? 'last'; // last | participations | name
+const msg = url.searchParams.get('msg');
+const err = url.searchParams.get('err');
 
 // Load customers. Supabase's OR/ilike works on plain columns but not
 // across joins, so we filter client-side after fetching a bounded pool.
@@ -64,7 +155,13 @@ if (search) {
       )}
     </form>
 
+    {msg && <div class="ok-banner">{msg}</div>}
+    {err && <div class="err">{err}</div>}
     {error && <div class="err">{error.code} {error.message}</div>}
+
+    <p class="merge-hint">
+      💡 チェックを 2 件以上入れると <strong>下部に統合バー</strong> が出ます。統合先を選んで「統合実行」で一括統合できます。
+    </p>
 
     {customers.length === 0 ? (
       <p class="empty">
@@ -73,33 +170,98 @@ if (search) {
           : 'まだ顧客登録はありません。予約フローで顧客が生成されるとここに表示されます。'}
       </p>
     ) : (
-      <ul class="c-list">
-        {customers.map((c) => (
-          <li class="c-card">
-            <a class="c-link" href={`/admin/customers/${c.id}`}>
-              <div class="c-hd">
-                <span class="c-name">{c.name}</span>
-                <span class="c-kana">（{c.kana}）</span>
-                <span class="c-level">{skillLabel(c.current_skill_level)}</span>
-              </div>
-              <div class="c-meta">
-                <span class="c-age">{ageOn(c.birth_date)}歳</span>
-                <span class="c-num">{c.customer_number}</span>
-                <span class="c-parts">🏁 {c.total_participations}回</span>
-                {c.last_participation_at && (
-                  <span class="c-last">最終 {jaDateShort(c.last_participation_at.slice(0, 10))}</span>
+      <form id="mergeForm" method="post">
+        <input type="hidden" name="op" value="merge_batch" />
+        <ul class="c-list">
+          {customers.map((c) => (
+            <li class="c-card">
+              <label class="c-check">
+                <input type="checkbox" class="c-cb"
+                       name="source_ids" value={c.id}
+                       data-name={c.name} data-num={c.customer_number} />
+              </label>
+              <a class="c-link" href={`/admin/customers/${c.id}`}>
+                <div class="c-hd">
+                  <span class="c-name">{c.name}</span>
+                  <span class="c-kana">（{c.kana}）</span>
+                  <span class="c-level">{skillLabel(c.current_skill_level)}</span>
+                </div>
+                <div class="c-meta">
+                  <span class="c-age">{ageOn(c.birth_date)}歳</span>
+                  <span class="c-num">{c.customer_number}</span>
+                  <span class="c-parts">🏁 {c.total_participations}回</span>
+                  {c.last_participation_at && (
+                    <span class="c-last">最終 {jaDateShort(c.last_participation_at.slice(0, 10))}</span>
+                  )}
+                </div>
+                {c.next_recommendation && (
+                  <div class="c-rec">💡 {c.next_recommendation}</div>
                 )}
-              </div>
-              {c.next_recommendation && (
-                <div class="c-rec">💡 {c.next_recommendation}</div>
-              )}
-            </a>
-          </li>
-        ))}
-      </ul>
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div id="mergeBar" class="merge-bar" hidden>
+          <div class="mb-count"><span id="mbCount">0</span> 件選択中</div>
+          <div class="mb-target">
+            <div class="mb-target-label">統合先（この 1 件に他をまとめる）:</div>
+            <div id="mbTargetList" class="mb-target-list"></div>
+          </div>
+          <button type="submit" id="mbSubmit" class="btn-merge-do" disabled>統合実行 →</button>
+        </div>
+      </form>
     )}
   </main>
 </Base>
+
+<script>
+  const form = document.getElementById('mergeForm') as HTMLFormElement | null;
+  const bar = document.getElementById('mergeBar');
+  const mbCount = document.getElementById('mbCount');
+  const mbTargetList = document.getElementById('mbTargetList');
+  const mbSubmit = document.getElementById('mbSubmit') as HTMLButtonElement | null;
+  const cbs = Array.from(document.querySelectorAll<HTMLInputElement>('.c-cb'));
+
+  function refresh() {
+    const checked = cbs.filter((c) => c.checked);
+    if (!bar || !mbCount || !mbTargetList || !mbSubmit) return;
+    if (checked.length < 2) {
+      bar.hidden = true;
+      mbSubmit.disabled = true;
+      return;
+    }
+    bar.hidden = false;
+    mbCount.textContent = String(checked.length);
+    // Render radio list of target candidates
+    mbTargetList.innerHTML = checked.map((c) => `
+      <label class="mb-target-item">
+        <input type="radio" name="target_id" value="${c.value}">
+        <span>${c.dataset.name} <small style="color:#7d8fa0">${c.dataset.num}</small></span>
+      </label>
+    `).join('');
+    // Wire radios to enable submit
+    mbTargetList.querySelectorAll<HTMLInputElement>('input[name="target_id"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        mbSubmit.disabled = !r.checked;
+      });
+    });
+    mbSubmit.disabled = true;
+  }
+  cbs.forEach((cb) => cb.addEventListener('change', refresh));
+  refresh();
+
+  form?.addEventListener('submit', (e) => {
+    const checked = cbs.filter((c) => c.checked);
+    const target = form.querySelector<HTMLInputElement>('input[name="target_id"]:checked');
+    if (checked.length < 2 || !target) { e.preventDefault(); return; }
+    const targetName = checked.find((c) => c.value === target.value)?.dataset.name || '';
+    const sourcesCount = checked.length - 1;
+    if (!confirm(`${sourcesCount} 件のカルテを「${targetName}」に統合します。取り消せません。よろしいですか？`)) {
+      e.preventDefault();
+    }
+  });
+</script>
 
 <style>
   main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
@@ -139,13 +301,80 @@ if (search) {
     font-size: .88rem; background: var(--bg-2); border-radius: 10px;
   }
 
-  .c-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .merge-hint {
+    padding: .6rem .9rem; background: rgba(58,169,232,.06);
+    border: 1px solid var(--sky-light); border-radius: 8px;
+    font-size: .78rem; color: var(--ink-2); margin: 0 0 1rem;
+  }
+  .merge-hint strong { color: var(--sky-deep); }
+
+  .ok-banner {
+    background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem; font-weight: 700;
+  }
+
+  .c-list { list-style: none; margin: 0; padding: 0 0 8rem; display: flex; flex-direction: column; gap: .5rem; }
   .c-card {
     background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
     transition: transform .1s, box-shadow .15s;
+    display: flex; align-items: stretch;
   }
   .c-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(58,169,232,.1); }
-  .c-link { display: block; padding: .7rem 1rem; text-decoration: none; color: var(--ink); }
+  .c-check {
+    display: flex; align-items: center; padding: 0 .3rem 0 .7rem;
+    cursor: pointer;
+  }
+  .c-cb {
+    width: 20px; height: 20px; accent-color: var(--sky);
+    cursor: pointer;
+  }
+  .c-link { display: block; padding: .7rem 1rem; text-decoration: none; color: var(--ink); flex: 1; }
+
+  .merge-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg); border-top: 2px solid var(--sky);
+    box-shadow: 0 -4px 14px rgba(0,0,0,.1);
+    padding: .8rem 1rem; z-index: 100;
+    display: flex; flex-direction: column; gap: .5rem;
+    max-height: 60vh; overflow-y: auto;
+  }
+  .mb-count {
+    font-weight: 800; font-size: .9rem; color: var(--sky-deep);
+  }
+  .mb-count span {
+    font-family: var(--mono); font-size: 1.1rem;
+    padding: 2px 10px; background: var(--sky); color: #fff;
+    border-radius: 100px; margin-right: .2rem;
+  }
+  .mb-target-label {
+    font-size: .78rem; font-weight: 700; color: var(--ink-2);
+    margin-bottom: .3rem;
+  }
+  .mb-target-list {
+    display: flex; flex-direction: column; gap: .2rem;
+    max-height: 30vh; overflow-y: auto;
+  }
+  .mb-target-item {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .4rem .6rem; cursor: pointer;
+    border-radius: 6px; font-size: .85rem;
+    background: var(--bg-2);
+  }
+  .mb-target-item:hover { background: var(--bg-3); }
+  .mb-target-item input[type="radio"] {
+    accent-color: var(--sky); cursor: pointer;
+  }
+  .btn-merge-do {
+    padding: .7rem 1.2rem; font-size: .9rem; font-weight: 800;
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; border: none; border-radius: 8px; cursor: pointer;
+    font-family: var(--jp);
+    box-shadow: 0 3px 10px rgba(58,169,232,.3);
+  }
+  .btn-merge-do:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  .btn-merge-do:not(:disabled):hover { transform: translateY(-1px); }
   .c-hd { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; margin-bottom: .3rem; }
   .c-name { font-size: 1rem; font-weight: 800; }
   .c-kana { font-size: .74rem; color: var(--ink-3); }

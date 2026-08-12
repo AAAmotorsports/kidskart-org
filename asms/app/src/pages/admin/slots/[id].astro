@@ -141,6 +141,15 @@ if (Astro.request.method === 'POST') {
     );
   }
 
+  if (op === 'set_weather') {
+    const note = ((form.get('weather_note') as string) || '').trim() || null;
+    const { error } = await supabase
+      .from('slots')
+      .update({ weather_note: note })
+      .eq('id', id);
+    return error ? back('', fmt(error)) : back(note ? `天候メモを更新: ${note}` : '天候メモを削除しました');
+  }
+
   if (op === 'set_slot_status') {
     const newStatus = form.get('slot_status') as string;
     const cascade = form.get('cascade') === '1';
@@ -350,7 +359,7 @@ const err = url.searchParams.get('err');
 // Load slot
 const { data: slot } = await supabase
   .from('slots')
-  .select('id, date, start_time, end_time, capacity, status, note, courses(id, name, code, vehicle)')
+  .select('id, date, start_time, end_time, capacity, status, note, weather_note, courses(id, name, code, vehicle)')
   .eq('id', id)
   .maybeSingle();
 
@@ -778,6 +787,20 @@ async function sendReservationCancelEmail(env: Env, args: {
           ⚠️ この枠はキャンセル状態です。既存予約者への通知メールはキャンセル操作時に送信済みです。
         </p>
       )}
+    </section>
+
+    <section class="weather-card">
+      <form method="post" class="weather-form">
+        <input type="hidden" name="op" value="set_weather" />
+        <label class="w-label">🌤 当日の天候メモ</label>
+        <div class="w-row">
+          <input type="text" name="weather_note" maxlength="80"
+                 value={(slot as any).weather_note ?? ''}
+                 placeholder="例: ☀️ 晴れ 30℃、🌧 小雨後半晴れ、☁️ 曇り" />
+          <button type="submit" class="btn-w-save">保存</button>
+        </div>
+        <p class="w-hint">後日振り返り・年間比較用。空欄で保存すると削除。</p>
+      </form>
     </section>
 
     {allParts.length === 0 ? (
@@ -1209,6 +1232,27 @@ async function sendReservationCancelEmail(env: Env, args: {
     background: rgba(229,85,111,.06); border: 1px solid rgba(229,85,111,.25);
     border-radius: 6px; font-size: .74rem; color: var(--ink-2);
   }
+
+  .weather-card {
+    background: linear-gradient(135deg, rgba(58,169,232,.05), rgba(255,201,67,.03));
+    border: 1px solid var(--sky-light); border-radius: 10px;
+    padding: .8rem 1rem; margin-bottom: 1rem;
+  }
+  .weather-form { display: grid; gap: .3rem; }
+  .w-label { font-size: .82rem; font-weight: 700; color: var(--sky-deep); }
+  .w-row { display: flex; gap: .4rem; }
+  .w-row input {
+    flex: 1; padding: .55rem .7rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .btn-w-save {
+    padding: .55rem 1rem; font-size: .8rem; font-weight: 700;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--sky); color: #fff; font-family: var(--jp);
+  }
+  .btn-w-save:hover { background: var(--sky-deep); }
+  .w-hint { margin: 0; font-size: .68rem; color: var(--ink-3); }
 
   .pay-details {
     background: rgba(255,201,67,.06); border-radius: 8px;
