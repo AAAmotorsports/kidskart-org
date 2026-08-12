@@ -226,6 +226,7 @@ const termsHtml = terms
                   <span>✅ <strong>トヨピー会員に登録済み</strong>です</span>
                 </label>
                 <p class="hint">会員価格でのご予約には、当日または事前にトヨピー会員登録が必要です。</p>
+                <a class="toyopet-regist-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 トヨピー会員 事前登録はこちら →</a>
               </div>
             </div>
 
@@ -1312,6 +1313,14 @@ const termsHtml = terms
     width: 20px; height: 20px; accent-color: var(--orange);
     flex: none;
   }
+  .toyopet-regist-link {
+    display: inline-block; margin-top: .5rem;
+    padding: .4rem .85rem; font-size: .76rem; font-weight: 700;
+    background: var(--bg); color: var(--orange-deep);
+    border: 1px solid var(--sun); border-radius: 100px;
+    text-decoration: none;
+  }
+  .toyopet-regist-link:hover { background: var(--sun); color: #fff; }
   .same-as-guardian {
     background: rgba(58,169,232,.08); border-color: var(--sky);
     margin-bottom: 1rem;
