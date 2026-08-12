@@ -6,183 +6,538 @@ import { PAYMENT_METHODS, jaDateShort, paymentLabel } from '@lib/admin';
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
 
-// ---------- 対象月の決定 ----------
+// ============================================================================
+// 期間モード決定 (月別 / 年別 / 期間指定)
+// ============================================================================
 const url = new URL(Astro.request.url);
-const ymParam = (url.searchParams.get('ym') || '').trim();
+const mode = (url.searchParams.get('mode') || 'month') as 'month' | 'year' | 'range';
 const now = new Date();
-const defaultYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-const ym = /^\d{4}-\d{2}$/.test(ymParam) ? ymParam : defaultYm;
-const [yearStr, monthStr] = ym.split('-');
-const year = parseInt(yearStr, 10);
-const month = parseInt(monthStr, 10);
 
-// 月初〜翌月初 (JST)。paid_at は timestamptz なので UTC 換算で幅を取る
-const monthStartJst = new Date(Date.UTC(year, month - 1, 1, -9, 0, 0)); // JST 00:00 = UTC 前日 15:00
-const monthEndJst = new Date(Date.UTC(year, month, 1, -9, 0, 0));
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+function isoDay(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function jstMidnightUtcIso(y: number, m: number /* 1-12 */, d: number) {
+  // JST midnight = UTC previous day 15:00. Date.UTC with hour=-9 works.
+  return new Date(Date.UTC(y, m - 1, d, -9, 0, 0)).toISOString();
+}
 
-// ---------- クエリ ----------
-const { data: paidRows, error } = await supabase
-  .from('reservations')
-  .select(`
-    id, reservation_number, payment_method, paid_at, paid_amount, payment_note,
-    total_amount, price_tier, status,
-    guardians(name, phone),
-    slots(date, start_time, courses(name)),
-    reservation_participants(id, name_snapshot)
-  `)
-  .not('paid_at', 'is', null)
-  .gte('paid_at', monthStartJst.toISOString())
-  .lt('paid_at', monthEndJst.toISOString())
-  .order('paid_at', { ascending: false });
+let startIso: string, endIso: string;         // paid_at 比較用 (ISO)
+let startDate: string, endDateExcl: string;   // slots.date 比較用 (YYYY-MM-DD)
+let yoyStartIso: string, yoyEndIso: string;   // 前年同期
+let yoyStartDate: string, yoyEndDateExcl: string;
+let periodLabel: string, yoyLabel: string;
 
-const rows = (paidRows ?? []) as any[];
+const ymParam = (url.searchParams.get('ym') || '').trim();
+const yParam = (url.searchParams.get('y') || '').trim();
+const rangeFromParam = (url.searchParams.get('from') || '').trim();
+const rangeToParam = (url.searchParams.get('to') || '').trim();
 
-// ---------- 集計 ----------
-type Bucket = { count: number; total: number };
-const byMethod: Record<string, Bucket> = {};
-for (const m of PAYMENT_METHODS) byMethod[m.code] = { count: 0, total: 0 };
-let grandTotal = 0;
-let grandCount = 0;
-for (const r of rows) {
-  const m = r.payment_method as string;
-  const amt = Number(r.paid_amount ?? 0);
-  if (byMethod[m]) {
-    byMethod[m].count++;
-    byMethod[m].total += amt;
+// current-period defaults for controls (kept for UI reuse below)
+const defaultYm = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+const defaultY = String(now.getFullYear());
+const defaultFrom = isoDay(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+const defaultTo = isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+
+if (mode === 'year') {
+  const y = /^\d{4}$/.test(yParam) ? parseInt(yParam, 10) : now.getFullYear();
+  startIso = jstMidnightUtcIso(y, 1, 1);
+  endIso = jstMidnightUtcIso(y + 1, 1, 1);
+  startDate = `${y}-01-01`;
+  endDateExcl = `${y + 1}-01-01`;
+  yoyStartIso = jstMidnightUtcIso(y - 1, 1, 1);
+  yoyEndIso = jstMidnightUtcIso(y, 1, 1);
+  yoyStartDate = `${y - 1}-01-01`;
+  yoyEndDateExcl = `${y}-01-01`;
+  periodLabel = `${y}年 (年間)`;
+  yoyLabel = `${y - 1}年 (前年)`;
+} else if (mode === 'range') {
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(rangeFromParam) ? rangeFromParam : defaultFrom;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(rangeToParam) ? rangeToParam : defaultTo;
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  startIso = jstMidnightUtcIso(fy, fm, fd);
+  endIso = jstMidnightUtcIso(ty, tm, td + 1);
+  startDate = from;
+  const toPlus1 = new Date(ty, tm - 1, td + 1);
+  endDateExcl = isoDay(toPlus1);
+  // YoY: same date range one year earlier
+  yoyStartIso = jstMidnightUtcIso(fy - 1, fm, fd);
+  yoyEndIso = jstMidnightUtcIso(ty - 1, tm, td + 1);
+  yoyStartDate = `${fy - 1}-${pad2(fm)}-${pad2(fd)}`;
+  const yoyToPlus1 = new Date(ty - 1, tm - 1, td + 1);
+  yoyEndDateExcl = isoDay(yoyToPlus1);
+  periodLabel = `${from} 〜 ${to}`;
+  yoyLabel = `${fy - 1}/${pad2(fm)}/${pad2(fd)} 〜 ${ty - 1}/${pad2(tm)}/${pad2(td)} (前年)`;
+} else {
+  // month mode (default)
+  const ym = /^\d{4}-\d{2}$/.test(ymParam) ? ymParam : defaultYm;
+  const [y, m] = ym.split('-').map(Number);
+  startIso = jstMidnightUtcIso(y, m, 1);
+  endIso = jstMidnightUtcIso(y, m + 1, 1);
+  startDate = `${y}-${pad2(m)}-01`;
+  const nm = new Date(y, m, 1);
+  endDateExcl = `${nm.getFullYear()}-${pad2(nm.getMonth() + 1)}-01`;
+  yoyStartIso = jstMidnightUtcIso(y - 1, m, 1);
+  yoyEndIso = jstMidnightUtcIso(y - 1, m + 1, 1);
+  yoyStartDate = `${y - 1}-${pad2(m)}-01`;
+  const ynm = new Date(y - 1, m, 1);
+  yoyEndDateExcl = `${ynm.getFullYear()}-${pad2(ynm.getMonth() + 1)}-01`;
+  periodLabel = `${y}年${m}月`;
+  yoyLabel = `${y - 1}年${m}月 (前年)`;
+}
+
+// ============================================================================
+// クエリ 1: 会計済み予約 (revenue: paid_at 基準)
+// ============================================================================
+async function fetchPaidRows(fromIso: string, toIso: string) {
+  const { data } = await supabase
+    .from('reservations')
+    .select(`
+      id, reservation_number, payment_method, paid_at, paid_amount, payment_note,
+      total_amount, price_tier, status,
+      guardians(name, phone),
+      slots(date, start_time, courses(name, code)),
+      reservation_participants(id, name_snapshot)
+    `)
+    .not('paid_at', 'is', null)
+    .gte('paid_at', fromIso)
+    .lt('paid_at', toIso)
+    .order('paid_at', { ascending: false });
+  return (data ?? []) as any[];
+}
+
+// ============================================================================
+// クエリ 2: 全予約 (participation: slot.date 基準、キャンセル除く)
+// ============================================================================
+async function fetchParticipations(fromDate: string, toDateExcl: string) {
+  const { data } = await supabase
+    .from('reservations')
+    .select(`
+      id, status, total_amount, price_tier,
+      slots!inner(date, courses(code, name)),
+      reservation_participants(id, gender_snapshot, age_at_booking, customer_id, attendance_status)
+    `)
+    .neq('status', 'cancelled')
+    .gte('slots.date', fromDate)
+    .lt('slots.date', toDateExcl);
+  return (data ?? []) as any[];
+}
+
+const [paidRows, yoyPaidRows, partRows, yoyPartRows] = await Promise.all([
+  fetchPaidRows(startIso, endIso),
+  fetchPaidRows(yoyStartIso, yoyEndIso),
+  fetchParticipations(startDate, endDateExcl),
+  fetchParticipations(yoyStartDate, yoyEndDateExcl),
+]);
+
+// ============================================================================
+// クエリ 3: 顧客リピート funnel (全期間・現時点スナップショット)
+// ============================================================================
+const { data: allCustomers } = await supabase
+  .from('customers')
+  .select('id, team_member_since')
+  .eq('is_deleted', false);
+const custTeam = new Map<string, string | null>();
+for (const c of (allCustomers ?? []) as any[]) custTeam.set(c.id, c.team_member_since);
+
+const { data: histParts } = await supabase
+  .from('reservation_participants')
+  .select('customer_id, attendance_status, reservations!inner(status, slots!inner(courses!inner(code)))')
+  .neq('reservations.status', 'cancelled')
+  .neq('attendance_status', 'cancelled');
+
+const custCourses = new Map<string, Set<string>>();
+for (const p of (histParts ?? []) as any[]) {
+  const cid = p.customer_id;
+  const code = p.reservations?.slots?.courses?.code as string;
+  if (!cid || !code) continue;
+  if (!custCourses.has(cid)) custCourses.set(cid, new Set());
+  custCourses.get(cid)!.add(code);
+}
+
+// tier 判定: 高い方を優先
+function tierOf(cid: string): number {
+  const teamSince = custTeam.get(cid);
+  if (teamSince) return 5;
+  const codes = custCourses.get(cid) ?? new Set();
+  if (codes.has('challenge_rx')) return 4;
+  if (codes.has('challenge_ts')) return 3;
+  if (codes.has('repeat_60') || codes.has('repeat_30')) return 2;
+  if (codes.has('taiken')) return 1;
+  return 0;
+}
+const funnel = { taiken: 0, repeat: 0, chTs: 0, chRx: 0, team: 0 };
+for (const cid of custCourses.keys()) {
+  const t = tierOf(cid);
+  if (t >= 1) funnel.taiken++;
+  if (t >= 2) funnel.repeat++;
+  if (t >= 3) funnel.chTs++;
+  if (t >= 4) funnel.chRx++;
+  if (t >= 5) funnel.team++;
+}
+// team 加入者で予約履歴のない顧客も念のため加算
+for (const [cid, teamSince] of custTeam.entries()) {
+  if (teamSince && !custCourses.has(cid)) {
+    funnel.taiken++;
+    funnel.team++;
   }
-  grandTotal += amt;
-  grandCount++;
 }
 
-// 日別集計
-type DayBucket = { date: string; total: number; count: number };
-const byDayMap = new Map<string, DayBucket>();
-for (const r of rows) {
-  const d = new Date(r.paid_at);
-  // JST 日付キー
-  const jstMs = d.getTime() + 9 * 60 * 60 * 1000;
-  const jstDate = new Date(jstMs);
-  const key = `${jstDate.getUTCFullYear()}-${String(jstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(jstDate.getUTCDate()).padStart(2, '0')}`;
-  const cur = byDayMap.get(key) ?? { date: key, total: 0, count: 0 };
-  cur.total += Number(r.paid_amount ?? 0);
-  cur.count++;
-  byDayMap.set(key, cur);
+// ============================================================================
+// 集計関数
+// ============================================================================
+function aggregatePaid(rows: any[]) {
+  type Bucket = { count: number; total: number };
+  const byMethod: Record<string, Bucket> = {};
+  for (const m of PAYMENT_METHODS) byMethod[m.code] = { count: 0, total: 0 };
+  let grandTotal = 0, grandCount = 0;
+  for (const r of rows) {
+    const m = r.payment_method as string;
+    const amt = Number(r.paid_amount ?? 0);
+    if (byMethod[m]) { byMethod[m].count++; byMethod[m].total += amt; }
+    grandTotal += amt;
+    grandCount++;
+  }
+  return { byMethod, grandTotal, grandCount };
 }
-const byDay = [...byDayMap.values()].sort((a, b) => b.date.localeCompare(a.date));
 
-// ---------- 月移動リンク ----------
-const prevMonth = new Date(year, month - 2, 1);
-const nextMonth = new Date(year, month, 1);
-const prevYm = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
-const nextYm = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+function aggregateParticipations(rows: any[]) {
+  const byCourse = new Map<string, { code: string; name: string; resCount: number; partCount: number; revenue: number }>();
+  const dates = new Set<string>();
+  const genderCount = { male: 0, female: 0, other: 0 };
+  const ageIndividual = new Map<number, number>();
+  const ageGroup = { under6: 0, g7to9: 0, over10: 0 };
+  let totalParticipants = 0;
 
-// paid_at を JST HH:mm で表示
-function jstHm(iso: string): string {
-  const d = new Date(iso);
-  const jstMs = d.getTime() + 9 * 60 * 60 * 1000;
-  const j = new Date(jstMs);
-  return `${String(j.getUTCHours()).padStart(2, '0')}:${String(j.getUTCMinutes()).padStart(2, '0')}`;
+  for (const r of rows) {
+    const s = r.slots ?? {};
+    const c = s.courses ?? {};
+    const code = c.code as string;
+    const name = c.name as string;
+    const date = s.date as string;
+    const activeParts = ((r.reservation_participants as any[]) ?? []).filter((p) => p.attendance_status !== 'cancelled');
+    const partCount = activeParts.length;
+    const perPerson = partCount > 0 ? Math.floor(Number(r.total_amount ?? 0) / partCount) : 0;
+    if (code) {
+      if (!byCourse.has(code)) byCourse.set(code, { code, name, resCount: 0, partCount: 0, revenue: 0 });
+      const b = byCourse.get(code)!;
+      b.resCount++;
+      b.partCount += partCount;
+      b.revenue += perPerson * partCount;
+    }
+    if (date) dates.add(date);
+    for (const p of activeParts) {
+      totalParticipants++;
+      const g = (p.gender_snapshot as string) || 'other';
+      if (g === 'male' || g === 'female') genderCount[g]++;
+      else genderCount.other++;
+      const age = Number(p.age_at_booking ?? 0);
+      if (age > 0) {
+        ageIndividual.set(age, (ageIndividual.get(age) ?? 0) + 1);
+        if (age <= 6) ageGroup.under6++;
+        else if (age <= 9) ageGroup.g7to9++;
+        else ageGroup.over10++;
+      }
+    }
+  }
+
+  const coursesSorted = [...byCourse.values()].sort((a, b) => b.partCount - a.partCount);
+  const dayCount = dates.size;
+  const ageSorted = [...ageIndividual.entries()].sort((a, b) => a[0] - b[0]);
+  return { coursesSorted, dayCount, genderCount, ageSorted, ageGroup, totalParticipants };
+}
+
+const paidCur = aggregatePaid(paidRows);
+const paidYoy = aggregatePaid(yoyPaidRows);
+const partCur = aggregateParticipations(partRows);
+const partYoy = aggregateParticipations(yoyPartRows);
+
+// diff helper
+function diffLabel(cur: number, prev: number, unit = ''): { text: string; klass: string } {
+  if (prev === 0 && cur === 0) return { text: `±0${unit}`, klass: 'flat' };
+  if (prev === 0) return { text: `新規 +${cur.toLocaleString('ja-JP')}${unit}`, klass: 'up' };
+  const delta = cur - prev;
+  const pct = Math.round((delta / prev) * 100);
+  const sign = delta >= 0 ? '+' : '';
+  return {
+    text: `${sign}${delta.toLocaleString('ja-JP')}${unit} (${sign}${pct}%)`,
+    klass: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat',
+  };
 }
 
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+
+// ============================================================================
+// UI: URL builders
+// ============================================================================
+function buildUrl(next: Record<string, string>) {
+  const q = new URLSearchParams();
+  q.set('mode', next.mode ?? mode);
+  if ((next.mode ?? mode) === 'month') q.set('ym', next.ym ?? ymParam ?? defaultYm);
+  if ((next.mode ?? mode) === 'year') q.set('y', next.y ?? yParam ?? defaultY);
+  if ((next.mode ?? mode) === 'range') {
+    q.set('from', next.from ?? rangeFromParam ?? defaultFrom);
+    q.set('to', next.to ?? rangeToParam ?? defaultTo);
+  }
+  return `/admin/sales?${q.toString()}`;
+}
 ---
-<Base title={`${year}年${month}月 売上 — ASMS`}>
+<Base title={`売上・分析 ${periodLabel} — ASMS`}>
   <main>
     <header class="hd">
-      <a class="back" href="/admin">← 管理トップへ</a>
-      <h1>💰 売上集計</h1>
-      <p class="sub">支払い記録のある予約を月次で集計</p>
+      <a class="back" href="/admin">← 管理トップ</a>
+      <h1>💰 売上・分析</h1>
+      <p class="sub">{periodLabel} · 前年比較: {yoyLabel}</p>
     </header>
 
-    {error && <div class="err">{error.message ?? String(error)}</div>}
-
-    <section class="nav">
-      <a class="nav-btn" href={`/admin/sales?ym=${prevYm}`}>← {prevYm}</a>
-      <form method="get" class="nav-form">
-        <input type="month" name="ym" value={ym} />
-        <button type="submit" class="btn-jump">表示</button>
-      </form>
-      <a class="nav-btn" href={`/admin/sales?ym=${nextYm}`}>{nextYm} →</a>
+    <section class="mode-tabs">
+      <a class={`tab ${mode === 'month' ? 'active' : ''}`} href={buildUrl({ mode: 'month' })}>📅 月別</a>
+      <a class={`tab ${mode === 'year' ? 'active' : ''}`} href={buildUrl({ mode: 'year' })}>📆 年別</a>
+      <a class={`tab ${mode === 'range' ? 'active' : ''}`} href={buildUrl({ mode: 'range' })}>📊 期間指定</a>
     </section>
 
+    <section class="period-form">
+      {mode === 'month' && (
+        <form method="get" class="pf">
+          <input type="hidden" name="mode" value="month" />
+          <input type="month" name="ym" value={ymParam || defaultYm} />
+          <button type="submit" class="btn-jump">表示</button>
+        </form>
+      )}
+      {mode === 'year' && (
+        <form method="get" class="pf">
+          <input type="hidden" name="mode" value="year" />
+          <input type="number" name="y" min="2020" max="2100" value={yParam || defaultY} style="width:6em" />
+          <button type="submit" class="btn-jump">表示</button>
+        </form>
+      )}
+      {mode === 'range' && (
+        <form method="get" class="pf">
+          <input type="hidden" name="mode" value="range" />
+          <input type="date" name="from" value={rangeFromParam || defaultFrom} />
+          <span>〜</span>
+          <input type="date" name="to" value={rangeToParam || defaultTo} />
+          <button type="submit" class="btn-jump">表示</button>
+        </form>
+      )}
+    </section>
+
+    <!-- ===== 売上サマリー ===== -->
     <section class="hero">
-      <div class="hero-ym">{year}年{month}月</div>
-      <div class="hero-total">{yen(grandTotal)}</div>
-      <div class="hero-count">{grandCount} 件</div>
+      <div class="hero-label">売上合計 · {periodLabel}</div>
+      <div class="hero-total">{yen(paidCur.grandTotal)}</div>
+      <div class="hero-count">{paidCur.grandCount} 件</div>
+      <div class={`hero-yoy hero-yoy-${diffLabel(paidCur.grandTotal, paidYoy.grandTotal).klass}`}>
+        前年比: {diffLabel(paidCur.grandTotal, paidYoy.grandTotal, ' 円').text}<br />
+        <span class="hero-yoy-sub">(前年: {yen(paidYoy.grandTotal)} / {paidYoy.grandCount} 件)</span>
+      </div>
     </section>
 
-    <section class="method-grid">
-      {PAYMENT_METHODS.map((m) => {
-        const b = byMethod[m.code];
-        const pct = grandTotal > 0 ? Math.round((b.total / grandTotal) * 100) : 0;
-        return (
-          <div class="method-card">
-            <div class="mc-hd">
-              <span class="mc-emoji">{m.emoji}</span>
-              <span class="mc-name">{m.label}</span>
+    <section class="section">
+      <h2>💳 支払い方法別</h2>
+      <div class="method-grid">
+        {PAYMENT_METHODS.map((m) => {
+          const b = paidCur.byMethod[m.code];
+          const bYoy = paidYoy.byMethod[m.code];
+          const pct = paidCur.grandTotal > 0 ? Math.round((b.total / paidCur.grandTotal) * 100) : 0;
+          const d = diffLabel(b.total, bYoy.total, ' 円');
+          return (
+            <div class="method-card">
+              <div class="mc-hd"><span class="mc-emoji">{m.emoji}</span><span class="mc-name">{m.label}</span></div>
+              <div class="mc-total">{yen(b.total)}</div>
+              <div class="mc-meta"><span>{b.count} 件</span><span class="mc-pct">{pct}%</span></div>
+              <div class="mc-bar"><div class="mc-bar-fill" style={`width:${pct}%`}></div></div>
+              <div class={`mc-yoy yoy-${d.klass}`}>前年比: {d.text}</div>
             </div>
-            <div class="mc-total">{yen(b.total)}</div>
-            <div class="mc-meta">
-              <span>{b.count} 件</span>
-              <span class="mc-pct">{pct}%</span>
-            </div>
-            <div class="mc-bar">
-              <div class="mc-bar-fill" style={`width: ${pct}%`}></div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- ===== コース別 ===== -->
+    <section class="section">
+      <h2>🏁 コース別 参加人数・売上</h2>
+      {partCur.coursesSorted.length === 0 ? (
+        <p class="empty">この期間の予約はまだありません。</p>
+      ) : (
+        <div class="course-table">
+          <div class="ct-head">
+            <div>コース</div>
+            <div class="mono">予約</div>
+            <div class="mono">参加者</div>
+            <div class="mono">売上</div>
+            <div class="mono">前年比</div>
+          </div>
+          {partCur.coursesSorted.map((c) => {
+            const yoy = partYoy.coursesSorted.find((y) => y.code === c.code);
+            const d = diffLabel(c.partCount, yoy?.partCount ?? 0, ' 名');
+            return (
+              <div class="ct-row">
+                <div class="ct-name">{c.name}</div>
+                <div class="ct-num mono">{c.resCount} 件</div>
+                <div class="ct-num mono">{c.partCount} 名</div>
+                <div class="ct-num mono">{yen(c.revenue)}</div>
+                <div class={`ct-yoy yoy-${d.klass}`}>{d.text}</div>
+              </div>
+            );
+          })}
+          <div class="ct-row ct-total">
+            <div>合計</div>
+            <div class="mono">{partCur.coursesSorted.reduce((a, c) => a + c.resCount, 0)} 件</div>
+            <div class="mono">{partCur.totalParticipants} 名</div>
+            <div class="mono">{yen(partCur.coursesSorted.reduce((a, c) => a + c.revenue, 0))}</div>
+            <div class={`ct-yoy yoy-${diffLabel(partCur.totalParticipants, partYoy.totalParticipants).klass}`}>
+              {diffLabel(partCur.totalParticipants, partYoy.totalParticipants, ' 名').text}
             </div>
           </div>
-        );
-      })}
+        </div>
+      )}
     </section>
 
-    {byDay.length > 0 && (
-      <section class="day-list">
-        <h2>日別内訳</h2>
-        <ul>
-          {byDay.map((d) => (
-            <li>
-              <span class="day-date">{jaDateShort(d.date)}</span>
-              <span class="day-count">{d.count} 件</span>
-              <span class="day-total mono">{yen(d.total)}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-    )}
+    <!-- ===== 開催日数 ===== -->
+    <section class="section">
+      <h2>📆 開催日数</h2>
+      <div class="mini-stats">
+        <div class="stat">
+          <div class="s-label">この期間</div>
+          <div class="s-value">{partCur.dayCount} 日</div>
+        </div>
+        <div class="stat">
+          <div class="s-label">前年</div>
+          <div class="s-value">{partYoy.dayCount} 日</div>
+        </div>
+        <div class="stat">
+          <div class="s-label">前年比</div>
+          <div class={`s-value yoy-${diffLabel(partCur.dayCount, partYoy.dayCount).klass}`}>
+            {diffLabel(partCur.dayCount, partYoy.dayCount, ' 日').text}
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <section class="tx">
-      <h2>明細 ({rows.length} 件)</h2>
-      {rows.length === 0 ? (
-        <p class="empty">この月の会計記録はまだありません。</p>
+    <!-- ===== 参加者属性: 男女 ===== -->
+    <section class="section">
+      <h2>👥 男女比 ({partCur.totalParticipants} 名)</h2>
+      {partCur.totalParticipants === 0 ? (
+        <p class="empty">この期間の参加者はまだいません。</p>
+      ) : (
+        <div class="gender-grid">
+          {(['male', 'female', 'other'] as const).map((g) => {
+            const cnt = partCur.genderCount[g];
+            const pct = partCur.totalParticipants > 0 ? Math.round((cnt / partCur.totalParticipants) * 100) : 0;
+            const label = g === 'male' ? '👦 男' : g === 'female' ? '👧 女' : '🧒 その他';
+            return (
+              <div class="g-card">
+                <div class="g-label">{label}</div>
+                <div class="g-count">{cnt} 名</div>
+                <div class="g-bar"><div class={`g-bar-fill g-${g}`} style={`width:${pct}%`}></div></div>
+                <div class="g-pct">{pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+
+    <!-- ===== 参加者属性: 年齢 ===== -->
+    <section class="section">
+      <h2>🎂 年齢構成</h2>
+      {partCur.totalParticipants === 0 ? (
+        <p class="empty">この期間の参加者はまだいません。</p>
+      ) : (
+        <>
+          <h3 class="sub-h">年齢グループ</h3>
+          <div class="age-groups">
+            {[
+              { key: 'under6', label: '〜6歳', count: partCur.ageGroup.under6 },
+              { key: 'g7to9', label: '7〜9歳', count: partCur.ageGroup.g7to9 },
+              { key: 'over10', label: '10歳〜', count: partCur.ageGroup.over10 },
+            ].map((g) => {
+              const pct = partCur.totalParticipants > 0 ? Math.round((g.count / partCur.totalParticipants) * 100) : 0;
+              return (
+                <div class="age-group-card">
+                  <div class="ag-label">{g.label}</div>
+                  <div class="ag-count">{g.count} 名 <span class="ag-pct">({pct}%)</span></div>
+                  <div class="ag-bar"><div class="ag-bar-fill" style={`width:${pct}%`}></div></div>
+                </div>
+              );
+            })}
+          </div>
+
+          <h3 class="sub-h">年齢別内訳 (1歳刻み)</h3>
+          <div class="age-individual">
+            {partCur.ageSorted.map(([age, count]) => {
+              const pct = partCur.totalParticipants > 0 ? Math.round((count / partCur.totalParticipants) * 100) : 0;
+              return (
+                <div class="ai-row">
+                  <div class="ai-age mono">{age}歳</div>
+                  <div class="ai-bar"><div class="ai-bar-fill" style={`width:${pct * 2}%`}></div></div>
+                  <div class="ai-count mono">{count} 名 <span class="ai-pct">{pct}%</span></div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+
+    <!-- ===== リピート funnel (全期間スナップショット) ===== -->
+    <section class="section">
+      <h2>🔁 リピート funnel <span class="h-sub">(全期間・現時点スナップショット)</span></h2>
+      <p class="funnel-hint">各段階は前段の <strong>サブセット</strong>。「体験のみ」が母数 100%。</p>
+      <div class="funnel">
+        {[
+          { key: 'taiken', label: '① 体験経験', count: funnel.taiken, color: 'var(--sky)' },
+          { key: 'repeat', label: '② リピート経験', count: funnel.repeat, color: 'var(--lime)' },
+          { key: 'chTs', label: '③ チャレンジ (トヨピー) 経験', count: funnel.chTs, color: 'var(--sun)' },
+          { key: 'chRx', label: '④ Rotax 経験', count: funnel.chRx, color: 'var(--orange)' },
+          { key: 'team', label: '⑤ チーム加入済み', count: funnel.team, color: 'var(--rose)' },
+        ].map((step) => {
+          const pctOfTaiken = funnel.taiken > 0 ? Math.round((step.count / funnel.taiken) * 100) : 0;
+          return (
+            <div class="funnel-row">
+              <div class="fr-label">{step.label}</div>
+              <div class="fr-bar-wrap">
+                <div class="fr-bar" style={`width:${pctOfTaiken}%;background:${step.color}`}></div>
+              </div>
+              <div class="fr-count mono">{step.count} 名 <span class="fr-pct">({pctOfTaiken}%)</span></div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- ===== 会計明細 (この期間、既存機能を維持) ===== -->
+    <section class="section">
+      <h2>📄 会計明細 ({paidRows.length} 件)</h2>
+      {paidRows.length === 0 ? (
+        <p class="empty">この期間の会計記録はまだありません。</p>
       ) : (
         <ul class="tx-list">
-          {rows.map((r) => {
+          {paidRows.slice(0, 100).map((r: any) => {
             const slot = r.slots ?? {};
             const g = r.guardians ?? {};
             const parts = (r.reservation_participants ?? []).map((p: any) => p.name_snapshot);
             return (
               <li class="tx-item">
                 <div class="tx-hd">
-                  <span class="tx-when mono">
-                    {slot.date ? jaDateShort(slot.date) : '?'} {slot.start_time?.slice(0, 5) ?? ''}
-                  </span>
+                  <span class="tx-when mono">{slot.date ? jaDateShort(slot.date) : '?'} {slot.start_time?.slice(0, 5) ?? ''}</span>
                   <span class="tx-num mono">{r.reservation_number}</span>
                 </div>
                 <div class="tx-body">
                   <div class="tx-course">{slot.courses?.name ?? '(コース不明)'}</div>
-                  <div class="tx-parties">
-                    <span>👤 {g.name}</span>
-                    <span class="tx-parts">🏁 {parts.join('・')}</span>
-                  </div>
+                  <div class="tx-parties"><span>👤 {g.name}</span><span class="tx-parts">🏁 {parts.join('・')}</span></div>
                   {r.payment_note && <div class="tx-note">📝 {r.payment_note}</div>}
                 </div>
                 <div class="tx-pay">
                   <span class="tx-method">{paymentLabel(r.payment_method)}</span>
                   <span class="tx-amount mono">{yen(Number(r.paid_amount ?? 0))}</span>
-                  <span class="tx-paid mono">{jstHm(r.paid_at)}</span>
                 </div>
               </li>
             );
           })}
+          {paidRows.length > 100 && (
+            <li class="tx-more">…他 {paidRows.length - 100} 件は明細省略</li>
+          )}
         </ul>
       )}
     </section>
@@ -195,48 +550,54 @@ const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
   .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
   h1 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 800; }
   .sub { margin: 0; color: var(--ink-3); font-size: .78rem; }
+  .h-sub { font-size: .68rem; color: var(--ink-3); font-weight: 400; margin-left: .3rem; }
 
-  .err {
-    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
-    color: var(--rose-deep);
-    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  .mode-tabs {
+    display: flex; gap: .3rem; margin-bottom: .6rem; flex-wrap: wrap;
   }
-
-  .nav {
-    display: flex; align-items: center; gap: .5rem; justify-content: center;
-    margin-bottom: 1rem; flex-wrap: wrap;
+  .mode-tabs .tab {
+    padding: .4rem 1rem; font-size: .8rem; font-weight: 700;
+    border-radius: 100px; text-decoration: none;
+    background: var(--bg-2); color: var(--ink-2);
+    border: 1px solid var(--line);
   }
-  .nav-btn {
-    padding: .4rem .9rem; font-size: .82rem; font-weight: 700;
-    border: 1.5px solid var(--line); border-radius: 8px;
-    background: var(--bg); color: var(--ink-2); text-decoration: none;
+  .mode-tabs .tab.active {
+    background: var(--sky); color: #fff; border-color: var(--sky-deep);
   }
-  .nav-btn:hover { background: var(--bg-2); }
-  .nav-form { display: flex; gap: .3rem; }
-  .nav-form input[type="month"] {
-    padding: .35rem .5rem; font-size: .82rem;
+  .period-form { margin-bottom: 1rem; }
+  .pf { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+  .pf input {
+    padding: .4rem .6rem; font-size: .82rem;
     border: 1.5px solid var(--line); border-radius: 6px;
-    background: var(--bg); font-family: var(--mono);
+    font-family: var(--mono);
   }
   .btn-jump {
-    padding: .4rem .8rem; font-size: .78rem; font-weight: 700;
+    padding: .4rem 1rem; font-size: .8rem; font-weight: 700;
     border: none; border-radius: 6px; cursor: pointer;
-    background: var(--sky); color: #fff; font-family: var(--jp);
+    background: var(--sky); color: #fff;
   }
 
   .hero {
     background: linear-gradient(135deg, var(--sun), var(--orange-deep));
     color: #fff; text-align: center; padding: 1.4rem 1rem;
-    border-radius: 14px; margin-bottom: 1rem;
+    border-radius: 14px; margin-bottom: 1.2rem;
     box-shadow: 0 4px 14px rgba(229,131,26,.25);
   }
-  .hero-ym { font-size: .82rem; opacity: .85; margin-bottom: .3rem; font-weight: 700; }
-  .hero-total { font-family: var(--mono); font-size: 2.2rem; font-weight: 900; letter-spacing: -.02em; }
+  .hero-label { font-size: .78rem; opacity: .9; margin-bottom: .3rem; font-weight: 700; }
+  .hero-total { font-family: var(--mono); font-size: 2rem; font-weight: 900; letter-spacing: -.02em; }
   .hero-count { font-size: .82rem; opacity: .9; margin-top: .2rem; }
+  .hero-yoy { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid rgba(255,255,255,.3); font-size: .8rem; font-weight: 700; }
+  .hero-yoy-sub { opacity: .8; font-weight: 400; font-size: .74rem; }
+  .hero-yoy-up { color: #d4fbb1; }
+  .hero-yoy-down { color: #ffc1cf; }
+
+  .section { margin-bottom: 1.6rem; }
+  .section h2 { margin: 0 0 .6rem; font-size: 1rem; font-weight: 800; color: var(--ink); }
+  .sub-h { margin: 1rem 0 .5rem; font-size: .82rem; color: var(--ink-2); font-weight: 700; }
 
   .method-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: .6rem; margin-bottom: 1.4rem;
+    gap: .6rem;
   }
   .method-card {
     background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
@@ -245,72 +606,127 @@ const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
   .mc-hd { display: flex; align-items: center; gap: .4rem; margin-bottom: .3rem; }
   .mc-emoji { font-size: 1.2rem; }
   .mc-name { font-size: .82rem; font-weight: 700; color: var(--ink-2); }
-  .mc-total { font-family: var(--mono); font-size: 1.2rem; font-weight: 800; color: var(--ink); }
-  .mc-meta {
-    display: flex; justify-content: space-between;
-    font-size: .72rem; color: var(--ink-3); margin: .2rem 0;
-  }
+  .mc-total { font-family: var(--mono); font-size: 1.15rem; font-weight: 800; color: var(--ink); }
+  .mc-meta { display: flex; justify-content: space-between; font-size: .72rem; color: var(--ink-3); margin: .2rem 0; }
   .mc-pct { font-family: var(--mono); font-weight: 700; }
-  .mc-bar {
-    height: 6px; background: var(--bg-3); border-radius: 100px; overflow: hidden;
-  }
-  .mc-bar-fill {
-    height: 100%; background: linear-gradient(90deg, var(--sky), var(--sky-deep));
-    border-radius: 100px; transition: width .3s;
-  }
+  .mc-bar { height: 6px; background: var(--bg-3); border-radius: 100px; overflow: hidden; }
+  .mc-bar-fill { height: 100%; background: linear-gradient(90deg, var(--sky), var(--sky-deep)); border-radius: 100px; }
+  .mc-yoy { font-size: .68rem; margin-top: .4rem; padding-top: .3rem; border-top: 1px dashed var(--line); }
 
-  h2 { font-size: 1rem; margin: 1.4rem 0 .6rem; font-weight: 800; }
-
-  .day-list ul {
-    list-style: none; margin: 0; padding: 0;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
-    overflow: hidden;
-  }
-  .day-list li {
-    display: flex; align-items: baseline; gap: .8rem;
-    padding: .6rem 1rem; border-bottom: 1px solid var(--line);
-    font-size: .84rem;
-  }
-  .day-list li:last-child { border-bottom: none; }
-  .day-date { font-weight: 700; min-width: 5rem; }
-  .day-count { color: var(--ink-3); font-size: .74rem; }
-  .day-total { margin-left: auto; font-weight: 800; }
+  .yoy-up { color: var(--lime-deep); font-weight: 700; }
+  .yoy-down { color: var(--rose-deep); font-weight: 700; }
+  .yoy-flat { color: var(--ink-3); }
 
   .empty {
-    text-align: center; padding: 2rem 1rem; color: var(--ink-3);
-    font-size: .88rem; background: var(--bg-2); border-radius: 10px;
+    text-align: center; padding: 1.5rem; color: var(--ink-3);
+    background: var(--bg-2); border-radius: 8px; font-size: .84rem;
   }
+
+  .course-table {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    overflow-x: auto;
+  }
+  .ct-head, .ct-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1.3fr 1.3fr;
+    padding: .55rem .8rem; gap: .5rem;
+    align-items: baseline; font-size: .82rem;
+  }
+  .ct-head {
+    background: var(--bg-2); font-weight: 700; font-size: .72rem;
+    color: var(--ink-3); border-bottom: 1px solid var(--line);
+  }
+  .ct-row { border-bottom: 1px dashed var(--line); }
+  .ct-row:last-child { border-bottom: none; }
+  .ct-name { font-weight: 700; }
+  .ct-num { text-align: right; font-weight: 700; }
+  .ct-yoy { text-align: right; font-size: .72rem; }
+  .ct-total { background: var(--sky-mist); font-weight: 800; border-top: 2px solid var(--sky); }
+
+  .mini-stats { display: flex; gap: .6rem; flex-wrap: wrap; }
+  .stat {
+    flex: 1; min-width: 130px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .8rem .9rem;
+  }
+  .s-label { font-size: .72rem; color: var(--ink-3); font-weight: 700; }
+  .s-value { font-family: var(--mono); font-size: 1.2rem; font-weight: 800; margin-top: .2rem; }
+
+  .gender-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+  .g-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .8rem .9rem; text-align: center;
+  }
+  .g-label { font-size: .82rem; font-weight: 700; color: var(--ink-2); margin-bottom: .3rem; }
+  .g-count { font-family: var(--mono); font-size: 1.15rem; font-weight: 800; }
+  .g-bar { height: 8px; background: var(--bg-3); border-radius: 100px; overflow: hidden; margin: .3rem 0; }
+  .g-bar-fill { height: 100%; border-radius: 100px; }
+  .g-bar-fill.g-male { background: var(--sky); }
+  .g-bar-fill.g-female { background: var(--rose); }
+  .g-bar-fill.g-other { background: var(--violet); }
+  .g-pct { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--ink-3); }
+
+  .age-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-bottom: .5rem; }
+  .age-group-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .7rem .8rem;
+  }
+  .ag-label { font-size: .78rem; font-weight: 700; color: var(--ink-2); }
+  .ag-count { font-family: var(--mono); font-size: 1rem; font-weight: 800; margin: .1rem 0; }
+  .ag-pct { font-size: .72rem; color: var(--ink-3); font-weight: 400; }
+  .ag-bar { height: 6px; background: var(--bg-3); border-radius: 100px; overflow: hidden; }
+  .ag-bar-fill { height: 100%; background: var(--sun); border-radius: 100px; }
+
+  .age-individual {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .6rem .8rem;
+  }
+  .ai-row {
+    display: grid; grid-template-columns: 3.5em 1fr 6em;
+    gap: .5rem; align-items: center;
+    padding: .25rem 0; font-size: .8rem;
+    border-bottom: 1px dashed var(--line);
+  }
+  .ai-row:last-child { border-bottom: none; }
+  .ai-age { color: var(--ink-2); font-weight: 700; }
+  .ai-bar { height: 8px; background: var(--bg-3); border-radius: 100px; overflow: hidden; }
+  .ai-bar-fill { height: 100%; background: linear-gradient(90deg, var(--sky), var(--sky-deep)); border-radius: 100px; max-width: 100%; }
+  .ai-count { text-align: right; font-weight: 700; }
+  .ai-pct { color: var(--ink-3); font-weight: 400; font-size: .72rem; margin-left: .2rem; }
+
+  .funnel-hint { font-size: .78rem; color: var(--ink-3); margin: 0 0 .8rem; }
+  .funnel-hint strong { color: var(--ink); }
+  .funnel {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .8rem 1rem; display: flex; flex-direction: column; gap: .5rem;
+  }
+  .funnel-row {
+    display: grid; grid-template-columns: 1fr 2fr auto;
+    gap: .6rem; align-items: center;
+    padding: .3rem 0;
+  }
+  .fr-label { font-size: .82rem; font-weight: 700; }
+  .fr-bar-wrap { background: var(--bg-3); border-radius: 100px; height: 20px; overflow: hidden; }
+  .fr-bar { height: 100%; border-radius: 100px; transition: width .3s; min-width: 4px; }
+  .fr-count { font-size: .84rem; font-weight: 800; text-align: right; white-space: nowrap; }
+  .fr-pct { color: var(--ink-3); font-weight: 400; font-size: .72rem; }
 
   .tx-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
   .tx-item {
     background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
     padding: .7rem .9rem;
   }
-  .tx-hd {
-    display: flex; justify-content: space-between; gap: .5rem;
-    font-size: .74rem; color: var(--ink-3); margin-bottom: .3rem;
-  }
+  .tx-hd { display: flex; justify-content: space-between; gap: .5rem; font-size: .74rem; color: var(--ink-3); margin-bottom: .3rem; }
   .tx-when { font-weight: 700; color: var(--ink-2); }
   .tx-body { margin-bottom: .4rem; }
   .tx-course { font-size: .9rem; font-weight: 700; margin-bottom: .2rem; }
   .tx-parties { display: flex; gap: .8rem; flex-wrap: wrap; font-size: .78rem; color: var(--ink-2); }
   .tx-parts { color: var(--ink-3); }
-  .tx-note {
-    margin-top: .3rem; padding: .3rem .5rem;
-    background: var(--bg-2); border-radius: 6px;
-    font-size: .74rem; color: var(--ink-2);
-  }
-  .tx-pay {
-    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
-    padding-top: .4rem; border-top: 1px dashed var(--line);
-  }
-  .tx-method {
-    padding: 2px 8px; border-radius: 100px;
-    background: rgba(255,201,67,.15); color: var(--orange-deep);
-    font-size: .74rem; font-weight: 700;
-  }
+  .tx-note { margin-top: .3rem; padding: .3rem .5rem; background: var(--bg-2); border-radius: 6px; font-size: .74rem; color: var(--ink-2); }
+  .tx-pay { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; padding-top: .4rem; border-top: 1px dashed var(--line); }
+  .tx-method { padding: 2px 8px; border-radius: 100px; background: rgba(255,201,67,.15); color: var(--orange-deep); font-size: .74rem; font-weight: 700; }
   .tx-amount { font-size: .95rem; font-weight: 800; margin-left: auto; }
-  .tx-paid { font-size: .68rem; color: var(--ink-3); }
+  .tx-more { text-align: center; color: var(--ink-3); font-size: .78rem; padding: .8rem; }
 
   .mono { font-family: var(--mono); }
 </style>

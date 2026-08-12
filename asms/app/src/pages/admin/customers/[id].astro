@@ -43,6 +43,16 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back('メモを更新しました');
   }
 
+  if (op === 'set_team_member') {
+    const raw = ((form.get('team_member_since') as string) || '').trim();
+    const dateVal = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+    const { error } = await supabase
+      .from('customers')
+      .update({ team_member_since: dateVal })
+      .eq('id', id);
+    return error ? back('', fmt(error)) : back(dateVal ? `チーム加入日を ${dateVal} に設定` : 'チーム加入日を解除しました');
+  }
+
   if (op === 'add_progression') {
     const toLevel = form.get('to_level') as string;
     const fromLevel = ((form.get('from_level') as string) || '') || null;
@@ -309,6 +319,21 @@ if (searchQ.length >= 1) {
       )}
     </section>
 
+    <section class="card team-card">
+      <h2>🏆 チーム加入 (funnel 最終段)</h2>
+      <form method="post" class="team-form">
+        <input type="hidden" name="op" value="set_team_member" />
+        <div class="team-row">
+          <label class="team-label">加入日 (空欄で解除)</label>
+          <input type="date" name="team_member_since" value={(customer as any).team_member_since ?? ''} />
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+        {(customer as any).team_member_since && (
+          <p class="team-note">✅ チーム所属中 (加入: {(customer as any).team_member_since})</p>
+        )}
+      </form>
+    </section>
+
     <section class="card">
       <h2>📝 スタッフメモ · 次回おすすめ</h2>
       <form method="post" class="notes-form">
@@ -553,6 +578,16 @@ if (searchQ.length >= 1) {
   .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; }
   .back:hover { color: var(--ink); text-decoration: underline; }
   .back-alt { font-size: .72rem; color: var(--ink-4); }
+
+  .team-card { background: linear-gradient(135deg, rgba(255,201,67,.06), rgba(255,138,61,.02)); border-color: var(--sun); }
+  .team-form { display: grid; gap: .5rem; }
+  .team-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .team-label { font-size: .78rem; color: var(--ink-2); font-weight: 700; }
+  .team-row input[type="date"] {
+    padding: .45rem .6rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px; font-family: var(--mono);
+  }
+  .team-note { margin: 0; font-size: .78rem; color: var(--lime-deep); font-weight: 700; }
   .hd-name { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
   .hd-kana { color: var(--ink-3); font-size: .84rem; }
