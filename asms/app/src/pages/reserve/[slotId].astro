@@ -758,10 +758,12 @@ const termsHtml = terms
         return;
       }
       try {
-        const { getAuthClient, currentSession, signOut } = await import('@lib/authWrapper');
+        const { getAuthClient, currentSession, hardSignOut } = await import('@lib/authWrapper');
         const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
         const session = await currentSession(client);
-        if (!session) {
+        if (!session?.user?.email) {
+          // Stale session hint — clear + show sign-in invite
+          try { localStorage.removeItem('asms:auth'); } catch {}
           if (!savedPrefill && signinInvite) signinInvite.hidden = false;
           return;
         }
@@ -791,8 +793,7 @@ const termsHtml = terms
           if (signinInvite) signinInvite.hidden = true;
           seSignOut?.addEventListener('click', async () => {
             if (!confirm('サインアウトしますか？')) return;
-            await signOut(client);
-            location.reload();
+            await hardSignOut(client, '/reserve/');
           });
         }
       } catch (e) {
@@ -879,9 +880,10 @@ const termsHtml = terms
         try {
           const cfg = (window as any).__ASMS_AUTH_CFG;
           if (cfg?.supabaseUrl) {
-            const { getAuthClient, signOut } = await import('@lib/authWrapper');
+            const { getAuthClient, hardSignOut } = await import('@lib/authWrapper');
             const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-            await signOut(client);
+            await hardSignOut(client, window.location.href.split('?')[0]);
+            return; // hardSignOut navigates, no need to fall through
           }
         } catch (e) { console.warn('[signout] failed', e); }
       } else {

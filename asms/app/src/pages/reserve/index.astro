@@ -381,17 +381,22 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
       const cfg = (window as any).__ASMS_AUTH_CFG;
       if (!cfg?.supabaseUrl) return;
       try {
-        const { getAuthClient, currentSession, signOut } = await import('@lib/authWrapper');
+        const { getAuthClient, currentSession, hardSignOut } = await import('@lib/authWrapper');
         const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
         const session = await currentSession(client);
-        if (!session?.user?.email) return;
+        // Safety: only show badge if we actually have an email.
+        // If session exists but email is missing, treat as signed-out state.
+        if (!session?.user?.email) {
+          // Stale session hint — clear it so badge doesn't flash next reload.
+          try { localStorage.removeItem('asms:auth'); } catch {}
+          return;
+        }
         if (signedInEmail) signedInEmail.textContent = session.user.email;
         if (signinLink) signinLink.hidden = true;
         if (signedInBadge) signedInBadge.hidden = false;
         signOutBtn?.addEventListener('click', async () => {
           if (!confirm('サインアウトしますか？')) return;
-          await signOut(client);
-          location.reload();
+          await hardSignOut(client, '/reserve/');
         });
       } catch (e) {
         console.warn('[signin-state] failed', e);
