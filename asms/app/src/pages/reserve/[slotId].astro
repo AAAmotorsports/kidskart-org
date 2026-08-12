@@ -54,6 +54,12 @@ const requiresApproval = !!course.requires_approval;
 const maxParticipants = Math.min(3, remaining);
 const safetyItems = (terms?.safety_items as Array<{ id: number; text: string }>) ?? [];
 
+// Turnstile: only render the widget if a site key is configured. This
+// lets local/dev deploys work without a Turnstile account, and lets
+// the site owner opt in later without a code change.
+const turnstileSiteKey = env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
+const turnstileEnabled = !!turnstileSiteKey;
+
 // Tiny markdown → HTML for the seeded terms. Covers only what the seed
 // uses: ATX headings, unordered lists, bold, paragraphs. Escapes HTML
 // input, so it's safe to feed the raw terms body straight in.
@@ -419,16 +425,34 @@ const termsHtml = terms
             <h2>8. 内容確認 → 予約確定</h2>
             <div id="reviewHost"></div>
 
+            {turnstileEnabled && (
+              <div class="turnstile-wrap">
+                <p class="hint">🤖 悪戯予約防止のため、下のチェックを完了してください</p>
+                <div class="cf-turnstile"
+                     data-sitekey={turnstileSiteKey}
+                     data-callback="onTurnstileSuccess"
+                     data-error-callback="onTurnstileError"
+                     data-expired-callback="onTurnstileExpired"
+                     data-theme="light"
+                     data-language="ja"></div>
+              </div>
+            )}
+
             <div id="submitError" class="err" hidden></div>
 
             <div class="nav-btns">
               <button type="button" class="btn btn-ghost" data-goto="7">← 戻る</button>
-              <button type="button" class="btn btn-primary btn-big" id="submitBtn">
+              <button type="button" class="btn btn-primary btn-big" id="submitBtn"
+                      disabled={turnstileEnabled}>
                 {requiresApproval ? '📩 承認依頼を送信する' : '✅ 予約を確定する'}
               </button>
             </div>
           </section>
         </form>
+
+        {turnstileEnabled && (
+          <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+        )}
 
         <div id="submitOverlay" hidden>
           <div class="overlay-card">
@@ -924,12 +948,32 @@ const termsHtml = terms
     const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
     const submitOverlay = document.getElementById('submitOverlay')!;
     const submitError = document.getElementById('submitError')!;
+
+    // Turnstile: store the token from the widget callback so we can send
+    // it in the payload. The widget is only rendered when a site key is
+    // configured; if absent, `turnstileToken` stays null and the button
+    // is enabled from the server render.
+    let turnstileToken: string | null = null;
+    (window as any).onTurnstileSuccess = (token: string) => {
+      turnstileToken = token;
+      submitBtn.disabled = false;
+    };
+    (window as any).onTurnstileError = () => {
+      turnstileToken = null;
+      submitBtn.disabled = true;
+    };
+    (window as any).onTurnstileExpired = () => {
+      turnstileToken = null;
+      submitBtn.disabled = true;
+    };
+
     submitBtn.addEventListener('click', async () => {
       submitError.hidden = true;
       submitOverlay.hidden = false;
       submitBtn.disabled = true;
       try {
         const payload = collect();
+        if (turnstileToken) (payload as any).turnstile_token = turnstileToken;
         const res = await fetch('/api/reserve/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1248,6 +1292,14 @@ const termsHtml = terms
     background: var(--bg-2); color: var(--ink);
     border: 1.5px solid var(--line);
   }
+
+  .turnstile-wrap {
+    margin: 1rem 0; padding: .8rem;
+    background: var(--bg-2); border-radius: 8px;
+    text-align: center;
+  }
+  .turnstile-wrap .hint { margin: 0 0 .6rem; }
+  .turnstile-wrap .cf-turnstile { display: inline-block; min-height: 65px; }
 
   #submitOverlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.4);

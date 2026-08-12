@@ -59,7 +59,12 @@
     "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
     "MAIL_REPLY_TO": "info@kidskart.org",
     // 新規予約が入ったとき運営に通知するメール宛先
-    "MAIL_ADMIN_TO": "info@kidskart.org"
+    "MAIL_ADMIN_TO": "info@kidskart.org",
+    // Cloudflare Turnstile (CAPTCHA) — site key は公開して OK、
+    // TURNSTILE_SECRET_KEY のみ Dashboard シークレット。
+    // 未設定なら wizard で CAPTCHA を出さず、API 側でも検証をスキップ
+    // (graceful degradation)。有効化手順は README / CLAUDE.md 参照。
+    "PUBLIC_TURNSTILE_SITE_KEY": ""
   }
   //
   // Secrets (stay in Cloudflare Dashboard, encrypted):

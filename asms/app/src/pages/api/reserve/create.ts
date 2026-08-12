@@ -78,6 +78,39 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
 
   const guardianEmail = (guardian.email ?? '').trim();
 
+  // --- Turnstile verification (graceful skip when not configured) --------
+  // If TURNSTILE_SECRET_KEY isn't set we skip — same reasoning as the
+  // Resend path (dev/local should not require full prod config).
+  if (env.TURNSTILE_SECRET_KEY) {
+    const token = (body?.turnstile_token ?? '').trim();
+    if (!token) {
+      return json({ error: 'CAPTCHA チェックが未完了です', hint: 'turnstile_missing' }, 400);
+    }
+    try {
+      const formData = new URLSearchParams();
+      formData.set('secret', env.TURNSTILE_SECRET_KEY);
+      formData.set('response', token);
+      const ip = request.headers.get('CF-Connecting-IP') || clientAddress;
+      if (ip) formData.set('remoteip', ip);
+      const vr = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        body: formData,
+      });
+      const vd: any = await vr.json();
+      if (!vd?.success) {
+        console.warn('[reserve/create] turnstile verify failed', vd);
+        return json({
+          error: 'CAPTCHA 検証に失敗しました。ページを再読み込みしてお試しください',
+          hint: 'turnstile_failed',
+          detail: (vd?.['error-codes'] ?? []).join(','),
+        }, 403);
+      }
+    } catch (e: any) {
+      console.warn('[reserve/create] turnstile verify error:', e);
+      return json({ error: 'CAPTCHA 検証中にエラーが発生しました', hint: 'turnstile_error' }, 502);
+    }
+  }
+
   // --- Single atomic RPC call --------------------------------------------
   const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_reservation_atomic', {
     payload: {
