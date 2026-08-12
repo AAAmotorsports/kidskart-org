@@ -1,0 +1,305 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+// POST: inline course update. PRG pattern.
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const op = form.get('op') as string;
+
+  const back = (msg = '', err = '') => {
+    const q = new URLSearchParams();
+    if (msg) q.set('msg', msg);
+    if (err) q.set('err', err);
+    return Astro.redirect(`/admin/courses${q.toString() ? '?' + q.toString() : ''}`);
+  };
+  const fmt = (e: any) =>
+    `${e?.code ?? ''} ${e?.message ?? ''} ${e?.details ?? ''}`.trim();
+
+  if (op === 'update_course') {
+    const id = form.get('id') as string;
+    if (!id) return back('', 'id が指定されていません');
+
+    const priceRegular = parseInt((form.get('price_regular') as string) || '0', 10);
+    const priceMember = parseInt((form.get('price_member') as string) || '0', 10);
+    const durationMin = parseInt((form.get('duration_min') as string) || '0', 10);
+    const defaultCapacity = parseInt((form.get('default_capacity') as string) || '0', 10);
+    const displayOrder = parseInt((form.get('display_order') as string) || '0', 10);
+
+    if (durationMin < 1 || durationMin > 600) return back('', '時間は 1〜600 分で指定してください');
+    if (defaultCapacity < 1 || defaultCapacity > 30) return back('', '定員は 1〜30 名で指定してください');
+    if (priceRegular < 0 || priceMember < 0) return back('', '料金は 0 以上で指定してください');
+
+    const patch = {
+      name: ((form.get('name') as string) || '').trim(),
+      description: ((form.get('description') as string) || '').trim() || null,
+      duration_min: durationMin,
+      default_capacity: defaultCapacity,
+      price_regular: priceRegular,
+      price_member: priceMember,
+      vehicle: form.get('vehicle') as string,
+      requires_approval: form.get('requires_approval') === '1',
+      blocks_morning: form.get('blocks_morning') === '1',
+      is_active: form.get('is_active') === '1',
+      display_order: displayOrder,
+    };
+
+    if (!patch.name) return back('', 'コース名は必須です');
+    if (!['mini_default', 'toyopet_kart', 'rotax_micro'].includes(patch.vehicle)) {
+      return back('', '車両タイプが不正です');
+    }
+
+    const { error } = await supabase.from('courses').update(patch).eq('id', id);
+    return error ? back('', fmt(error)) : back(`「${patch.name}」を更新しました`);
+  }
+
+  return back('', `未対応の操作: ${op}`);
+}
+
+const url = new URL(Astro.request.url);
+const msg = url.searchParams.get('msg');
+const err = url.searchParams.get('err');
+
+const { data: courses, error: loadErr } = await supabase
+  .from('courses')
+  .select('*')
+  .order('display_order')
+  .order('code');
+
+const vehicleOptions = [
+  { code: 'mini_default', label: 'ミニカート（電動、デフォルト）' },
+  { code: 'toyopet_kart', label: 'トヨピーカート' },
+  { code: 'rotax_micro', label: 'Rotax Micro' },
+] as const;
+---
+<Base title="コース設定 — ASMS">
+  <main>
+    <header class="hd">
+      <a class="back" href="/admin">← 管理トップ</a>
+      <h1>コース設定</h1>
+      <p class="sub">料金・時間・定員・車両・表示順を編集</p>
+    </header>
+
+    {msg && <div class="ok-banner">{msg}</div>}
+    {err && <div class="err">{err}</div>}
+
+    <div class="notice">
+      <strong>⚠️ 変更は将来の予約・スロット生成にのみ適用されます。</strong><br />
+      既存の予約は snapshot されているため料金・人数は変わりません。既存の生成済みスロットも定員は変わりません（次回月次生成から新設定が反映）。
+    </div>
+
+    {loadErr && <div class="err">{loadErr.code} {loadErr.message}</div>}
+
+    {(!courses || courses.length === 0) ? (
+      <p class="empty">コースが登録されていません。</p>
+    ) : (
+      <div class="c-list">
+        {courses.map((c: any) => (
+          <details class={`c-card ${!c.is_active ? 'inactive' : ''}`} open={false}>
+            <summary class="c-summary">
+              <span class={`c-order mono`}>#{c.display_order}</span>
+              <span class="c-name">{c.name}</span>
+              <span class="c-code mono">({c.code})</span>
+              <span class="c-price mono">
+                ¥{c.price_regular.toLocaleString()}
+                {c.price_regular !== c.price_member && <> / 会員 ¥{c.price_member.toLocaleString()}</>}
+              </span>
+              <span class="c-dur mono">{c.duration_min}分 / {c.default_capacity}名</span>
+              {!c.is_active && <span class="c-badge c-badge-off">非表示</span>}
+              {c.requires_approval && <span class="c-badge c-badge-approve">承認制</span>}
+              {c.blocks_morning && <span class="c-badge c-badge-block">午前枠抑止</span>}
+            </summary>
+
+            <form method="post" class="c-form">
+              <input type="hidden" name="op" value="update_course" />
+              <input type="hidden" name="id" value={c.id} />
+
+              <div class="grid-2">
+                <div class="field">
+                  <label>コースコード (変更不可)</label>
+                  <input type="text" value={c.code} disabled />
+                </div>
+                <div class="field">
+                  <label>表示順 (小さいほど上)</label>
+                  <input type="number" name="display_order" min="0" max="999" value={c.display_order} required />
+                </div>
+                <div class="field field-wide">
+                  <label>コース名 *</label>
+                  <input type="text" name="name" required maxlength="80" value={c.name} />
+                </div>
+                <div class="field field-wide">
+                  <label>説明</label>
+                  <input type="text" name="description" maxlength="200" value={c.description ?? ''} />
+                </div>
+                <div class="field">
+                  <label>時間（分） *</label>
+                  <input type="number" name="duration_min" required min="1" max="600" value={c.duration_min} />
+                </div>
+                <div class="field">
+                  <label>デフォルト定員 *</label>
+                  <input type="number" name="default_capacity" required min="1" max="30" value={c.default_capacity} />
+                </div>
+                <div class="field">
+                  <label>一般料金（円） *</label>
+                  <input type="number" name="price_regular" required min="0" max="999999" step="100" value={c.price_regular} />
+                </div>
+                <div class="field">
+                  <label>会員料金（円） *</label>
+                  <input type="number" name="price_member" required min="0" max="999999" step="100" value={c.price_member} />
+                </div>
+                <div class="field field-wide">
+                  <label>車両タイプ *</label>
+                  <select name="vehicle" required>
+                    {vehicleOptions.map((v) => (
+                      <option value={v.code} selected={v.code === c.vehicle}>{v.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div class="toggles">
+                <label class="tg">
+                  <input type="checkbox" name="is_active" value="1" checked={c.is_active} />
+                  <span>顧客に表示（有効）</span>
+                </label>
+                <label class="tg">
+                  <input type="checkbox" name="requires_approval" value="1" checked={c.requires_approval} />
+                  <span>承認制（自動確定せず pending_approval）</span>
+                </label>
+                <label class="tg">
+                  <input type="checkbox" name="blocks_morning" value="1" checked={c.blocks_morning} />
+                  <span>チャレンジ日設定時に午前ミニ枠を抑止</span>
+                </label>
+              </div>
+
+              <button type="submit" class="btn btn-primary">💾 保存</button>
+            </form>
+          </details>
+        ))}
+      </div>
+    )}
+
+    <details class="help">
+      <summary>ヘルプ</summary>
+      <ul>
+        <li><strong>変更のタイミング</strong>: 保存すると即時反映されますが、影響するのは<strong>次回以降</strong>の予約・スロット生成のみ。既存データは触りません。</li>
+        <li><strong>顧客に表示（有効）</strong> のチェックを外すと、顧客向け予約ページ (/reserve) の一覧から消えます。スケジュール生成対象からも外れます。</li>
+        <li><strong>承認制</strong>: チェックすると、予約時に status=pending_approval で作成され、確定通知は管理者が手動で送信します。</li>
+        <li><strong>午前ミニ枠を抑止</strong>: このコースがチャレンジ日設定に登録されると、その日の 12:00 前の非 blocks_morning コースが生成されなくなります（チャレンジと通常枠のバッティング防止）。</li>
+        <li><strong>コースコード</strong>: URL やロジックで参照されているため変更不可。追加/削除は DB migration で行ってください。</li>
+      </ul>
+    </details>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .3rem; font-size: 1.5rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .ok-banner {
+    background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .85rem; font-weight: 700;
+  }
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .82rem;
+  }
+  .notice {
+    background: rgba(255,201,67,.1); border: 1px solid rgba(255,201,67,.4);
+    padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1.2rem;
+    font-size: .8rem; line-height: 1.7; color: var(--ink);
+  }
+  .empty { text-align: center; padding: 2rem; color: var(--ink-3); }
+
+  .c-list { display: flex; flex-direction: column; gap: .6rem; }
+  .c-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 0;
+  }
+  .c-card.inactive { opacity: .65; }
+  .c-summary {
+    padding: .7rem 1rem; cursor: pointer;
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    font-size: .84rem;
+    list-style: none;
+  }
+  .c-summary::-webkit-details-marker { display: none; }
+  .c-summary::before {
+    content: '▶'; font-size: .68rem; color: var(--ink-3); margin-right: .2rem;
+    transition: transform .15s;
+  }
+  .c-card[open] .c-summary::before { transform: rotate(90deg); }
+  .c-order { color: var(--ink-3); font-size: .74rem; }
+  .c-name { font-weight: 800; font-size: .95rem; }
+  .c-code { color: var(--ink-3); font-size: .72rem; }
+  .c-price { color: var(--sky-deep); font-weight: 700; }
+  .c-dur { color: var(--ink-2); font-size: .74rem; }
+  .c-badge {
+    font-size: .62rem; font-weight: 800; padding: 1px 6px; border-radius: 100px;
+  }
+  .c-badge-off { background: var(--bg-3); color: var(--ink-3); }
+  .c-badge-approve { background: rgba(255,201,67,.2); color: var(--orange-deep); }
+  .c-badge-block { background: rgba(124,111,219,.15); color: var(--violet); }
+
+  .c-form {
+    padding: 1rem 1.2rem 1.2rem;
+    border-top: 1px solid var(--line);
+    display: grid; gap: .8rem;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field label {
+    font-size: .7rem; font-weight: 700; color: var(--ink-2);
+  }
+  .field input, .field select {
+    padding: .5rem .65rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); font-family: var(--jp);
+  }
+  .field input[type="number"] { font-family: var(--mono); }
+  .field input:disabled { background: var(--bg-2); color: var(--ink-3); cursor: not-allowed; font-family: var(--mono); }
+  .field.field-wide { grid-column: 1 / -1; }
+
+  .toggles {
+    display: flex; flex-direction: column; gap: .4rem;
+    padding: .6rem .8rem; background: var(--bg-2); border-radius: 6px;
+  }
+  .tg {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .82rem; cursor: pointer;
+  }
+  .tg input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--sky); }
+
+  .btn {
+    padding: .6rem 1.2rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .88rem; font-weight: 800;
+    border: none; cursor: pointer;
+    justify-self: start;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; box-shadow: 0 3px 10px rgba(58,169,232,.25);
+  }
+
+  .help {
+    margin-top: 2rem; padding: .8rem 1rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .help summary { cursor: pointer; font-weight: 700; font-size: .82rem; color: var(--ink); }
+  .help ul { font-size: .78rem; color: var(--ink-2); line-height: 1.8; margin: .5rem 0 0; padding-left: 1.2rem; }
+  .help li { margin-bottom: .3rem; }
+  .help strong { color: var(--ink); }
+
+  .mono { font-family: var(--mono); }
+</style>
