@@ -35,9 +35,30 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
       <button type="submit" id="submitBtn" class="btn btn-primary">サインインリンクを送る</button>
     </form>
 
-    <div id="status" class="status" hidden></div>
+    <div id="errStatus" class="status err" hidden></div>
 
-    <section class="alt">
+    <section id="successCard" class="success-card" hidden>
+      <div class="sc-icon">📬</div>
+      <h2 class="sc-title">サインインリンクを送信しました</h2>
+      <p class="sc-hint">下記のメールアドレスに<strong>1 通のメール</strong>が届きます。</p>
+      <div class="sc-email-box">
+        <span class="sc-email" id="sentEmail"></span>
+      </div>
+      <ol class="sc-steps">
+        <li>メールボックスを確認（迷惑メールも念のため）</li>
+        <li>「<strong>サインインする</strong>」ボタンをタップ</li>
+        <li>予約フォームに戻り、前回情報が自動で入ります</li>
+      </ol>
+      <p class="sc-note">⏱ リンクの有効期限は <strong>1 時間</strong> です</p>
+      <div class="sc-actions">
+        <button type="button" id="resendBtn" class="btn btn-ghost" disabled>
+          もう一度送る（<span id="resendTimer">30</span> 秒後）
+        </button>
+        <a href={next} class="btn btn-link">← 予約カレンダーに戻る</a>
+      </div>
+    </section>
+
+    <section id="altSection" class="alt">
       <p>初めてご利用の方は、<a href={next}>そのままご予約フォーム</a>にお進みください。</p>
     </section>
   </main>
@@ -59,35 +80,74 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
     const form = document.getElementById('signinForm') as HTMLFormElement | null;
     const emailInput = document.getElementById('email') as HTMLInputElement | null;
     const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
-    const status = document.getElementById('status') as HTMLDivElement | null;
+    const errStatus = document.getElementById('errStatus') as HTMLDivElement | null;
+    const successCard = document.getElementById('successCard') as HTMLElement | null;
+    const altSection = document.getElementById('altSection') as HTMLElement | null;
+    const sentEmail = document.getElementById('sentEmail') as HTMLSpanElement | null;
+    const resendBtn = document.getElementById('resendBtn') as HTMLButtonElement | null;
+    const resendTimer = document.getElementById('resendTimer') as HTMLSpanElement | null;
 
     const escape = (s: string) =>
       s.replace(/[&<>"']/g, (c) => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any
       )[c]);
 
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (!emailInput || !submitBtn || !status) return;
-      const email = emailInput.value.trim();
-      if (!email) return;
-      submitBtn.disabled = true;
-      submitBtn.textContent = '送信中...';
-      status.hidden = true;
+    let lastEmail = '';
+
+    const showSuccess = (email: string) => {
+      lastEmail = email;
+      if (sentEmail) sentEmail.textContent = email;
+      if (form) form.hidden = true;
+      if (altSection) altSection.hidden = true;
+      if (errStatus) errStatus.hidden = true;
+      if (successCard) successCard.hidden = false;
+      // Enable resend after 30s countdown
+      let remaining = 30;
+      if (resendBtn) resendBtn.disabled = true;
+      if (resendTimer) resendTimer.textContent = String(remaining);
+      const iv = setInterval(() => {
+        remaining--;
+        if (resendTimer) resendTimer.textContent = String(remaining);
+        if (remaining <= 0) {
+          clearInterval(iv);
+          if (resendBtn) {
+            resendBtn.disabled = false;
+            resendBtn.textContent = 'もう一度送る';
+          }
+        }
+      }, 1000);
+    };
+
+    const send = async (email: string) => {
+      if (!submitBtn && !resendBtn) return;
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '送信中...'; }
+      if (resendBtn) { resendBtn.disabled = true; resendBtn.textContent = '送信中...'; }
+      if (errStatus) errStatus.hidden = true;
 
       const result = await sendMagicLink(client, email, cfg.callbackUrl);
       if (result.ok) {
-        status.className = 'status ok';
-        status.innerHTML = `✅ <strong>${escape(email)}</strong> にサインインリンクを送りました。<br>メールをご確認のうえ、リンクをクリックしてください（有効期限: 1 時間）。`;
-        status.hidden = false;
-        submitBtn.textContent = '送信済み';
+        showSuccess(email);
       } else {
-        status.className = 'status err';
-        status.innerHTML = `❌ 送信に失敗しました: ${escape(result.error ?? '不明なエラー')}`;
-        status.hidden = false;
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'もう一度送る';
+        if (errStatus) {
+          errStatus.innerHTML = `❌ 送信に失敗しました: ${escape(result.error ?? '不明なエラー')}`;
+          errStatus.hidden = false;
+        }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'サインインリンクを送る'; }
+        if (resendBtn) { resendBtn.disabled = false; resendBtn.textContent = 'もう一度送る'; }
       }
+    };
+
+    form?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!emailInput) return;
+      const email = emailInput.value.trim();
+      if (!email) return;
+      send(email);
+    });
+
+    resendBtn?.addEventListener('click', () => {
+      if (!lastEmail) return;
+      send(lastEmail);
     });
   }
 </script>
@@ -137,14 +197,57 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
     padding: .8rem 1rem; border-radius: 8px;
     font-size: .88rem; line-height: 1.6; margin-bottom: 1rem;
   }
-  .status.ok {
-    background: rgba(164,214,94,.15); border: 1px solid var(--lime-deep);
-    color: var(--lime-deep);
-  }
   .status.err {
     background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
     color: var(--rose-deep);
   }
+
+  .success-card {
+    background: linear-gradient(135deg, rgba(164,214,94,.15), rgba(164,214,94,.03));
+    border: 2px solid var(--lime-deep);
+    border-radius: 14px;
+    padding: 1.5rem 1.3rem;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(164,214,94,.2);
+  }
+  .sc-icon { font-size: 2.4rem; margin-bottom: .3rem; }
+  .sc-title {
+    margin: 0 0 .6rem; font-size: 1.15rem; font-weight: 800;
+    color: var(--lime-deep);
+  }
+  .sc-hint { margin: 0 0 .8rem; font-size: .88rem; color: var(--ink); }
+  .sc-hint strong { color: var(--lime-deep); }
+  .sc-email-box {
+    display: inline-block; padding: .5rem 1rem;
+    background: var(--bg); border: 1.5px solid var(--lime-deep);
+    border-radius: 8px; margin-bottom: 1rem;
+  }
+  .sc-email {
+    font-family: var(--mono); font-size: .95rem;
+    font-weight: 800; color: var(--ink);
+    word-break: break-all;
+  }
+  .sc-steps {
+    text-align: left; padding-left: 1.4rem;
+    margin: 0 0 1rem; font-size: .85rem; line-height: 1.7;
+    color: var(--ink);
+  }
+  .sc-steps li { margin-bottom: .3rem; }
+  .sc-steps strong { color: var(--lime-deep); }
+  .sc-note {
+    margin: 0 0 1rem; padding: .5rem;
+    font-size: .78rem; color: var(--ink-2);
+    background: var(--bg-2); border-radius: 6px;
+  }
+  .sc-actions {
+    display: flex; flex-direction: column; gap: .5rem; align-items: center;
+  }
+  .btn-link {
+    background: transparent; color: var(--sky-deep);
+    text-decoration: none; padding: .5rem;
+    font-size: .82rem; font-weight: 700;
+  }
+  .btn-link:hover { text-decoration: underline; }
 
   .alt {
     text-align: center; font-size: .82rem; color: var(--ink-3);

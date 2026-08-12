@@ -71,6 +71,30 @@ export async function signOut(client: SupabaseClient): Promise<void> {
 }
 
 /**
+ * Sign out and clear all supabase-related storage keys defensively,
+ * then hard-navigate to `nextUrl`. Use this on user-initiated
+ * sign-out so we don't leave stale session artefacts behind.
+ */
+export async function hardSignOut(client: SupabaseClient, nextUrl = '/reserve/'): Promise<void> {
+  try { await client.auth.signOut(); } catch {}
+  try {
+    // Clear our own key plus anything supabase-js may have written.
+    const toClear: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k === 'asms:auth' || k.startsWith('sb-') || k.startsWith('supabase.')) {
+        toClear.push(k);
+      }
+    }
+    toClear.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+  // Bust bfcache with a fresh query param + full replace navigation.
+  const sep = nextUrl.includes('?') ? '&' : '?';
+  window.location.replace(`${nextUrl}${sep}so=${Date.now()}`);
+}
+
+/**
  * Placeholder for future Passkey support. Kept here so callers can
  * be ported by swapping this file only.
  */
