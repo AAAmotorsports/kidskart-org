@@ -172,6 +172,7 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
       <a class="back" href="/">← ホーム</a>
       <h1>予約 <span class="beta">β</span></h1>
       <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
+      <a class="signin-link" href="/reserve/signin?next=/reserve/">📧 別端末でご利用の方はこちら</a>
     </header>
 
     <section class="courses">
@@ -385,6 +386,15 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
     letter-spacing: .05em;
   }
   .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .signin-link {
+    display: inline-block; margin-top: .6rem;
+    padding: .35rem .75rem; font-size: .74rem; font-weight: 700;
+    background: rgba(255,201,67,.12); color: var(--orange-deep);
+    border: 1px solid var(--sun); border-radius: 100px;
+    text-decoration: none;
+  }
+  .signin-link:hover { background: var(--sun); color: #fff; }
 
   section { margin-bottom: 2rem; }
   .section-h { margin-bottom: 1rem; }

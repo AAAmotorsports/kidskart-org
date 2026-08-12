@@ -13,15 +13,26 @@
 
 ## Phase 2 想定優先順位（運用フィードバックで随時見直し）
 
-1. **二重予約防止を DB 側で確実にする**（現状 API 内チェックのみで TOCTOU レースあり）
-2. **予約作成をできるだけトランザクション化**（現状は逐次 INSERT で中途失敗時に orphan 発生可能性）
-3. キャンセル自動メール（`cancel_token` は既に生成済み）
-4. Turnstile CAPTCHA（悪戯予約対策）
+1. ~~**二重予約防止を DB 側で確実にする**~~ ✅ `create_reservation_atomic` 実装済
+2. ~~**予約作成をトランザクション化**~~ ✅ 同上で RPC 化済
+3. ~~キャンセル自動メール~~ ✅ 顧客側 / スロット全体 / 管理個別 の 3 系統実装済
+4. ~~Turnstile CAPTCHA~~ ✅ graceful degradation で実装済（enable は Dashboard 設定次第）
 5. 電子署名画像を R2 upload へ移行（現状 DB TEXT に base64 格納）
-6. Supabase Auth Magic Link（別端末リピーター、現状 localStorage で緩和済み）
-7. コース設定編集画面
+6. ~~Supabase Auth Magic Link~~ ✅ `/reserve/signin` + `/auth/callback` + `/api/me/prefill` 実装済
+7. ~~コース設定編集画面~~ ✅ `/admin/courses` 実装済
+8. ~~会計管理（支払い方法記録 + 月次集計）~~ ✅ `/admin/sales` + slot 詳細に記録 UI 実装済
 
-Magic Link は localStorage プリフィルで日常のリピーターは楽になっているので、急がなくて良い。
+### Magic Link 有効化手順 (Supabase 側)
+
+1. Supabase Dashboard → **Authentication → URL Configuration**
+   - **Site URL**: `https://kidskart-asms.kidskart1177.workers.dev`（本番ドメイン移行後は差し替え）
+   - **Redirect URLs** に追加: `https://kidskart-asms.kidskart1177.workers.dev/auth/callback`
+2. Authentication → **Providers → Email**
+   - Enable Email provider を ON、Confirm email を OFF（Magic Link は直接ログイン扱い）
+3. Authentication → **Email Templates → Magic Link**
+   - 件名: `【福岡キッズカートアカデミー】サインインリンク`
+   - 本文: 日本語化＋「このリンクを他人に転送しないでください」を明記
+4. `asms/db/0014_guardian_auth_link.sql` を SQL Editor で実行
 
 ## 認証・顧客識別ポリシー
 
@@ -32,7 +43,7 @@ Magic Link は localStorage プリフィルで日常のリピーターは楽に�
 | 段階 | 対象 | 手段 | 実装状況 |
 |------|------|------|:---:|
 | **1. 同一端末リピーター** | 同じスマホ・同じブラウザで再予約 | **localStorage** に前回入力を保存 → 次回自動プリフィル | ✅ 実装済み |
-| **2. 別端末リピーター** | 機種変更・PC↔スマホの持ち替え | **Supabase Auth Magic Link** で本人確認 → 顧客履歴呼び出し | ⏸ Phase 2 |
+| **2. 別端末リピーター** | 機種変更・PC↔スマホの持ち替え | **Supabase Auth Magic Link** で本人確認 → 顧客履歴呼び出し | ✅ 実装済 |
 | **3. Passkey 化（将来）** | 通常ログイン全般 | WebAuthn / Passkey で Face ID / Touch ID | ⏸ Future |
 
 ### やらないこと（明示的な禁則）
