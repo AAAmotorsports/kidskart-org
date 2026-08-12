@@ -14,9 +14,9 @@ const { data: res } = await admin
   .select(`
     id, reservation_number, status, price_tier, total_amount,
     cancelled_at, cancelled_reason,
-    slots(date, start_time, end_time, courses(name)),
+    slots(date, start_time, end_time, courses(name, price_regular, price_member)),
     guardians(name, email, phone),
-    reservation_participants(name_snapshot)
+    reservation_participants(id, name_snapshot, attendance_status)
   `)
   .eq('cancel_token', token)
   .maybeSingle();
@@ -24,7 +24,11 @@ const { data: res } = await admin
 const slot: any = res?.slots ?? {};
 const course: any = slot.courses ?? {};
 const guardian: any = res?.guardians ?? {};
-const parts = ((res as any)?.reservation_participants as any[])?.map((p) => p.name_snapshot) ?? [];
+type Part = { id: string; name_snapshot: string; attendance_status: string };
+const allParticipants: Part[] = (((res as any)?.reservation_participants as any[]) ?? []) as Part[];
+const activeParticipants = allParticipants.filter((p) => p.attendance_status !== 'cancelled');
+const perPersonPrice = res?.price_tier === 'member' ? (course.price_member ?? 0) : (course.price_regular ?? 0);
+const parts = activeParticipants.map((p) => p.name_snapshot);
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
 function jaDate(iso: string): string {
@@ -96,9 +100,22 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
         </section>
 
         <section class="card">
-          <h2>参加者</h2>
-          <ul class="p-list">
-            {parts.map((n, i) => <li>{i + 1}. {n}</li>)}
+          <h2>参加者 (キャンセルする人にチェック)</h2>
+          <p class="p-hint">
+            {activeParticipants.length >= 2
+              ? '一部の方だけキャンセルする場合、残る方のチェックを外してください。'
+              : '1 名予約のため、キャンセルすると予約全体がキャンセルになります。'}
+          </p>
+          <ul class="p-list checks">
+            {activeParticipants.map((p, i) => (
+              <li>
+                <label class="p-check">
+                  <input type="checkbox" class="p-cb" data-part-id={p.id} data-part-name={p.name_snapshot} checked />
+                  <span class="p-num">{i + 1}.</span>
+                  <span class="p-name">{p.name_snapshot}</span>
+                </label>
+              </li>
+            ))}
           </ul>
         </section>
 
@@ -123,11 +140,16 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
             </div>
 
             <div class="card cta-card">
-              <h2>この予約をキャンセルする</h2>
+              <div id="summaryBox" class="summary-box">
+                <div class="sm-row"><span>キャンセル人数</span><span id="cancelCountLabel" class="mono">—</span></div>
+                <div class="sm-row"><span>残り参加</span><span id="remainCountLabel" class="mono">—</span></div>
+                <div class="sm-row sm-total"><span>変更後の料金</span><span id="newTotalLabel" class="mono">—</span></div>
+              </div>
               <p class="hint">押した瞬間にキャンセルが確定します。取り消せません。<br />
                 キャンセル料が発生する場合は別途ご連絡いたします。</p>
               <form id="cancelForm">
                 <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="perPersonPrice" value={perPersonPrice} />
                 <div class="field">
                   <label for="reason">キャンセル理由（任意）</label>
                   <input type="text" id="reason" name="reason" maxlength="120"
@@ -148,35 +170,90 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
   const form = document.getElementById('cancelForm') as HTMLFormElement | null;
   const result = document.getElementById('cancelResult');
   const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
+  const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('.p-cb'));
+  const cancelCountLabel = document.getElementById('cancelCountLabel');
+  const remainCountLabel = document.getElementById('remainCountLabel');
+  const newTotalLabel = document.getElementById('newTotalLabel');
+  const summaryBox = document.getElementById('summaryBox');
+
+  const perPersonPrice = Number(
+    (document.querySelector<HTMLInputElement>('input[name="perPersonPrice"]')?.value) || 0
+  );
+  const totalCount = checkboxes.length;
+  const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+
+  function updateSummary() {
+    if (!submitBtn) return;
+    const checkedIds = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partId!);
+    const checkedNames = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partName!);
+    const remainCount = totalCount - checkedIds.length;
+    const isWholeCancel = remainCount === 0;
+    const isNoop = checkedIds.length === 0;
+
+    if (cancelCountLabel) cancelCountLabel.textContent = `${checkedIds.length} / ${totalCount} 名`;
+    if (remainCountLabel) remainCountLabel.textContent = `${remainCount} 名`;
+    if (newTotalLabel) newTotalLabel.textContent = isWholeCancel ? '¥0（予約全体キャンセル）' : yen(remainCount * perPersonPrice);
+
+    if (isNoop) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'キャンセルする方を選択してください';
+      return;
+    }
+    submitBtn.disabled = false;
+    if (isWholeCancel) {
+      submitBtn.textContent = totalCount === 1
+        ? '🚫 キャンセルを確定する'
+        : `🚫 全員（${totalCount}名）をキャンセルする`;
+    } else {
+      submitBtn.textContent = `🚫 選択した ${checkedIds.length} 名をキャンセルする`;
+    }
+  }
+
+  checkboxes.forEach((cb) => cb.addEventListener('change', updateSummary));
+  updateSummary();
+
   if (form && result && submitBtn) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!confirm('本当にキャンセルしますか？取り消せません。')) return;
+      const checkedIds = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partId!);
+      const checkedNames = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partName!);
+      if (checkedIds.length === 0) return;
+      const isWholeCancel = checkedIds.length === totalCount;
+
+      const confirmMsg = isWholeCancel
+        ? '予約全体をキャンセルします。取り消せません。よろしいですか？'
+        : `${checkedNames.join('・')} をキャンセルします。取り消せません。よろしいですか？`;
+      if (!confirm(confirmMsg)) return;
+
       submitBtn.disabled = true;
       submitBtn.textContent = 'キャンセル中…';
       const fd = new FormData(form);
+      const payload: any = {
+        token: fd.get('token'),
+        reason: fd.get('reason') || 'お客様都合（Web からキャンセル）',
+      };
+      // 一部キャンセルのときだけ participant_ids を送る (全員なら省略 = whole cancel)
+      if (!isWholeCancel) payload.participant_ids = checkedIds;
+
       try {
         const r = await fetch('/api/reserve/cancel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: fd.get('token'),
-            reason: fd.get('reason') || 'お客様都合（Web からキャンセル）',
-          }),
+          body: JSON.stringify(payload),
         });
         const body = await r.json();
         if (!r.ok) throw new Error(body?.error || 'キャンセル失敗');
         form.hidden = true;
+        if (summaryBox) summaryBox.hidden = true;
+        const msg = body.partial
+          ? `✅ ${checkedNames.join('・')} のキャンセルを承りました。<br>残り ${body.remaining_count} 名は予約継続中です。<br>新しい合計: ${yen(Number(body.new_total || 0))}`
+          : '✅ 予約全体のキャンセルを承りました。';
         result.innerHTML =
-          '<div class="banner banner-ok">' +
-          '✅ キャンセル完了しました。<br>' +
-          'ご登録のメールアドレスにキャンセル通知をお送りします。' +
-          '</div>' +
+          `<div class="banner banner-ok">${msg}<br>ご登録のメールアドレスに通知メールをお送りします。</div>` +
           '<p style="text-align:center;margin-top:1rem"><a href="/reserve/" class="btn btn-primary">別の日程を予約する</a></p>';
         result.hidden = false;
       } catch (err: any) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = '🚫 キャンセルを確定する';
+        updateSummary();
         alert('エラー: ' + (err.message || err));
       }
     });
@@ -208,6 +285,41 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
   .p-list { list-style: none; margin: 0; padding: 0; }
   .p-list li { padding: .3rem 0; font-size: .84rem; border-bottom: 1px dashed var(--line); }
   .p-list li:last-child { border-bottom: none; }
+  .p-hint {
+    margin: 0 0 .7rem; font-size: .74rem; color: var(--ink-3);
+    line-height: 1.5;
+  }
+  .p-list.checks li { padding: 0; }
+  .p-check {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .6rem .3rem; cursor: pointer;
+    font-size: .9rem;
+    transition: background .1s;
+  }
+  .p-check:hover { background: var(--bg-2); }
+  .p-cb {
+    width: 20px; height: 20px; flex-shrink: 0;
+    accent-color: var(--rose);
+    cursor: pointer;
+  }
+  .p-num { color: var(--ink-3); font-family: var(--mono); font-size: .78rem; min-width: 1.5em; }
+  .p-name { flex: 1; color: var(--ink); font-weight: 700; }
+
+  .summary-box {
+    background: var(--bg-2); border-radius: 8px;
+    padding: .7rem .9rem; margin-bottom: .8rem;
+    border: 1px solid var(--line);
+  }
+  .sm-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: .25rem 0; font-size: .8rem; color: var(--ink-2);
+  }
+  .sm-row .mono { font-family: var(--mono); font-weight: 700; color: var(--ink); }
+  .sm-total {
+    border-top: 1px dashed var(--line); margin-top: .3rem; padding-top: .5rem;
+    font-weight: 700; color: var(--rose-deep);
+  }
+  .sm-total .mono { color: var(--rose-deep); font-size: 1rem; }
 
   .banner {
     padding: .8rem 1rem; border-radius: 8px; margin: 1rem 0;
