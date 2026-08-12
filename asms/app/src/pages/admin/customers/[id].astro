@@ -219,6 +219,24 @@ const { data: candidatesRaw } = await supabase
   .or(`name.eq.${customer.name},kana.eq.${customer.kana},birth_date.eq.${customer.birth_date}`)
   .limit(20);
 const candidates = (candidatesRaw ?? []) as any[];
+
+// Manual search: 任意のカルテを検索して統合できる。ilike で name / kana /
+// customer_number をあいまい検索、20 件まで、自動候補と重複する ID は除外。
+const searchQ = (url.searchParams.get('search') || '').trim();
+let searchResults: any[] = [];
+if (searchQ.length >= 1) {
+  const excludeIds = [id, ...candidates.map((c) => c.id)];
+  const escaped = searchQ.replace(/[%_]/g, (c) => `\\${c}`);
+  const like = `%${escaped}%`;
+  const { data: hits } = await supabase
+    .from('customers')
+    .select('id, customer_number, name, kana, birth_date, gender, current_skill_level, total_participations, last_participation_at')
+    .eq('is_deleted', false)
+    .not('id', 'in', `(${excludeIds.join(',')})`)
+    .or(`name.ilike.${like},kana.ilike.${like},customer_number.ilike.${like}`)
+    .limit(20);
+  searchResults = (hits ?? []) as any[];
+}
 ---
 <Base title={`${customer.name} — カルテ · ASMS`}>
   <main>
@@ -402,6 +420,53 @@ const candidates = (candidatesRaw ?? []) as any[];
             );
           })}
         </ul>
+      )}
+    </section>
+
+    <section class="card merge-search-card">
+      <div class="card-h">
+        <h2>🔍 別のカルテを検索して統合</h2>
+        <span class="c-sub">自動候補に無い場合はここから探す</span>
+      </div>
+      <p class="merge-hint">
+        自動候補（同姓・同カナ・同誕生日）に出てこない相手を、名前・カナ・顧客番号のあいまい検索で探して統合できます。
+      </p>
+      <form method="get" class="search-form">
+        <input type="text" name="search" value={searchQ} maxlength="60"
+               placeholder="名前 / カナ / 顧客番号（部分一致）"
+               autocomplete="off" />
+        <button type="submit" class="btn-search">検索</button>
+        {searchQ && <a class="btn-clear" href={`/admin/customers/${id}`}>クリア</a>}
+      </form>
+      {searchQ && (
+        searchResults.length === 0 ? (
+          <p class="empty-inline">「{searchQ}」に一致するカルテは見つかりませんでした（自動候補と削除済みは除外）。</p>
+        ) : (
+          <ul class="cand-list">
+            {searchResults.map((c: any) => (
+              <li>
+                <div class="cand-head">
+                  <a class="cand-link" href={`/admin/customers/${c.id}`}>
+                    <span class="cand-name">{c.name}</span>
+                    <span class="cand-kana">（{c.kana}）</span>
+                    <span class="cand-num">{c.customer_number}</span>
+                  </a>
+                </div>
+                <div class="cand-meta">
+                  <span>{c.birth_date} · {ageOn(c.birth_date)}歳 · {genderJa(c.gender)}</span>
+                  <span class="mono">🏁 {c.total_participations}回</span>
+                  <span>{skillLabel(c.current_skill_level)}</span>
+                </div>
+                <form method="post"
+                      onsubmit={`return confirm('このカルテ (${customer.name} ${customer.customer_number}) を「${c.name} ${c.customer_number}」に統合します。よろしいですか？（元は削除フラグが立ちます）');`}>
+                  <input type="hidden" name="op" value="merge_into" />
+                  <input type="hidden" name="target_id" value={c.id} />
+                  <button type="submit" class="btn-merge">← このカルテに統合</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )
       )}
     </section>
 
@@ -649,6 +714,32 @@ const candidates = (candidatesRaw ?? []) as any[];
     border-color: var(--sun);
     background: linear-gradient(135deg, rgba(255,201,67,.06), rgba(255,201,67,.02));
   }
+  .merge-search-card {
+    border-color: var(--sky-light);
+    background: linear-gradient(135deg, rgba(58,169,232,.04), rgba(58,169,232,.02));
+  }
+  .search-form {
+    display: flex; gap: .4rem; margin-bottom: .8rem; flex-wrap: wrap;
+  }
+  .search-form input[type="text"] {
+    flex: 1; min-width: 180px;
+    padding: .55rem .7rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .btn-search {
+    padding: .55rem 1rem; font-size: .82rem; font-weight: 700;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--sky); color: #fff; font-family: var(--jp);
+  }
+  .btn-search:hover { background: var(--sky-deep); }
+  .btn-clear {
+    padding: .55rem .8rem; font-size: .78rem; font-weight: 700;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg-2); color: var(--ink-3); text-decoration: none;
+    display: inline-flex; align-items: center;
+  }
+  .btn-clear:hover { background: var(--bg-3); color: var(--ink); }
   .merge-hint {
     font-size: .78rem; color: var(--ink-2); line-height: 1.6;
     margin: 0 0 .8rem;
