@@ -74,6 +74,37 @@ if (Astro.request.method === 'POST') {
     return error ? finalize('', fmtErr(error)) : finalize('例外設定を削除しました', '');
   }
 
+  if (op === 'delete_slot') {
+    // 生成済みスロットの個別削除。安全側: 予約 (cancelled 以外) が
+    // 1 件でも紐付いていたら削除拒否。予約がある枠を捨てたい場合は
+    // /admin/slots/[id] で先にキャンセル/一括通知してから戻ってくる。
+    const slotId = form.get('slot_id') as string;
+    if (!slotId) return finalize('', 'slot_id が指定されていません');
+    const { data: existingRes } = await supabase
+      .from('reservations')
+      .select('id, reservation_number')
+      .eq('slot_id', slotId)
+      .neq('status', 'cancelled')
+      .limit(1);
+    if ((existingRes ?? []).length > 0) {
+      return finalize('', `予約 (${(existingRes as any)[0].reservation_number}) がある枠は削除できません。先にスロット詳細でキャンセル操作を行ってください。`);
+    }
+    // ついでに cancelled 状態の reservations も physical delete しないと
+    // slots FK 参照が残ってしまう → 実はしません: cancelled 予約は履歴と
+    // して残すべきなので、slot だけ落とすには先に cancelled 側の slot_id
+    // を NULL にはできない (NOT NULL 制約)。安全策: cancelled も含めて
+    // 予約が 1 件でもあれば削除拒否 (cancelled 履歴は残る) にする。
+    const { count: allResCount } = await supabase
+      .from('reservations')
+      .select('*', { count: 'exact', head: true })
+      .eq('slot_id', slotId);
+    if ((allResCount ?? 0) > 0) {
+      return finalize('', `過去にキャンセル履歴を含む予約 ${allResCount} 件がある枠は削除できません (履歴保護)。`);
+    }
+    const { error } = await supabase.from('slots').delete().eq('id', slotId);
+    return error ? finalize('', fmtErr(error)) : finalize('スロットを削除しました', '');
+  }
+
   if (op === 'add_closure_range') {
     const fromDate = (form.get('from_date') as string) || '';
     const toDate = (form.get('to_date') as string) || '';
@@ -237,6 +268,33 @@ const { data: exceptions } = await supabase
   .lte('date', monthEnd)
   .order('date')
   .order('start_time');
+
+// existing slots for the selected month (with reservation count)
+const { data: monthSlots } = await supabase
+  .from('slots')
+  .select(`
+    id, date, start_time, end_time, capacity, status,
+    courses(name, code)
+  `)
+  .gte('date', monthStart)
+  .lte('date', monthEnd)
+  .order('date')
+  .order('start_time');
+
+const slotIds = (monthSlots ?? []).map((s: any) => s.id);
+const resCountBySlot = new Map<string, { active: number; total: number }>();
+if (slotIds.length > 0) {
+  const { data: resRows } = await supabase
+    .from('reservations')
+    .select('slot_id, status')
+    .in('slot_id', slotIds);
+  for (const r of (resRows ?? []) as any[]) {
+    const cur = resCountBySlot.get(r.slot_id) ?? { active: 0, total: 0 };
+    cur.total++;
+    if (r.status !== 'cancelled') cur.active++;
+    resCountBySlot.set(r.slot_id, cur);
+  }
+}
 
 const holidaysAvailable = hasHolidayTable(year);
 const monthlyHolidays = getJapaneseHolidays(year, month);
@@ -520,6 +578,59 @@ const addDefaultDate = monthStart;
       </details>
     </section>
 
+    <section class="month-slots">
+      <div class="ms-hd">
+        <h2>📆 {year}年{month}月の生成済みスロット</h2>
+        <span class="ms-count">{monthSlots?.length ?? 0} 枠</span>
+      </div>
+      <p class="ms-hint">生成後に間違えたスロットや不要になった枠を個別に削除できます。<strong>予約が 1 件でも紐付いていると削除できません</strong>（履歴保護のため）。予約がある枠を削除したい場合は、先に <a href="/admin/reservations">予約一覧</a> → スロット詳細でキャンセル操作を行ってから、それでも枠自体を捨てる必要があれば ここに戻ってください。</p>
+      {(!monthSlots || monthSlots.length === 0) ? (
+        <p class="ms-empty">この月にはまだスロットが生成されていません。上の「プレビュー → 生成」で作成してください。</p>
+      ) : (
+        <ul class="ms-list">
+          {monthSlots.map((s: any) => {
+            const rc = resCountBySlot.get(s.id) ?? { active: 0, total: 0 };
+            const canDelete = rc.total === 0;
+            const timeLabel = `${s.start_time?.slice(0, 5)}${s.end_time ? '–' + s.end_time.slice(0, 5) : ''}`;
+            return (
+              <li class={`ms-item ${canDelete ? '' : 'ms-locked'}`}>
+                <div class="ms-body">
+                  <div class="ms-line-1">
+                    <span class="ms-date mono">{s.date}</span>
+                    <span class="ms-time mono">{timeLabel}</span>
+                    <span class="ms-course">{s.courses?.name}</span>
+                  </div>
+                  <div class="ms-line-2">
+                    <span class="ms-status ms-st-{s.status}">
+                      {s.status === 'open' ? '🟢 受付中' : s.status === 'closed' ? '🟡 停止' : '🔴 中止'}
+                    </span>
+                    <span class="ms-cap">定員 {s.capacity}</span>
+                    {rc.active > 0 && <span class="ms-res">予約 {rc.active} 件</span>}
+                    {rc.total > rc.active && <span class="ms-res-cancel">キャンセル履歴 {rc.total - rc.active} 件</span>}
+                  </div>
+                </div>
+                <div class="ms-actions">
+                  <a class="ms-view" href={`/admin/slots/${s.id}`}>詳細 →</a>
+                  {canDelete ? (
+                    <form method="post" class="ms-del-form"
+                          onsubmit={`return confirm('${s.date} ${timeLabel} ${s.courses?.name} を削除します。よろしいですか？');`}>
+                      <input type="hidden" name="op" value="delete_slot" />
+                      <input type="hidden" name="slot_id" value={s.id} />
+                      <input type="hidden" name="year" value={year} />
+                      <input type="hidden" name="month" value={month} />
+                      <button type="submit" class="ms-del">🗑 削除</button>
+                    </form>
+                  ) : (
+                    <span class="ms-locked-badge" title="予約履歴あり">🔒 削除不可</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+
     <details class="help">
       <summary>ヘルプ</summary>
       <ul>
@@ -801,5 +912,84 @@ const addDefaultDate = monthStart;
   .btn-primary {
     background: linear-gradient(135deg, var(--orange), var(--orange-deep));
     color: #fff; box-shadow: 0 4px 12px rgba(229, 99, 26, .3);
+  }
+
+  .month-slots {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem; margin: 1.5rem 0;
+  }
+  .ms-hd {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: .3rem;
+  }
+  .ms-hd h2 { margin: 0; font-size: .95rem; font-weight: 800; }
+  .ms-count {
+    font-family: var(--mono); font-size: .74rem; font-weight: 700;
+    background: var(--sky-mist); color: var(--sky-deep);
+    padding: 2px 10px; border-radius: 100px;
+  }
+  .ms-hint {
+    font-size: .74rem; color: var(--ink-3); margin: 0 0 .8rem;
+    line-height: 1.6;
+  }
+  .ms-hint strong { color: var(--rose-deep); }
+  .ms-hint a { color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+
+  .ms-empty {
+    text-align: center; padding: 1.5rem; color: var(--ink-3);
+    background: var(--bg-2); border-radius: 8px; font-size: .84rem;
+    margin: 0;
+  }
+  .ms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .ms-item {
+    display: flex; gap: .6rem; align-items: center;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: .6rem .8rem;
+    transition: background .1s;
+  }
+  .ms-item:hover { background: var(--bg-2); }
+  .ms-item.ms-locked { background: var(--bg-2); opacity: .85; }
+  .ms-body { flex: 1; min-width: 0; }
+  .ms-line-1 {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    font-size: .84rem; margin-bottom: .2rem;
+  }
+  .ms-date { color: var(--ink-2); font-weight: 700; }
+  .ms-time { color: var(--sky-deep); font-weight: 700; }
+  .ms-course { color: var(--ink); font-weight: 700; }
+  .ms-line-2 {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    font-size: .68rem; color: var(--ink-3);
+  }
+  .ms-status { font-weight: 700; }
+  .ms-st-open { color: var(--lime-deep); }
+  .ms-st-closed { color: var(--orange-deep); }
+  .ms-st-cancelled { color: var(--rose-deep); }
+  .ms-cap { color: var(--ink-3); font-family: var(--mono); }
+  .ms-res { color: var(--sky-deep); font-weight: 700; }
+  .ms-res-cancel { color: var(--ink-3); font-family: var(--mono); }
+
+  .ms-actions {
+    display: flex; align-items: center; gap: .4rem; flex-shrink: 0;
+  }
+  .ms-view {
+    padding: .3rem .7rem; font-size: .72rem; font-weight: 700;
+    color: var(--sky-deep); text-decoration: none;
+    border: 1px solid var(--sky-light); border-radius: 100px;
+    background: var(--sky-mist);
+  }
+  .ms-view:hover { background: var(--sky); color: #fff; }
+  .ms-del-form { margin: 0; }
+  .ms-del {
+    padding: .3rem .7rem; font-size: .72rem; font-weight: 700;
+    background: rgba(229,85,111,.1); color: var(--rose-deep);
+    border: 1px solid var(--rose); border-radius: 100px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .ms-del:hover { background: var(--rose); color: #fff; }
+  .ms-locked-badge {
+    padding: .3rem .7rem; font-size: .68rem; font-weight: 700;
+    color: var(--ink-3); background: var(--bg-3);
+    border-radius: 100px;
   }
 </style>
