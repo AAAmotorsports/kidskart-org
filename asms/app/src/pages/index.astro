@@ -1,12 +1,12 @@
 ---
 import Base from '@layouts/Base.astro';
 ---
-<Base title="福岡キッズカートアカデミー — 予約・管理システム">
+<Base title="福岡キッズカートアカデミー WEB予約">
   <main>
     <header class="hd">
       <div class="hd-brand">🏁 福岡キッズカートアカデミー</div>
-      <h1>予約・安全管理システム</h1>
-      <p class="sub">ASMS · エーワンサーキット</p>
+      <h1>WEB予約</h1>
+      <p class="sub">エーワンサーキット</p>
     </header>
 
     <section class="cards">
@@ -15,15 +15,6 @@ import Base from '@layouts/Base.astro';
         <div class="c-body">
           <h2>予約する</h2>
           <p>体験教室・リピート練習・チャレンジクラスの予約はこちら</p>
-        </div>
-        <div class="c-arrow">→</div>
-      </a>
-
-      <a class="card card-secondary" href="/admin">
-        <div class="c-ico">⚙️</div>
-        <div class="c-body">
-          <h2>管理画面</h2>
-          <p>スタッフ用（予約管理・顧客カルテ・売上集計）</p>
         </div>
         <div class="c-arrow">→</div>
       </a>
@@ -39,7 +30,8 @@ import Base from '@layouts/Base.astro';
     </section>
 
     <footer class="ft">
-      <p>📞 <a href="tel:0929271177">092-927-1177</a> · 🌐 <a href="https://kidskart.org/">kidskart.org</a></p>
+      <p class="ft-contact">📞 <a href="tel:0929271177">092-927-1177</a> · 🌐 <a href="https://kidskart.org/">kidskart.org</a></p>
+      <p class="ft-staff"><a href="/admin">スタッフログイン</a></p>
     </footer>
   </main>
 </Base>
@@ -70,7 +62,7 @@ import Base from '@layouts/Base.astro';
 
   .cards {
     display: flex; flex-direction: column; gap: .7rem;
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
   }
   .card {
     display: flex; align-items: center; gap: 1rem;
@@ -99,39 +91,45 @@ import Base from '@layouts/Base.astro';
     background: linear-gradient(135deg, var(--orange), var(--orange-deep));
     color: #fff;
     box-shadow: 0 4px 14px rgba(229,99,26,.28);
+    padding: 1.4rem 1.3rem;
   }
+  .card-primary .c-ico { font-size: 2rem; }
+  .card-primary .c-body h2 { font-size: 1.1rem; }
   .card-primary:hover { box-shadow: 0 6px 18px rgba(229,99,26,.4); }
 
-  .card-secondary {
+  .card-ghost {
     background: var(--bg);
     border-color: var(--sky-light);
     color: var(--ink);
   }
-  .card-secondary:hover {
+  .card-ghost:hover {
     background: var(--sky-mist);
     border-color: var(--sky);
-    box-shadow: 0 4px 12px rgba(58,169,232,.15);
   }
-  .card-secondary .c-body p { color: var(--ink-2); }
-  .card-secondary .c-arrow { color: var(--sky-deep); }
-
-  .card-ghost {
-    background: var(--bg-2);
-    border-color: var(--line);
-    color: var(--ink-2);
-  }
-  .card-ghost:hover {
-    background: var(--bg-3);
-    border-color: var(--line-2);
-  }
-  .card-ghost .c-body p { color: var(--ink-3); font-size: .74rem; }
+  .card-ghost .c-body p { color: var(--ink-2); }
+  .card-ghost .c-arrow { color: var(--sky-deep); }
 
   .ft {
-    text-align: center; font-size: .78rem;
-    color: var(--ink-3); padding-top: 1rem;
+    text-align: center; padding-top: 1.2rem;
     border-top: 1px dashed var(--line);
   }
-  .ft p { margin: 0; }
-  .ft a { color: var(--sky-deep); text-decoration: none; margin: 0 .3rem; }
-  .ft a:hover { text-decoration: underline; }
+  .ft-contact {
+    margin: 0 0 1.2rem;
+    font-size: .78rem; color: var(--ink-3);
+  }
+  .ft-contact a {
+    color: var(--sky-deep); text-decoration: none; margin: 0 .3rem;
+  }
+  .ft-contact a:hover { text-decoration: underline; }
+  .ft-staff {
+    margin: 0; font-size: .68rem;
+    font-family: var(--mono); color: var(--ink-4);
+  }
+  .ft-staff a {
+    color: var(--ink-4); text-decoration: none;
+    border-bottom: 1px dotted var(--ink-4);
+  }
+  .ft-staff a:hover {
+    color: var(--ink-3); border-bottom-color: var(--ink-3);
+  }
 </style>
