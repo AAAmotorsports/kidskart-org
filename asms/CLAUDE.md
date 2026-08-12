@@ -105,3 +105,15 @@ Magic Link は localStorage プリフィルで日常のリピーターは楽に�
 Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
 - Secret 値は 1Password 等の別レイヤに保管
 - 削除操作の前に別タブでリストのスクショを撮る
+
+### Turnstile (CAPTCHA) の有効化手順
+1. Cloudflare Dashboard → Turnstile → **Add site**
+   - Site Name: `kidskart-asms`
+   - Hostname: `kidskart-asms.kidskart1177.workers.dev`（本番ドメイン移行後は差し替え）
+   - Widget mode: Managed（推奨）
+2. 発行された **Site Key** を `wrangler.jsonc` の `PUBLIC_TURNSTILE_SITE_KEY` に貼付 → PR → deploy
+3. 発行された **Secret Key** を Cloudflare Dashboard → kidskart-asms → 設定 → 変数とシークレット に **シークレット型** で `TURNSTILE_SECRET_KEY` として登録
+4. 現バージョン再展開（シークレット bind）
+5. `/reserve/[slotId]` ステップ 8 に CAPTCHA が出現、突破しないと送信不可
+
+**設定してない状態**: wizard に CAPTCHA が表示されず、送信ボタンも即有効。API 側も検証スキップ（graceful degradation）。開発時や運用開始直後はこの状態で OK。
