@@ -35,11 +35,15 @@ const reservedBySlot = new Map<string, number>();
 if (slotIds.length > 0) {
   const { data: resWithParts } = await admin
     .from('reservations')
-    .select('slot_id, reservation_participants(id)')
+    .select('slot_id, reservation_participants(id, attendance_status)')
     .in('slot_id', slotIds)
     .neq('status', 'cancelled');
   for (const r of (resWithParts ?? []) as any[]) {
-    const cnt = (r.reservation_participants as any[])?.length ?? 0;
+    // 個別参加者キャンセル (attendance_status='cancelled') は席を返している
+    // ので残席計算から除外する。
+    const activeParts = ((r.reservation_participants as any[]) ?? [])
+      .filter((p) => p.attendance_status !== 'cancelled');
+    const cnt = activeParts.length;
     reservedBySlot.set(r.slot_id, (reservedBySlot.get(r.slot_id) ?? 0) + cnt);
   }
 }

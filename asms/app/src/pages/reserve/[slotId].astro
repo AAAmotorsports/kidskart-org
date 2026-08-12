@@ -28,10 +28,12 @@ const { data: existingRes } = await admin
 const resIds = (existingRes ?? []).map((r: any) => r.id);
 let reservedCount = 0;
 if (resIds.length > 0) {
+  // 個別参加者キャンセル (attendance_status='cancelled') は席を返しているので除外
   const { count } = await admin
     .from('reservation_participants')
     .select('*', { count: 'exact', head: true })
-    .in('reservation_id', resIds);
+    .in('reservation_id', resIds)
+    .neq('attendance_status', 'cancelled');
   reservedCount = count ?? 0;
 }
 const remaining = Math.max(0, slot.capacity - reservedCount);

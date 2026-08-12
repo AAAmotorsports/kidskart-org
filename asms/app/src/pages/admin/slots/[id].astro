@@ -141,6 +141,23 @@ if (Astro.request.method === 'POST') {
     );
   }
 
+  if (op === 'set_weather') {
+    const cond = ((form.get('weather_condition') as string) || '').trim() || null;
+    const validConds = ['sunny', 'cloudy', 'cloudy_then_rain', 'rain', 'rain_then_cloudy', 'other'];
+    if (cond && !validConds.includes(cond)) return back('', '天候の値が不正です');
+    const tempRaw = ((form.get('temperature_c') as string) || '').trim();
+    const tempC = tempRaw === '' ? null : parseInt(tempRaw, 10);
+    if (tempC != null && (!Number.isFinite(tempC) || tempC < -20 || tempC > 50)) {
+      return back('', '気温は -20 〜 50 の範囲で入力してください');
+    }
+    const note = ((form.get('weather_note') as string) || '').trim() || null;
+    const { error } = await supabase
+      .from('slots')
+      .update({ weather_condition: cond, temperature_c: tempC, weather_note: note })
+      .eq('id', id);
+    return error ? back('', fmt(error)) : back('天候情報を更新しました');
+  }
+
   if (op === 'set_slot_status') {
     const newStatus = form.get('slot_status') as string;
     const cascade = form.get('cascade') === '1';
@@ -350,7 +367,7 @@ const err = url.searchParams.get('err');
 // Load slot
 const { data: slot } = await supabase
   .from('slots')
-  .select('id, date, start_time, end_time, capacity, status, note, courses(id, name, code, vehicle)')
+  .select('id, date, start_time, end_time, capacity, status, note, weather_note, weather_condition, temperature_c, courses(id, name, code, vehicle)')
   .eq('id', id)
   .maybeSingle();
 
@@ -388,12 +405,14 @@ for (const r of (reservations ?? []) as any[]) {
 }
 
 const summary = {
-  total: allParts.length,
+  total: allParts.length,                                                            // 全登録 (キャンセル含む)
+  effective: allParts.filter((p) => p.attendance_status !== 'cancelled').length,     // 席を消費している人数
   expected: allParts.filter((p) => p.attendance_status === 'expected').length,
   attended: allParts.filter((p) => p.attendance_status === 'attended').length,
   no_show: allParts.filter((p) => p.attendance_status === 'no_show').length,
   cancelled: allParts.filter((p) => p.attendance_status === 'cancelled').length,
 };
+const remainingSeats = Math.max(0, slot.capacity - summary.effective);
 
 const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他' } as any)[g] ?? g;
 const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' } as any)[p] ?? p;
@@ -717,10 +736,12 @@ async function sendReservationCancelEmail(env: Env, args: {
         </div>
         <div class="ss-caps">
           <span>定員 <strong>{slot.capacity}</strong> 名</span>
-          <span>予約 <strong>{summary.total}</strong> 名</span>
+          <span>実質予約 <strong>{summary.effective}</strong> 名</span>
+          <span class="ss-remaining">残 <strong>{remainingSeats}</strong> 名</span>
           {summary.attended > 0 && <span class="chip chip-ok">✓ 出席 {summary.attended}</span>}
           {summary.expected > 0 && <span class="chip chip-wait">予約中 {summary.expected}</span>}
           {summary.no_show > 0 && <span class="chip chip-warn">無断欠席 {summary.no_show}</span>}
+          {summary.cancelled > 0 && <span class="chip chip-muted">キャンセル {summary.cancelled}</span>}
         </div>
       </div>
     </header>
@@ -778,6 +799,41 @@ async function sendReservationCancelEmail(env: Env, args: {
           ⚠️ この枠はキャンセル状態です。既存予約者への通知メールはキャンセル操作時に送信済みです。
         </p>
       )}
+    </section>
+
+    <section class="weather-card">
+      <form method="post" class="weather-form">
+        <input type="hidden" name="op" value="set_weather" />
+        <label class="w-label">🌤 当日の天候</label>
+        <div class="w-row">
+          <select name="weather_condition" class="w-cond">
+            <option value="" selected={!((slot as any).weather_condition)}>—</option>
+            {[
+              { code: 'sunny', label: '☀️ 晴れ' },
+              { code: 'cloudy', label: '☁️ 曇り' },
+              { code: 'cloudy_then_rain', label: '☁️ 曇りのち雨' },
+              { code: 'rain', label: '🌧 雨' },
+              { code: 'rain_then_cloudy', label: '🌧 雨のち曇り' },
+              { code: 'other', label: '⚡ その他' },
+            ].map((o) => (
+              <option value={o.code} selected={(slot as any).weather_condition === o.code}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <label class="w-temp-label">気温
+            <input type="number" name="temperature_c" min="-20" max="50" step="1"
+                   value={(slot as any).temperature_c ?? ''}
+                   class="w-temp" placeholder="—" /> °C
+          </label>
+          <button type="submit" class="btn-w-save">保存</button>
+        </div>
+        <input type="text" name="weather_note" maxlength="80"
+               value={(slot as any).weather_note ?? ''}
+               placeholder="補足メモ (例: 強風あり、路面ウェット)"
+               class="w-note" />
+        <p class="w-hint">後日振り返り・年間比較用。売上分析で「雨の日除外」フィルタに使えます。</p>
+      </form>
     </section>
 
     {allParts.length === 0 ? (
@@ -999,6 +1055,8 @@ async function sendReservationCancelEmail(env: Env, args: {
   }
   .chip-ok { background: rgba(164,214,94,.2); color: var(--lime-deep); }
   .chip-wait { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+  .chip-muted { background: var(--bg-3); color: var(--ink-3); }
+  .ss-remaining strong { color: var(--lime-deep) !important; }
   .chip-warn { background: rgba(229,85,111,.15); color: var(--rose-deep); }
 
   .ok-banner {
@@ -1209,6 +1267,42 @@ async function sendReservationCancelEmail(env: Env, args: {
     background: rgba(229,85,111,.06); border: 1px solid rgba(229,85,111,.25);
     border-radius: 6px; font-size: .74rem; color: var(--ink-2);
   }
+
+  .weather-card {
+    background: linear-gradient(135deg, rgba(58,169,232,.05), rgba(255,201,67,.03));
+    border: 1px solid var(--sky-light); border-radius: 10px;
+    padding: .8rem 1rem; margin-bottom: 1rem;
+  }
+  .weather-form { display: grid; gap: .4rem; }
+  .w-label { font-size: .82rem; font-weight: 700; color: var(--sky-deep); }
+  .w-row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  .w-cond {
+    flex: 1; min-width: 140px;
+    padding: .5rem .6rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .w-temp-label {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .82rem; color: var(--ink-2); font-weight: 700;
+  }
+  .w-temp {
+    width: 5em; padding: .5rem .5rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--mono); text-align: right;
+  }
+  .w-note {
+    width: 100%; padding: .5rem .7rem; font-size: .82rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .btn-w-save {
+    padding: .55rem 1rem; font-size: .8rem; font-weight: 700;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--sky); color: #fff; font-family: var(--jp);
+  }
+  .btn-w-save:hover { background: var(--sky-deep); }
+  .w-hint { margin: 0; font-size: .68rem; color: var(--ink-3); }
 
   .pay-details {
     background: rgba(255,201,67,.06); border-radius: 8px;
