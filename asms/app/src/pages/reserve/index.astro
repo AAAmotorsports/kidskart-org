@@ -271,7 +271,7 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
                 <ul class="slot-list">
                   {visByDate.get(date)!.map((s) => {
                     const remaining = remainingFor(s);
-                    const isFull = remaining <= 0;
+                    const isFull = remaining === 0;
                     return (
                       <li class={isFull ? 'is-full' : ''}>
                         {isFull ? (
