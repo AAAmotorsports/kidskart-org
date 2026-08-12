@@ -1,9 +1,10 @@
 ---
 import Base from '@layouts/Base.astro';
-import { envFrom, getSupabase } from '@lib/supabase';
+import { envFrom, getSupabase, getSupabaseAdmin } from '@lib/supabase';
 
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
+const admin = getSupabaseAdmin(env);
 
 // Always load the course menu — customers should see what we offer
 // even when no dates are on the calendar yet.
@@ -25,6 +26,25 @@ const { data: slots } = await supabase
   .limit(400);
 
 type Slot = NonNullable<typeof slots>[number];
+
+// Compute remaining seats per slot. reservations is staff-only under
+// RLS so we go through the service_role client for the join; we only
+// return counts, no PII.
+const slotIds = (slots ?? []).map((s) => s.id);
+const reservedBySlot = new Map<string, number>();
+if (slotIds.length > 0) {
+  const { data: resWithParts } = await admin
+    .from('reservations')
+    .select('slot_id, reservation_participants(id)')
+    .in('slot_id', slotIds)
+    .neq('status', 'cancelled');
+  for (const r of (resWithParts ?? []) as any[]) {
+    const cnt = (r.reservation_participants as any[])?.length ?? 0;
+    reservedBySlot.set(r.slot_id, (reservedBySlot.get(r.slot_id) ?? 0) + cnt);
+  }
+}
+const remainingFor = (s: Slot): number =>
+  Math.max(0, s.capacity - (reservedBySlot.get(s.id) ?? 0));
 
 // URL params: ?course=CODE filters the calendar/list to one course only,
 // so hard-to-spot offerings (challenge classes run twice a month) surface
@@ -97,16 +117,20 @@ function courseHref(code: string): string {
 }
 
 // Calendar cells: leading blanks then day entries. Sunday-start (JS default).
+// `count` = number of slots on this day with at least 1 seat remaining
+// (fully-booked slots are excluded so the cell reflects real availability).
 type Cell = { date: string; dayNum: number; count: number; dow: number } | null;
 const firstDow = new Date(visYear, visMonth - 1, 1).getDay();
 const cells: Cell[] = [];
 for (let i = 0; i < firstDow; i++) cells.push(null);
 for (let dnum = 1; dnum <= daysInMonth; dnum++) {
   const iso = `${visYear}-${String(visMonth).padStart(2, '0')}-${String(dnum).padStart(2, '0')}`;
+  const daySlots = visByDate.get(iso) ?? [];
+  const openCount = daySlots.filter((s) => remainingFor(s) > 0).length;
   cells.push({
     date: iso,
     dayNum: dnum,
-    count: visByDate.get(iso)?.length ?? 0,
+    count: openCount,
     dow: new Date(visYear, visMonth - 1, dnum).getDay(),
   });
 }
@@ -245,16 +269,29 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
               <div class="day-card" id={`day-${date}`}>
                 <div class="day-head">{formatDate(date)}</div>
                 <ul class="slot-list">
-                  {visByDate.get(date)!.map((s) => (
-                    <li>
-                      <a class="slot-link" href={`/reserve/${s.id}`}>
-                        <span class="slot-time">{s.start_time.slice(0, 5)}</span>
-                        <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
-                        <span class="slot-cap">残 {s.capacity}</span>
-                        <span class="slot-arrow">→</span>
-                      </a>
-                    </li>
-                  ))}
+                  {visByDate.get(date)!.map((s) => {
+                    const remaining = remainingFor(s);
+                    const isFull = remaining <= 0;
+                    return (
+                      <li class={isFull ? 'is-full' : ''}>
+                        {isFull ? (
+                          <div class="slot-link">
+                            <span class="slot-time">{s.start_time.slice(0, 5)}</span>
+                            <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
+                            <span class="slot-cap slot-cap-full">満席</span>
+                            <span class="slot-arrow" aria-hidden="true">×</span>
+                          </div>
+                        ) : (
+                          <a class="slot-link" href={`/reserve/${s.id}`}>
+                            <span class="slot-time">{s.start_time.slice(0, 5)}</span>
+                            <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
+                            <span class="slot-cap">残 {remaining}</span>
+                            <span class="slot-arrow">→</span>
+                          </a>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}
@@ -570,6 +607,11 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
   .slot-course { color: var(--ink-2); }
   .slot-cap { font-family: var(--mono); font-size: .7rem; color: var(--lime-deep); font-weight: 700; }
   .slot-arrow { color: var(--sky); font-weight: 700; }
+  .slot-list li.is-full { opacity: .55; }
+  .slot-list li.is-full:hover { background: var(--bg-2); }
+  .slot-list li.is-full .slot-link { cursor: not-allowed; }
+  .slot-cap-full { color: var(--rose-deep) !important; }
+  .slot-list li.is-full .slot-arrow { color: var(--ink-3); }
 
   /* Empty state */
   .empty { display: flex; flex-direction: column; gap: 1rem; }
