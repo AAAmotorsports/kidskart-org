@@ -44,6 +44,103 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back(`出欠を「${attendanceLabel(status)}」に更新しました`);
   }
 
+  if (op === 'cancel_participant') {
+    // 個別参加者キャンセル + 料金再計算 + 保護者メール通知
+    const partId = form.get('participant_id') as string;
+    const reason = ((form.get('cancel_reason') as string) || '電話でのキャンセル受付').trim();
+    const notify = form.get('notify_email') === '1';
+    if (!partId) return back('', 'participant_id は必須です');
+
+    // 対象参加者 + 予約 + 保護者 + コース情報を一括取得
+    const { data: part, error: pErr } = await supabase
+      .from('reservation_participants')
+      .select(`
+        id, name_snapshot, attendance_status, reservation_id,
+        reservations(
+          id, reservation_number, status, price_tier, total_amount,
+          guardians(name, email, phone),
+          slots(date, start_time, end_time, courses(name, price_regular, price_member))
+        )
+      `)
+      .eq('id', partId)
+      .maybeSingle();
+    if (pErr) return back('', fmt(pErr));
+    if (!part) return back('', '参加者が見つかりません');
+    if (part.attendance_status === 'cancelled') {
+      return back('', 'この参加者はすでにキャンセル済みです');
+    }
+
+    const res: any = (part as any).reservations;
+    if (!res) return back('', '予約が見つかりません');
+
+    // 1) 参加者ステータスを cancelled に
+    const { error: uErr } = await supabase
+      .from('reservation_participants')
+      .update({ attendance_status: 'cancelled' })
+      .eq('id', partId);
+    if (uErr) return back('', `参加者キャンセルに失敗: ${fmt(uErr)}`);
+
+    // 2) 残り active 参加者を数え直して total_amount を再計算
+    const { data: siblings } = await supabase
+      .from('reservation_participants')
+      .select('id, name_snapshot, attendance_status')
+      .eq('reservation_id', res.id);
+    const activeCount = (siblings ?? []).filter((s: any) => s.attendance_status !== 'cancelled').length;
+    const activeNames = (siblings ?? []).filter((s: any) => s.attendance_status !== 'cancelled').map((s: any) => s.name_snapshot);
+    const perPerson = res.price_tier === 'member'
+      ? (res.slots?.courses?.price_member ?? 0)
+      : (res.slots?.courses?.price_regular ?? 0);
+    const newTotal = activeCount * perPerson;
+
+    // 3) 予約全員キャンセルなら reservation.status = cancelled も併せて
+    const shouldCancelReservation = activeCount === 0;
+    const resUpdate: any = { total_amount: newTotal };
+    if (shouldCancelReservation) {
+      resUpdate.status = 'cancelled';
+      resUpdate.cancelled_at = new Date().toISOString();
+      resUpdate.cancelled_reason = reason;
+    }
+    const { error: rErr } = await supabase
+      .from('reservations')
+      .update(resUpdate)
+      .eq('id', res.id);
+    if (rErr) return back(`参加者はキャンセル済ですが予約金額更新でエラー: ${fmt(rErr)}`, '');
+
+    // 4) 保護者メール通知 (fire and forget)
+    let mailMsg = '（メール送信なし）';
+    const guardian = res.guardians ?? {};
+    if (notify && guardian.email) {
+      const slot = res.slots ?? {};
+      const apiUrl = new URL(Astro.request.url);
+      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
+      const p = sendParticipantCancelEmail(env, {
+        to: guardian.email,
+        guardianName: guardian.name ?? '',
+        reservationNumber: res.reservation_number,
+        dateIso: slot.date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        courseName: slot.courses?.name ?? '',
+        cancelledName: (part as any).name_snapshot,
+        remainingNames: activeNames,
+        remainingCount: activeCount,
+        newTotal,
+        reason,
+        wholeCancel: shouldCancelReservation,
+      }).catch((e) => console.warn('[participant-cancel] email failed', res.reservation_number, e));
+      if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
+      mailMsg = `（保護者 ${guardian.email} へ通知メール送信）`;
+    } else if (notify && !guardian.email) {
+      mailMsg = '（保護者メール未登録のため送信スキップ）';
+    }
+
+    const wholeMsg = shouldCancelReservation ? '（全員キャンセルのため予約全体もキャンセル済）' : '';
+    return back(
+      `${(part as any).name_snapshot} をキャンセル、残 ${activeCount} 名で ¥${newTotal.toLocaleString('ja-JP')} に再計算${wholeMsg} ${mailMsg}`
+    );
+  }
+
   if (op === 'set_slot_status') {
     const newStatus = form.get('slot_status') as string;
     const cascade = form.get('cascade') === '1';
@@ -401,6 +498,113 @@ async function sendSlotCancelEmail(env: Env, args: {
   if (!r.ok) throw new Error(`Resend slot-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
 
+// Fire-and-forget: notify the guardian that ONE participant in a
+// multi-participant reservation was cancelled. Different from
+// sendReservationCancelEmail (which handles whole-reservation cancels)
+// because we need to show which participant is out and what the new
+// total is.
+async function sendParticipantCancelEmail(env: Env, args: {
+  to: string;
+  guardianName: string;
+  reservationNumber: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  cancelledName: string;
+  remainingNames: string[];
+  remainingCount: number;
+  newTotal: number;
+  reason: string;
+  wholeCancel: boolean;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey || !args.to) return;
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+  const subject = args.wholeCancel
+    ? `【キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`
+    : `【一部キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`;
+
+  const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+
+  const yenNew = `¥${args.newTotal.toLocaleString('ja-JP')}`;
+
+  const text = [
+    `${args.guardianName} 様`,
+    '',
+    args.wholeCancel
+      ? `${args.cancelledName} さんのキャンセルにより、この予約は全員キャンセル扱いとなりました。`
+      : `${args.cancelledName} さんの参加キャンセルを承りました。`,
+    '',
+    `▼ 予約情報`,
+    `予約番号: ${args.reservationNumber}`,
+    `コース  : ${args.courseName}`,
+    `日時   : ${dateLabel} ${timeLabel}`,
+    `キャンセル: ${args.cancelledName}`,
+    `残り参加: ${args.remainingNames.length ? args.remainingNames.join('・') : '（なし）'} (${args.remainingCount}名)`,
+    `新しい合計: ${yenNew}`,
+    '',
+    `▼ 受付内容`,
+    args.reason,
+    '',
+    'キャンセル料が発生する場合は別途ご連絡いたします。',
+    'ご不明な点は 092-927-1177 までお問い合わせください。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '福岡キッズカートアカデミー / エーワンサーキット',
+    '📞 092-927-1177',
+    '🌐 https://kidskart.org/',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${esc(subject)}</title></head>
+<body style="font-family:'Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">✅</div>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.1rem;color:#1a7fb8">${esc(args.wholeCancel ? 'キャンセル承りました' : '一部キャンセル承りました')}</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${esc(args.guardianName)} 様</p>
+    <p style="font-size:.86rem;color:#163048;margin:0 0 1rem">${esc(args.cancelledName)} さんの参加キャンセルを承りました。${args.wholeCancel ? '<br>全員キャンセルのため、この予約は全体キャンセル扱いとなります。' : ''}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace">${esc(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.courseName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">日時</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${esc(dateLabel)} ${esc(timeLabel)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#c73854;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">キャンセル</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0;color:#c73854">${esc(args.cancelledName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">残り参加</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${args.remainingNames.length ? esc(args.remainingNames.join('・')) : '<span style="color:#7d8fa0">（なし）</span>'} <span style="color:#7d8fa0">(${args.remainingCount}名)</span></td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">新しい合計</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;font-weight:800;border-top:1px dashed #d8e6f0">${esc(yenNew)}</td></tr>
+    </table>
+    <p style="font-size:.82rem;color:#3d556f;background:#f4f9fc;padding:.7rem;border-radius:8px;border:1px solid #d8e6f0;margin:0 0 1rem"><strong>受付内容</strong><br>${esc(args.reason)}</p>
+    <p style="font-size:.78rem;color:#7d8fa0;margin:0 0 1rem">※ キャンセル料が発生する場合は別途ご連絡いたします。</p>
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
+      福岡キッズカートアカデミー / エーワンサーキット<br>
+      📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
+    </p>
+  </div>
+</body></html>`;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [args.to],
+      subject,
+      text,
+      html,
+      reply_to: env.MAIL_REPLY_TO || undefined,
+    }),
+  });
+  if (!r.ok) throw new Error(`Resend participant-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
+
 // Fire-and-forget: notify the guardian that their reservation was
 // cancelled at their request (typically staff processing a phone
 // cancellation). Tone is "承りました" rather than "中止のお詫び".
@@ -653,6 +857,28 @@ async function sendReservationCancelEmail(env: Env, args: {
                     <button type="submit" class="btn btn-primary">更新</button>
                   </form>
                 </details>
+
+                {p.attendance_status !== 'cancelled' && r.status !== 'cancelled' && (
+                  <details class="pc-details">
+                    <summary>🚫 この参加者だけキャンセル（料金再計算・メール通知）</summary>
+                    <form method="post" class="pc-form"
+                          onsubmit={`return confirm('${p.name_snapshot} をキャンセル、料金を再計算しますか？');`}>
+                      <input type="hidden" name="op" value="cancel_participant" />
+                      <input type="hidden" name="participant_id" value={p.id} />
+                      <div class="field">
+                        <label>受付内容（メール本文に載ります）</label>
+                        <input type="text" name="cancel_reason" maxlength="120"
+                          placeholder="例: 体調不良により電話でキャンセル受付"
+                          value="電話でのキャンセル受付" />
+                      </div>
+                      <label class="chk">
+                        <input type="checkbox" name="notify_email" value="1" checked />
+                        <span>保護者（{r.guardians?.email || 'メール未登録'}）へ確認メールを送信する</span>
+                      </label>
+                      <button type="submit" class="btn-pc">🚫 {p.name_snapshot} だけキャンセル</button>
+                    </form>
+                  </details>
+                )}
 
                 {r.status !== 'cancelled' && (
                   <details class="pay-details">
@@ -1067,4 +1293,31 @@ async function sendReservationCancelEmail(env: Env, args: {
     justify-self: start; font-family: var(--jp);
   }
   .btn-rc:hover { opacity: .9; }
+
+  .pc-details {
+    background: rgba(255,201,67,.05); border-radius: 8px;
+    padding: .5rem .8rem; margin-top: .5rem;
+    border: 1px solid rgba(255,201,67,.3);
+  }
+  .pc-details > summary {
+    cursor: pointer; font-size: .78rem; font-weight: 700; color: var(--orange-deep);
+    list-style: none; padding: .2rem 0;
+  }
+  .pc-details > summary::-webkit-details-marker { display: none; }
+  .pc-form { display: grid; gap: .5rem; margin-top: .5rem; }
+  .pc-form .chk {
+    display: flex; align-items: flex-start; gap: .4rem;
+    font-size: .76rem; color: var(--ink-2); cursor: pointer;
+    padding: .3rem 0;
+  }
+  .pc-form .chk input[type="checkbox"] {
+    margin: .15rem 0 0; flex-shrink: 0;
+  }
+  .btn-pc {
+    padding: .55rem 1rem; font-size: .82rem; font-weight: 800;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--orange-deep); color: #fff;
+    justify-self: start; font-family: var(--jp);
+  }
+  .btn-pc:hover { opacity: .9; }
 </style>
