@@ -241,7 +241,10 @@ if (searchQ.length >= 1) {
 <Base title={`${customer.name} — カルテ · ASMS`}>
   <main>
     <header class="hd">
-      <a class="back" href="/admin/customers">← 顧客一覧へ</a>
+      <div class="hd-nav">
+        <a class="back" href="javascript:history.back()">← 前の画面に戻る</a>
+        <a class="back back-alt" href="/admin/customers">顧客一覧へ</a>
+      </div>
       <div class="hd-name">
         <h1>{customer.name}</h1>
         <span class="hd-kana">（{customer.kana}）</span>
@@ -546,7 +549,10 @@ if (searchQ.length >= 1) {
 <style>
   main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
   .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
-  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  .hd-nav { display: flex; gap: .8rem; align-items: baseline; margin-bottom: .4rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; }
+  .back:hover { color: var(--ink); text-decoration: underline; }
+  .back-alt { font-size: .72rem; color: var(--ink-4); }
   .hd-name { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
   .hd-kana { color: var(--ink-3); font-size: .84rem; }

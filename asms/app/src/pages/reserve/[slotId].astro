@@ -702,12 +702,12 @@ const termsHtml = terms
 
     // Extra belt-and-suspenders touch handling for stubborn mobile
     // browsers where `touch-action: none` alone doesn't suppress
-    // scrolling (some Android WebView + old iOS Safari). Cancels the
-    // native scroll on any touch inside the signature area.
-    const sigWrap = document.getElementById('sigDrawn');
+    // scrolling. Attach to the CANVAS only, not the wrapper — the
+    // wrapper also contains the クリア button and preventDefault on
+    // its touchstart would swallow the button tap on touch devices.
     const suppress = (e: TouchEvent) => e.preventDefault();
-    sigWrap?.addEventListener('touchstart', suppress, { passive: false });
-    sigWrap?.addEventListener('touchmove', suppress, { passive: false });
+    canvas.addEventListener('touchstart', suppress, { passive: false });
+    canvas.addEventListener('touchmove', suppress, { passive: false });
 
     document.getElementById('sigClear')!.addEventListener('click', () => {
       const rect = canvas.getBoundingClientRect();
