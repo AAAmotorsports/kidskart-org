@@ -9,8 +9,58 @@ const supabase = getSupabaseAdmin(env);
 const url = new URL(Astro.request.url);
 const scope = url.searchParams.get('scope') ?? 'upcoming'; // upcoming | today | past
 const search = (url.searchParams.get('q') ?? '').trim();
+const dateFilter = (url.searchParams.get('date') ?? '').trim(); // YYYY-MM-DD
+const ymParam = (url.searchParams.get('ym') ?? '').trim();     // YYYY-MM (calendar month)
 
 const today = new Date().toISOString().slice(0, 10);
+
+// Determine which month to show in calendar (default = current month,
+// or the month containing dateFilter, or ymParam).
+function ymOf(iso: string) { return iso.slice(0, 7); }
+const now = new Date();
+const defaultYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+const calYm = /^\d{4}-\d{2}$/.test(ymParam) ? ymParam
+  : (dateFilter ? ymOf(dateFilter) : defaultYm);
+const [calYearS, calMonthS] = calYm.split('-');
+const calYear = parseInt(calYearS, 10);
+const calMonth = parseInt(calMonthS, 10);
+
+// Fetch reservation counts per day for the calendar month
+const monthStart = `${calYm}-01`;
+const nextMonth = new Date(calYear, calMonth, 1);
+const monthEndExcl = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
+
+const { data: monthResRows } = await supabase
+  .from('reservations')
+  .select('id, status, slots!inner(date)')
+  .neq('status', 'cancelled')
+  .gte('slots.date', monthStart)
+  .lt('slots.date', monthEndExcl);
+
+const dailyCount = new Map<string, number>();
+for (const r of (monthResRows ?? []) as any[]) {
+  const d = r.slots?.date;
+  if (!d) continue;
+  dailyCount.set(d, (dailyCount.get(d) ?? 0) + 1);
+}
+
+// Build calendar cells
+const firstDay = new Date(calYear, calMonth - 1, 1);
+const startPad = firstDay.getDay();
+const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+type CalCell = { date: string | null; day: number | null; count: number; isToday: boolean };
+const cells: CalCell[] = [];
+for (let i = 0; i < startPad; i++) cells.push({ date: null, day: null, count: 0, isToday: false });
+for (let d = 1; d <= daysInMonth; d++) {
+  const iso = `${calYm}-${String(d).padStart(2, '0')}`;
+  cells.push({ date: iso, day: d, count: dailyCount.get(iso) ?? 0, isToday: iso === today });
+}
+while (cells.length % 7 !== 0) cells.push({ date: null, day: null, count: 0, isToday: false });
+
+const prevMonthDate = new Date(calYear, calMonth - 2, 1);
+const nextMonthDate = new Date(calYear, calMonth, 1);
+const prevYm = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+const nextYm = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
 // Query reservations. Join to slot for date + course, guardian for name,
 // and count participants via a nested select.
@@ -49,6 +99,8 @@ if (search) {
     (r.reservation_participants ?? []).some((p: any) =>
       p.name_snapshot?.toLowerCase().includes(q))
   );
+} else if (dateFilter) {
+  reservations = reservations.filter((r: any) => (r.slots as any)?.date === dateFilter);
 } else if (scope === 'today') {
   reservations = reservations.filter((r: any) => (r.slots as any)?.date === today);
 } else if (scope === 'upcoming') {
@@ -82,11 +134,45 @@ const statusColor: Record<string, string> = {
       <p class="sub">全予約 · 直近200件</p>
     </header>
 
+    <section class="cal-card">
+      <div class="cal-hd">
+        <a class="cal-nav" href={`/admin/reservations?ym=${prevYm}`}>← {prevYm}</a>
+        <span class="cal-title">{calYear}年{calMonth}月</span>
+        <a class="cal-nav" href={`/admin/reservations?ym=${nextYm}`}>{nextYm} →</a>
+      </div>
+      <div class="cal-grid">
+        <div class="cal-dow dow-sun">日</div>
+        <div class="cal-dow">月</div>
+        <div class="cal-dow">火</div>
+        <div class="cal-dow">水</div>
+        <div class="cal-dow">木</div>
+        <div class="cal-dow">金</div>
+        <div class="cal-dow dow-sat">土</div>
+        {cells.map((c) => (
+          c.date ? (
+            <a class={`cal-cell ${c.count > 0 ? 'has-res' : ''} ${c.isToday ? 'today' : ''} ${dateFilter === c.date ? 'selected' : ''}`}
+               href={`/admin/reservations?date=${c.date}&ym=${calYm}`}>
+              <span class="cal-day">{c.day}</span>
+              {c.count > 0 && <span class="cal-count">{c.count}</span>}
+            </a>
+          ) : (
+            <div class="cal-cell empty"></div>
+          )
+        ))}
+      </div>
+      {dateFilter && (
+        <div class="cal-filter-info">
+          📌 <strong>{dateFilter}</strong> の予約を表示中
+          <a href={`/admin/reservations?scope=${scope}&ym=${calYm}`} class="cal-clear">絞込解除</a>
+        </div>
+      )}
+    </section>
+
     <div class="toolbar">
       <div class="scope-tabs">
-        <a class={`tab ${scope === 'upcoming' && !search ? 'active' : ''}`} href="/admin/reservations?scope=upcoming">📆 今後</a>
-        <a class={`tab ${scope === 'today' && !search ? 'active' : ''}`} href="/admin/reservations?scope=today">🎯 本日</a>
-        <a class={`tab ${scope === 'past' && !search ? 'active' : ''}`} href="/admin/reservations?scope=past">📜 過去</a>
+        <a class={`tab ${scope === 'upcoming' && !search && !dateFilter ? 'active' : ''}`} href="/admin/reservations?scope=upcoming">📆 今後</a>
+        <a class={`tab ${scope === 'today' && !search && !dateFilter ? 'active' : ''}`} href="/admin/reservations?scope=today">🎯 本日</a>
+        <a class={`tab ${scope === 'past' && !search && !dateFilter ? 'active' : ''}`} href="/admin/reservations?scope=past">📜 過去</a>
       </div>
       <form class="search" method="get">
         <input type="hidden" name="scope" value={scope} />
@@ -150,6 +236,82 @@ const statusColor: Record<string, string> = {
   .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
   h1 { margin: 0 0 .3rem; font-size: 1.5rem; font-weight: 800; }
   .sub { margin: 0; color: var(--ink-2); font-size: .82rem; }
+
+  .cal-card {
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 12px; padding: .8rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .cal-hd {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: .6rem;
+  }
+  .cal-title { font-weight: 800; font-size: .95rem; }
+  .cal-nav {
+    padding: .3rem .7rem; font-size: .74rem; font-weight: 700;
+    color: var(--sky-deep); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  .cal-nav:hover { background: var(--sky-mist); }
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cal-dow {
+    text-align: center; font-size: .68rem; font-weight: 700;
+    color: var(--ink-3); padding: .3rem 0;
+  }
+  .cal-dow.dow-sun { color: var(--rose-deep); }
+  .cal-dow.dow-sat { color: var(--sky-deep); }
+  .cal-cell {
+    aspect-ratio: 1 / 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--bg-2); border: 1px solid transparent;
+    border-radius: 6px; text-decoration: none; color: var(--ink);
+    font-size: .78rem;
+    position: relative;
+    transition: background .1s;
+  }
+  .cal-cell:hover { background: var(--bg-3); }
+  .cal-cell.empty { background: transparent; pointer-events: none; }
+  .cal-day { font-weight: 700; font-family: var(--mono); }
+  .cal-count {
+    position: absolute; bottom: 3px;
+    font-size: .58rem; font-weight: 800;
+    background: var(--sky); color: #fff;
+    padding: 1px 6px; border-radius: 100px;
+    font-family: var(--mono);
+  }
+  .cal-cell.has-res {
+    background: rgba(58,169,232,.08);
+    border-color: var(--sky-light);
+  }
+  .cal-cell.today {
+    background: rgba(255,201,67,.15);
+    border-color: var(--sun);
+  }
+  .cal-cell.today .cal-day { color: var(--orange-deep); }
+  .cal-cell.selected {
+    background: var(--sky) !important;
+    border-color: var(--sky-deep);
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(58,169,232,.3);
+  }
+  .cal-cell.selected .cal-day { color: #fff; }
+  .cal-cell.selected .cal-count { background: #fff; color: var(--sky-deep); }
+  .cal-filter-info {
+    margin-top: .6rem; padding: .5rem .7rem;
+    background: rgba(58,169,232,.08); border-radius: 6px;
+    font-size: .78rem; color: var(--ink);
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  }
+  .cal-clear {
+    margin-left: auto; padding: 2px 8px;
+    background: var(--bg); color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 100px;
+    font-size: .72rem; text-decoration: none;
+  }
+  .cal-clear:hover { color: var(--ink); }
 
   .toolbar {
     display: flex; flex-direction: column; gap: .6rem;

@@ -184,6 +184,51 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
       </div>
     </header>
 
+    <section class="info-card">
+      <details>
+        <summary>
+          <span class="ic-icon">📖</span>
+          <span class="ic-title">初めての方へ <small>（対象年齢・持ち物・服装・キャンセル規定）</small></span>
+          <span class="ic-chev">▼</span>
+        </summary>
+        <div class="ic-body">
+          <div class="ic-item">
+            <div class="ic-h">👶 対象年齢</div>
+            <div>4 歳以上（コースにより体格・経験条件あり）</div>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">👟 持ち物・服装</div>
+            <div><strong>運動靴のみ必須</strong>。つなぎ・ヘルメットは無料貸出。軍手は初回プレゼント、2 回目以降ご持参。</div>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">👨‍👩‍👧 保護者の同伴</div>
+            <div>原則、保護者の同伴が必要です。走行中は指定エリア外への立ち入り不可。</div>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">🌦 雨天時</div>
+            <div>小雨なら屋根のあるコース区画で実施。雷・台風・強風など安全に走行できないと判断した場合は当日朝までにキャンセル連絡します。</div>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">💰 キャンセル規定</div>
+            <ul>
+              <li><strong>前日 20:00 まで</strong>: キャンセル料なし</li>
+              <li><strong>前日 20:00 〜 開始 2 時間前</strong>: キャンセル料 50%</li>
+              <li><strong>開始 2 時間前以降・無連絡不参加</strong>: キャンセル料 100%</li>
+              <li>運営都合による中止の場合、キャンセル料なし</li>
+            </ul>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">💳 お支払い</div>
+            <div>現金・PayPay・クレジットカード対応。当日現地でお支払いください。</div>
+          </div>
+          <div class="ic-item">
+            <div class="ic-h">🏥 持病・アレルギー・配慮事項</div>
+            <div>安全のため事前にお知らせください。予約フォームの参加者情報欄にご記入いただけます。</div>
+          </div>
+        </div>
+      </details>
+    </section>
+
     <section class="courses">
       <div class="section-h">
         <h2>コース一覧</h2>
@@ -295,7 +340,9 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                           <a class="slot-link" href={`/reserve/${s.id}`}>
                             <span class="slot-time">{s.start_time.slice(0, 5)}</span>
                             <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
-                            <span class="slot-cap">残 {remaining}</span>
+                            {remaining <= 3 && (
+                              <span class="slot-cap slot-cap-low">残りわずか</span>
+                            )}
                             <span class="slot-arrow">→</span>
                           </a>
                         )}
@@ -471,6 +518,43 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   .sb-signout:hover { background: var(--bg-2); color: var(--ink); }
 
   section { margin-bottom: 2rem; }
+
+  .info-card {
+    background: linear-gradient(135deg, rgba(58,169,232,.06), rgba(58,169,232,.01));
+    border: 1px solid var(--sky-light); border-radius: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .info-card details { padding: 0; }
+  .info-card summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: center; gap: .5rem;
+    padding: .9rem 1rem;
+    font-weight: 700; color: var(--sky-deep);
+  }
+  .info-card summary::-webkit-details-marker { display: none; }
+  .ic-icon { font-size: 1.1rem; }
+  .ic-title { flex: 1; font-size: .9rem; }
+  .ic-title small { color: var(--ink-3); font-size: .72rem; font-weight: 400; }
+  .ic-chev { color: var(--ink-3); font-size: .7rem; transition: transform .15s; }
+  .info-card details[open] .ic-chev { transform: rotate(180deg); }
+  .ic-body {
+    padding: 0 1rem 1rem;
+    display: flex; flex-direction: column; gap: .8rem;
+  }
+  .ic-item {
+    padding: .6rem .8rem;
+    background: var(--bg); border-radius: 8px;
+    border: 1px solid var(--line);
+    font-size: .82rem; color: var(--ink);
+    line-height: 1.6;
+  }
+  .ic-h {
+    font-weight: 700; color: var(--sky-deep);
+    margin-bottom: .3rem; font-size: .84rem;
+  }
+  .ic-item ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+  .ic-item li { margin-bottom: .2rem; font-size: .78rem; }
+  .ic-item strong { color: var(--rose-deep); }
   .section-h { margin-bottom: 1rem; }
   .section-h h2 { margin: 0 0 .2rem; font-size: 1.1rem; font-weight: 800; letter-spacing: -.005em; }
   .section-h p { margin: 0; font-size: .78rem; color: var(--ink-3); }
@@ -695,6 +779,12 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   .slot-list li.is-full:hover { background: var(--bg-2); }
   .slot-list li.is-full .slot-link { cursor: not-allowed; }
   .slot-cap-full { color: var(--rose-deep) !important; }
+  .slot-cap-low {
+    color: var(--orange-deep) !important;
+    background: rgba(255,201,67,.2);
+    padding: 1px 8px; border-radius: 100px;
+    font-family: var(--jp);
+  }
   .slot-list li.is-full .slot-arrow { color: var(--ink-3); }
 
   /* Empty state */
