@@ -3,12 +3,14 @@ import Base from '@layouts/Base.astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import {
   ATTENDANCE_STATUSES,
+  PAYMENT_METHODS,
   SKILL_LEVELS,
   SYSTEM_ADMIN_UUID,
   ageOn,
   attendanceClass,
   attendanceLabel,
   jaDateLabel,
+  paymentLabel,
   skillLabel,
 } from '@lib/admin';
 
@@ -112,6 +114,40 @@ if (Astro.request.method === 'POST') {
     }
     const label = { open: '受付中', closed: '募集停止', cancelled: 'キャンセル' }[newStatus];
     return back(`枠を「${label}」に変更しました ${cascadeMsg}`);
+  }
+
+  if (op === 'record_payment') {
+    const reservationId = form.get('reservation_id') as string;
+    const method = form.get('payment_method') as string;
+    const amountRaw = (form.get('paid_amount') as string) || '';
+    const note = ((form.get('payment_note') as string) || '').trim() || null;
+    if (!reservationId) return back('', 'reservation_id は必須です');
+    if (!['cash','paypay','credit','other'].includes(method)) return back('', '無効な支払い方法です');
+    const amount = parseInt(amountRaw.replace(/[^\d]/g, ''), 10);
+    if (!Number.isFinite(amount) || amount < 0) return back('', '金額が不正です');
+
+    const { error } = await supabase
+      .from('reservations')
+      .update({
+        payment_method: method,
+        paid_amount: amount,
+        payment_note: note,
+        paid_at: new Date().toISOString(),
+      })
+      .eq('id', reservationId);
+    return error
+      ? back('', fmt(error))
+      : back(`会計を記録しました (${paymentLabel(method)} ¥${amount.toLocaleString('ja-JP')})`);
+  }
+
+  if (op === 'clear_payment') {
+    const reservationId = form.get('reservation_id') as string;
+    if (!reservationId) return back('', 'reservation_id は必須です');
+    const { error } = await supabase
+      .from('reservations')
+      .update({ payment_method: null, paid_at: null, paid_amount: null, payment_note: null })
+      .eq('id', reservationId);
+    return error ? back('', fmt(error)) : back('会計記録を取り消しました');
   }
 
   if (op === 'cancel_reservation') {
@@ -230,6 +266,7 @@ const { data: reservations } = await supabase
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount,
+    payment_method, paid_at, paid_amount, payment_note,
     guardians(name, kana, phone, email),
     reservation_participants(id, customer_id, name_snapshot, kana_snapshot,
                              birth_date_snapshot, age_at_booking, height_cm,
@@ -618,6 +655,60 @@ async function sendReservationCancelEmail(env: Env, args: {
                 </details>
 
                 {r.status !== 'cancelled' && (
+                  <details class="pay-details">
+                    <summary>
+                      💴 会計を記録
+                      {r.payment_method
+                        ? <span class="pay-status pay-paid">✅ {paymentLabel(r.payment_method)} ¥{(r.paid_amount ?? 0).toLocaleString('ja-JP')}</span>
+                        : <span class="pay-status pay-unpaid">未会計</span>}
+                    </summary>
+                    <form method="post" class="pay-form">
+                      <input type="hidden" name="op" value="record_payment" />
+                      <input type="hidden" name="reservation_id" value={r.id} />
+                      <div class="pay-method-grid">
+                        {PAYMENT_METHODS.map((m) => (
+                          <label class={`pay-method ${r.payment_method === m.code ? 'active' : ''}`}>
+                            <input type="radio" name="payment_method" value={m.code}
+                                   checked={r.payment_method === m.code}
+                                   required />
+                            <span class="pay-emoji">{m.emoji}</span>
+                            <span class="pay-name">{m.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div class="pay-amount-row">
+                        <label class="field">
+                          <span>受領金額 (円)</span>
+                          <input type="number" name="paid_amount" min="0" step="1"
+                                 value={r.paid_amount ?? r.total_amount ?? 0}
+                                 required inputmode="numeric" />
+                        </label>
+                        <span class="pay-hint">予定額 ¥{(r.total_amount ?? 0).toLocaleString('ja-JP')}</span>
+                      </div>
+                      <label class="field">
+                        <span>備考 (任意)</span>
+                        <input type="text" name="payment_note" maxlength="200"
+                               value={r.payment_note ?? ''}
+                               placeholder="領収書番号、割引理由など" />
+                      </label>
+                      <div class="pay-actions">
+                        <button type="submit" class="btn btn-primary">
+                          {r.payment_method ? '会計を更新' : '会計を記録'}
+                        </button>
+                      </div>
+                    </form>
+                    {r.payment_method && (
+                      <form method="post" class="pay-clear-form"
+                            onsubmit="return confirm('会計記録を取り消しますか？');">
+                        <input type="hidden" name="op" value="clear_payment" />
+                        <input type="hidden" name="reservation_id" value={r.id} />
+                        <button type="submit" class="btn-pay-clear">記録を取消</button>
+                      </form>
+                    )}
+                  </details>
+                )}
+
+                {r.status !== 'cancelled' && (
                   <details class="rc-details">
                     <summary>🚫 この予約全体をキャンセル（保護者へメール通知）</summary>
                     <form method="post" class="rc-form"
@@ -892,6 +983,63 @@ async function sendReservationCancelEmail(env: Env, args: {
     background: rgba(229,85,111,.06); border: 1px solid rgba(229,85,111,.25);
     border-radius: 6px; font-size: .74rem; color: var(--ink-2);
   }
+
+  .pay-details {
+    background: rgba(255,201,67,.06); border-radius: 8px;
+    padding: .5rem .8rem; margin-top: .5rem;
+    border: 1px solid rgba(255,201,67,.3);
+  }
+  .pay-details > summary {
+    cursor: pointer; font-size: .82rem; font-weight: 700; color: var(--orange-deep);
+    list-style: none; padding: .2rem 0;
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  }
+  .pay-details > summary::-webkit-details-marker { display: none; }
+  .pay-status {
+    font-family: var(--mono); font-size: .74rem; font-weight: 800;
+    padding: 2px 8px; border-radius: 100px; margin-left: auto;
+  }
+  .pay-paid { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .pay-unpaid { background: var(--bg-3); color: var(--ink-3); }
+
+  .pay-form { display: grid; gap: .6rem; margin-top: .6rem; }
+  .pay-method-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem;
+  }
+  .pay-method {
+    display: flex; flex-direction: column; align-items: center; gap: .1rem;
+    padding: .5rem .2rem; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--bg); cursor: pointer;
+    font-size: .74rem; font-weight: 700; color: var(--ink-2);
+    transition: all .1s;
+  }
+  .pay-method:hover { background: var(--bg-2); }
+  .pay-method.active {
+    background: var(--sun); color: #fff; border-color: var(--orange-deep);
+  }
+  .pay-method input[type="radio"] {
+    position: absolute; opacity: 0; width: 0; height: 0;
+  }
+  .pay-emoji { font-size: 1.3rem; }
+  .pay-name { font-size: .72rem; }
+
+  .pay-amount-row {
+    display: flex; align-items: flex-end; gap: .5rem;
+  }
+  .pay-amount-row .field { flex: 1; }
+  .pay-hint {
+    font-size: .72rem; color: var(--ink-3);
+    padding-bottom: .55rem; white-space: nowrap;
+  }
+  .pay-actions { display: flex; gap: .5rem; }
+  .pay-clear-form { margin: .4rem 0 0; text-align: right; }
+  .btn-pay-clear {
+    padding: .35rem .8rem; font-size: .72rem; font-weight: 700;
+    border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+    background: var(--bg-2); color: var(--ink-3);
+    font-family: var(--jp);
+  }
+  .btn-pay-clear:hover { background: var(--bg-3); color: var(--ink); }
 
   .rc-details {
     background: rgba(229,85,111,.05); border-radius: 8px;

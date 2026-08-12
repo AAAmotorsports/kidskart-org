@@ -58,6 +58,24 @@ export function ageOn(birthDate: string, onDate?: string): number {
   return Math.max(0, a);
 }
 
+export const PAYMENT_METHODS = [
+  { code: 'cash',   label: '現金',   emoji: '💴' },
+  { code: 'paypay', label: 'PayPay', emoji: '📱' },
+  { code: 'credit', label: 'クレカ', emoji: '💳' },
+  { code: 'other',  label: 'その他', emoji: '📝' },
+] as const;
+
+export type PaymentMethodCode = typeof PAYMENT_METHODS[number]['code'];
+
+export function paymentLabel(code: string | null | undefined): string {
+  const found = PAYMENT_METHODS.find((p) => p.code === code);
+  return found ? `${found.emoji} ${found.label}` : '未会計';
+}
+
+export function paymentShort(code: string | null | undefined): string {
+  return PAYMENT_METHODS.find((p) => p.code === code)?.label ?? '—';
+}
+
 export function formatMs(ms: number): string {
   if (ms == null || Number.isNaN(ms)) return '—';
   const total = Math.max(0, ms);

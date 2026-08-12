@@ -13,13 +13,14 @@
 
 ## Phase 2 想定優先順位（運用フィードバックで随時見直し）
 
-1. **二重予約防止を DB 側で確実にする**（現状 API 内チェックのみで TOCTOU レースあり）
-2. **予約作成をできるだけトランザクション化**（現状は逐次 INSERT で中途失敗時に orphan 発生可能性）
-3. キャンセル自動メール（`cancel_token` は既に生成済み）
-4. Turnstile CAPTCHA（悪戯予約対策）
+1. ~~**二重予約防止を DB 側で確実にする**~~ ✅ `create_reservation_atomic` 実装済
+2. ~~**予約作成をトランザクション化**~~ ✅ 同上で RPC 化済
+3. ~~キャンセル自動メール~~ ✅ 顧客側 / スロット全体 / 管理個別 の 3 系統実装済
+4. ~~Turnstile CAPTCHA~~ ✅ graceful degradation で実装済（enable は Dashboard 設定次第）
 5. 電子署名画像を R2 upload へ移行（現状 DB TEXT に base64 格納）
 6. Supabase Auth Magic Link（別端末リピーター、現状 localStorage で緩和済み）
-7. コース設定編集画面
+7. ~~コース設定編集画面~~ ✅ `/admin/courses` 実装済
+8. ~~会計管理（支払い方法記録 + 月次集計）~~ ✅ `/admin/sales` + slot 詳細に記録 UI 実装済
 
 Magic Link は localStorage プリフィルで日常のリピーターは楽になっているので、急がなくて良い。
 
