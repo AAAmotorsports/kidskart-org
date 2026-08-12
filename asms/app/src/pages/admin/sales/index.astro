@@ -11,6 +11,7 @@ const supabase = getSupabaseAdmin(env);
 // ============================================================================
 const url = new URL(Astro.request.url);
 const mode = (url.searchParams.get('mode') || 'month') as 'month' | 'year' | 'range';
+const excludeRain = url.searchParams.get('exclude_rain') === '1';
 const now = new Date();
 
 function pad2(n: number) { return String(n).padStart(2, '0'); }
@@ -113,7 +114,7 @@ async function fetchParticipations(fromDate: string, toDateExcl: string) {
     .from('reservations')
     .select(`
       id, status, total_amount, price_tier,
-      slots!inner(date, courses(code, name)),
+      slots!inner(date, weather_condition, temperature_c, courses(code, name)),
       reservation_participants(id, gender_snapshot, age_at_booking, customer_id, attendance_status)
     `)
     .neq('status', 'cancelled')
@@ -122,12 +123,21 @@ async function fetchParticipations(fromDate: string, toDateExcl: string) {
   return (data ?? []) as any[];
 }
 
-const [paidRows, yoyPaidRows, partRows, yoyPartRows] = await Promise.all([
+const rainConds = new Set(['rain', 'cloudy_then_rain', 'rain_then_cloudy']);
+function applyRainFilter(rows: any[]) {
+  if (!excludeRain) return rows;
+  return rows.filter((r) => !rainConds.has(r.slots?.weather_condition));
+}
+
+const [paidRows, yoyPaidRows, partRowsRaw, yoyPartRowsRaw] = await Promise.all([
   fetchPaidRows(startIso, endIso),
   fetchPaidRows(yoyStartIso, yoyEndIso),
   fetchParticipations(startDate, endDateExcl),
   fetchParticipations(yoyStartDate, yoyEndDateExcl),
 ]);
+const partRows = applyRainFilter(partRowsRaw);
+const yoyPartRows = applyRainFilter(yoyPartRowsRaw);
+const excludedDaysCount = partRowsRaw.length - partRows.length;
 
 // ============================================================================
 // クエリ 3: 顧客リピート funnel (全期間・現時点スナップショット)
@@ -278,6 +288,8 @@ function buildUrl(next: Record<string, string>) {
     q.set('from', next.from ?? rangeFromParam ?? defaultFrom);
     q.set('to', next.to ?? rangeToParam ?? defaultTo);
   }
+  const rain = next.exclude_rain ?? (excludeRain ? '1' : '');
+  if (rain === '1') q.set('exclude_rain', '1');
   return `/admin/sales?${q.toString()}`;
 }
 ---
@@ -299,6 +311,7 @@ function buildUrl(next: Record<string, string>) {
       {mode === 'month' && (
         <form method="get" class="pf">
           <input type="hidden" name="mode" value="month" />
+          {excludeRain && <input type="hidden" name="exclude_rain" value="1" />}
           <input type="month" name="ym" value={ymParam || defaultYm} />
           <button type="submit" class="btn-jump">表示</button>
         </form>
@@ -306,6 +319,7 @@ function buildUrl(next: Record<string, string>) {
       {mode === 'year' && (
         <form method="get" class="pf">
           <input type="hidden" name="mode" value="year" />
+          {excludeRain && <input type="hidden" name="exclude_rain" value="1" />}
           <input type="number" name="y" min="2020" max="2100" value={yParam || defaultY} style="width:6em" />
           <button type="submit" class="btn-jump">表示</button>
         </form>
@@ -313,11 +327,24 @@ function buildUrl(next: Record<string, string>) {
       {mode === 'range' && (
         <form method="get" class="pf">
           <input type="hidden" name="mode" value="range" />
+          {excludeRain && <input type="hidden" name="exclude_rain" value="1" />}
           <input type="date" name="from" value={rangeFromParam || defaultFrom} />
           <span>〜</span>
           <input type="date" name="to" value={rangeToParam || defaultTo} />
           <button type="submit" class="btn-jump">表示</button>
         </form>
+      )}
+    </section>
+
+    <section class="rain-filter">
+      {excludeRain ? (
+        <a class="rf-active" href={buildUrl({ exclude_rain: '' })}>
+          ☂️ 雨の日を除外中 ({excludedDaysCount} 件) · <span class="rf-clear">解除</span>
+        </a>
+      ) : (
+        <a class="rf-toggle" href={buildUrl({ exclude_rain: '1' })}>
+          ☂️ 雨の日を除外して集計する (晴天時の平均参加を見る)
+        </a>
       )}
     </section>
 
@@ -576,6 +603,24 @@ function buildUrl(next: Record<string, string>) {
     border: none; border-radius: 6px; cursor: pointer;
     background: var(--sky); color: #fff;
   }
+
+  .rain-filter { margin: 0 0 1rem; }
+  .rf-toggle {
+    display: inline-block; padding: .4rem .9rem;
+    font-size: .78rem; font-weight: 700;
+    background: rgba(58,169,232,.08); color: var(--sky-deep);
+    border: 1px dashed var(--sky); border-radius: 100px;
+    text-decoration: none;
+  }
+  .rf-toggle:hover { background: rgba(58,169,232,.15); }
+  .rf-active {
+    display: inline-block; padding: .4rem .9rem;
+    font-size: .78rem; font-weight: 700;
+    background: rgba(255,201,67,.15); color: var(--orange-deep);
+    border: 1px solid var(--sun); border-radius: 100px;
+    text-decoration: none;
+  }
+  .rf-clear { text-decoration: underline; }
 
   .hero {
     background: linear-gradient(135deg, var(--sun), var(--orange-deep));
