@@ -239,8 +239,8 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           <div class={`course c-${c.code} ${activeCourse?.code === c.code ? 'active' : ''}`}>
             <div class="course-head">
               <div class="course-name">
-                {c.code === 'taiken' && <span class="course-star">⭐️ 初めての方はこちら</span>}
                 <span class="course-name-text">{c.name}</span>
+                {c.code === 'taiken' && <span class="course-star">⭐️ 初めての方はこちら</span>}
                 {c.vehicle !== 'mini_default' && (
                   <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
                 )}
@@ -615,10 +615,6 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     border-color: var(--sky);
     box-shadow: 0 0 0 3px rgba(58,169,232,.15);
   }
-  .course.c-taiken {
-    background: linear-gradient(135deg, rgba(58,169,232,.06), rgba(58,169,232,.01));
-    border-left-width: 5px;
-  }
   .course-head { margin-bottom: .3rem; }
   .course-active {
     font-size: .64rem; font-weight: 800;
@@ -627,15 +623,12 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     margin-left: auto;
   }
   .course-star {
-    display: inline-block; width: 100%;
-    font-size: .72rem; font-weight: 800;
+    font-size: .66rem; font-weight: 800;
     color: var(--orange-deep);
-    background: linear-gradient(135deg, rgba(255,201,67,.25), rgba(255,138,61,.15));
+    background: rgba(255,201,67,.2);
     border: 1px solid var(--sun);
-    padding: 3px 10px; border-radius: 100px;
-    margin-bottom: .3rem;
-    text-align: center;
-    letter-spacing: .02em;
+    padding: 2px 8px; border-radius: 100px;
+    white-space: nowrap;
   }
   .course-name {
     font-weight: 800;
