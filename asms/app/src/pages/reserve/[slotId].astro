@@ -186,6 +186,12 @@ const termsHtml = terms
               <a class="btn btn-ghost" href={signinUrl}>メールでサインイン</a>
             </div>
 
+            <div id="signedInEmpty" hidden class="signedin-empty">
+              <div class="se-h">🔑 サインイン中 <span id="seEmail" class="se-email"></span></div>
+              <p class="se-hint">このアカウントで過去の予約履歴が見つかりませんでした。フォームを入力してご予約ください。</p>
+              <button type="button" id="seSignOut" class="btn-signout-small">サインアウト</button>
+            </div>
+
             <div class="field">
               <label>参加人数</label>
               <div class="count-picker">
@@ -725,6 +731,9 @@ const termsHtml = terms
     const prefillHeading = document.getElementById('prefillHeading');
     const prefillHint = document.getElementById('prefillHint');
     const signinInvite = document.getElementById('signinInvite');
+    const signedInEmpty = document.getElementById('signedInEmpty');
+    const seEmail = document.getElementById('seEmail');
+    const seSignOut = document.getElementById('seSignOut') as HTMLButtonElement | null;
 
     let savedPrefill: any = null;
     let prefillSource: 'local' | 'auth' = 'local';
@@ -749,7 +758,7 @@ const termsHtml = terms
         return;
       }
       try {
-        const { getAuthClient, currentSession } = await import('@lib/authWrapper');
+        const { getAuthClient, currentSession, signOut } = await import('@lib/authWrapper');
         const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
         const session = await currentSession(client);
         if (!session) {
@@ -769,10 +778,22 @@ const termsHtml = terms
             participants: data.participants ?? [],
           };
           prefillSource = 'auth';
-          if (prefillHeading) prefillHeading.textContent = '🔑 サインイン中: 前回のご予約情報を呼び出せます';
+          const emailShort = session.user?.email ?? '';
+          if (prefillHeading) prefillHeading.textContent = `🔑 サインイン中 (${emailShort}): 前回のご予約情報を呼び出せます`;
           if (prefillHint) prefillHint.textContent = '※ サインイン済みアカウントの前回情報です。署名は毎回必要です。';
           if (prefillPanel) prefillPanel.hidden = false;
           if (signinInvite) signinInvite.hidden = true;
+        } else {
+          // Signed in but no matching guardian in DB (never booked with this email).
+          // Show a clear empty-state panel so the user knows sign-in worked.
+          if (seEmail) seEmail.textContent = `(${session.user?.email ?? ''})`;
+          if (signedInEmpty) signedInEmpty.hidden = false;
+          if (signinInvite) signinInvite.hidden = true;
+          seSignOut?.addEventListener('click', async () => {
+            if (!confirm('サインアウトしますか？')) return;
+            await signOut(client);
+            location.reload();
+          });
         }
       } catch (e) {
         console.warn('[prefill] auth fetch failed', e);
@@ -1242,6 +1263,27 @@ const termsHtml = terms
     font-size: .74rem; color: var(--ink-2); margin: 0 0 .6rem;
   }
   .signin-invite .btn { margin: 0; padding: .5rem 1rem; font-size: .8rem; }
+
+  .signedin-empty {
+    background: linear-gradient(135deg, rgba(164,214,94,.12), rgba(164,214,94,.02));
+    border: 1px solid var(--lime-deep);
+    border-radius: 10px;
+    padding: .8rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .se-h {
+    font-weight: 700; font-size: .86rem; color: var(--lime-deep);
+    margin-bottom: .3rem;
+  }
+  .se-email { font-family: var(--mono); font-size: .78rem; opacity: .85; }
+  .se-hint { font-size: .78rem; color: var(--ink-2); margin: 0 0 .5rem; }
+  .btn-signout-small {
+    padding: .35rem .8rem; font-size: .72rem; font-weight: 700;
+    background: transparent; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 100px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .btn-signout-small:hover { background: var(--bg-2); color: var(--ink); }
   .pp-h {
     font-weight: 700; font-size: .88rem; color: var(--sky-deep);
     margin-bottom: .6rem;

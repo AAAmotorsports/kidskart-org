@@ -165,6 +165,10 @@ function vehicleLabel(v: string): string {
 }
 
 const visSortedDates = Array.from(visByDate.keys()).sort();
+
+// Magic Link auth config for client-side sign-in state display
+const supabaseUrl = env.PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
 ---
 <Base title="予約 — 福岡キッズカートアカデミー">
   <main>
@@ -172,7 +176,12 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
       <a class="back" href="/">← ホーム</a>
       <h1>予約 <span class="beta">β</span></h1>
       <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
-      <a class="signin-link" href="/reserve/signin?next=/reserve/">📧 別端末でご利用の方はこちら</a>
+      <a id="signinLink" class="signin-link" href="/reserve/signin?next=/reserve/">📧 別端末でご利用の方はこちら</a>
+      <div id="signedInBadge" class="signedin-badge" hidden>
+        <span class="sb-icon">🔑</span>
+        <span class="sb-text">サインイン中: <span id="signedInEmail" class="sb-email"></span></span>
+        <button type="button" id="signOutBtn" class="sb-signout">サインアウト</button>
+      </div>
     </header>
 
     <section class="courses">
@@ -350,6 +359,47 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
   </main>
 </Base>
 
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey }}>
+  window.__ASMS_AUTH_CFG = { supabaseUrl, supabaseAnonKey };
+</script>
+
+<script>
+  // Show signed-in badge and hide the "sign in" invite when a Supabase
+  // session exists. Fast-path localStorage check avoids loading the
+  // supabase-js bundle on every calendar view.
+  const signinLink = document.getElementById('signinLink');
+  const signedInBadge = document.getElementById('signedInBadge');
+  const signedInEmail = document.getElementById('signedInEmail');
+  const signOutBtn = document.getElementById('signOutBtn');
+
+  const hasSessionHint = (() => {
+    try { return !!localStorage.getItem('asms:auth'); } catch { return false; }
+  })();
+
+  if (hasSessionHint) {
+    (async () => {
+      const cfg = (window as any).__ASMS_AUTH_CFG;
+      if (!cfg?.supabaseUrl) return;
+      try {
+        const { getAuthClient, currentSession, signOut } = await import('@lib/authWrapper');
+        const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        const session = await currentSession(client);
+        if (!session?.user?.email) return;
+        if (signedInEmail) signedInEmail.textContent = session.user.email;
+        if (signinLink) signinLink.hidden = true;
+        if (signedInBadge) signedInBadge.hidden = false;
+        signOutBtn?.addEventListener('click', async () => {
+          if (!confirm('サインアウトしますか？')) return;
+          await signOut(client);
+          location.reload();
+        });
+      } catch (e) {
+        console.warn('[signin-state] failed', e);
+      }
+    })();
+  }
+</script>
+
 <style>
   main {
     max-width: 640px;
@@ -395,6 +445,25 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
     text-decoration: none;
   }
   .signin-link:hover { background: var(--sun); color: #fff; }
+
+  .signedin-badge {
+    display: inline-flex; align-items: center; gap: .4rem; margin-top: .6rem;
+    padding: .4rem .9rem; font-size: .78rem; font-weight: 700;
+    background: rgba(164,214,94,.15); color: var(--lime-deep);
+    border: 1px solid var(--lime-deep); border-radius: 100px;
+    flex-wrap: wrap;
+  }
+  .sb-icon { font-size: .95rem; }
+  .sb-text { font-family: var(--jp); }
+  .sb-email { font-family: var(--mono); font-weight: 800; }
+  .sb-signout {
+    margin-left: .3rem; padding: .15rem .55rem;
+    font-size: .68rem; font-weight: 700;
+    background: transparent; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 100px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .sb-signout:hover { background: var(--bg-2); color: var(--ink); }
 
   section { margin-bottom: 2rem; }
   .section-h { margin-bottom: 1rem; }
