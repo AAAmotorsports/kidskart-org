@@ -64,9 +64,10 @@ const next = url.searchParams.get('next') || '/reserve/';
       console.warn('[callback] link exception', e);
     }
 
-    if (msg) msg.textContent = '✅ サインイン完了。移動しています...';
-    // Small delay so user sees success before redirect
-    setTimeout(() => { window.location.href = cfg.next || '/reserve/'; }, 400);
+    const email = session.user?.email ?? '';
+    if (msg) msg.innerHTML = `✅ サインイン完了<br><span style="font-family:monospace;font-size:.85rem;color:#7d8fa0">${email}</span><br>移動しています...`;
+    // Slightly longer delay so user reads their signed-in email
+    setTimeout(() => { window.location.href = cfg.next || '/reserve/'; }, 900);
   })();
 </script>
 
