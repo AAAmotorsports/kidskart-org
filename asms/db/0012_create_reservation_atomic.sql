@@ -64,6 +64,7 @@ DECLARE
   v_customer_id     UUID;
   v_reservation_id  UUID;
   v_reservation_num TEXT;
+  v_cancel_token    TEXT;
   v_term            RECORD;
   v_participant     JSONB;
   v_per_price       INT;
@@ -174,7 +175,8 @@ BEGIN
   VALUES (in_slot_id, v_guardian_id, v_status,
           CASE WHEN in_price_tier = 'member' THEN 'member'::price_tier ELSE 'regular'::price_tier END,
           v_total)
-  RETURNING id, reservation_number INTO v_reservation_id, v_reservation_num;
+  RETURNING id, reservation_number, cancel_token
+    INTO v_reservation_id, v_reservation_num, v_cancel_token;
 
   -- ---- For each participant: dedup customer + insert snapshot ----------
   FOR v_i IN 0 .. v_add_count - 1 LOOP
@@ -257,6 +259,7 @@ BEGIN
     'ok', true,
     'reservation_id', v_reservation_id,
     'reservation_number', v_reservation_num,
+    'cancel_token', v_cancel_token,
     'status', v_status::TEXT,
     'total_amount', v_total,
     'course_name', v_course.name,

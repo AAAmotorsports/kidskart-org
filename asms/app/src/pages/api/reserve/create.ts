@@ -138,6 +138,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     priceTier: price_tier,
     origin: `${apiUrl.protocol}//${apiUrl.host}`,
     reservationId: result.reservation_id,
+    cancelToken: result.cancel_token,
   }).catch((e) => console.warn('[reserve/create] email send failed:', e));
 
   const adminEmailPromise = sendAdminNotification(env, {
@@ -189,6 +190,7 @@ async function sendConfirmationEmail(env: Env, args: {
   priceTier: string;
   origin: string;
   reservationId: string;
+  cancelToken?: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
   const envKeys = Object.keys(env).sort();
@@ -220,6 +222,7 @@ async function sendConfirmationEmail(env: Env, args: {
     : `【予約確定】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`;
 
   const detailUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
+  const cancelUrl = args.cancelToken ? `${args.origin}/reserve/cancel/${args.cancelToken}` : '';
 
   const text = [
     `${args.guardianName} 様`,
@@ -241,6 +244,7 @@ async function sendConfirmationEmail(env: Env, args: {
     `▼ 予約詳細ページ`,
     detailUrl,
     '',
+    ...(cancelUrl ? [`▼ キャンセルはこちら`, cancelUrl, ''] : []),
     isPending
       ? '当社確認のうえ、あらためて確定通知をお送りします。'
       : '当日は運動靴でお越しください。つなぎ・ヘルメットは当社で無料貸出します（長袖長ズボン不要）。軍手は初回のみプレゼント、2 回目以降はご持参をお願いします。',
@@ -272,6 +276,7 @@ async function sendConfirmationEmail(env: Env, args: {
     <p style="text-align:center;margin:1rem 0">
       <a href="${detailUrl}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">予約詳細を開く</a>
     </p>
+    ${cancelUrl ? `<p style="text-align:center;margin:.5rem 0 1rem;font-size:.78rem"><a href="${cancelUrl}" style="color:#c73854;text-decoration:none;font-weight:700">🚫 予約をキャンセルする</a></p>` : ''}
     ${isPending
       ? '<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">当社にて内容を確認のうえ、あらためて確定通知をお送りします。</p>'
       : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>（ご持参ください）</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>（長袖長ズボン不要）</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>'}
