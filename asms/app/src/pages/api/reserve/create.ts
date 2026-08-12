@@ -285,7 +285,6 @@ async function sendConfirmationEmail(env: Env, args: {
     '▼ 🔔 開催のお知らせを受け取る',
     '新しいスケジュールが公開されたら通知を受け取れます:',
     '  💬 LINE 友達追加: https://line.me/R/ti/p/@kidskart',
-    '  ✉️ メール登録: info@kidskart.org (件名「開催通知希望」)',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '福岡キッズカートアカデミー / エーワンサーキット',
@@ -323,11 +322,8 @@ async function sendConfirmationEmail(env: Env, args: {
     <div style="background:linear-gradient(135deg,rgba(6,199,85,.06),rgba(6,199,85,.02));border:1px solid #06c755;border-radius:10px;padding:.9rem;margin:1rem 0;text-align:center">
       <div style="font-weight:800;color:#06c755;font-size:.9rem;margin-bottom:.4rem">🔔 開催のお知らせを受け取る</div>
       <p style="font-size:.76rem;color:#3d556f;margin:0 0 .7rem">新しいスケジュールが公開されたら通知を受け取れます</p>
-      <p style="margin:0 0 .4rem">
+      <p style="margin:0">
         <a href="https://line.me/R/ti/p/@kidskart" style="display:inline-block;padding:.55rem 1.1rem;background:#06c755;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">💬 LINE 友達追加</a>
-      </p>
-      <p style="margin:0;font-size:.72rem;color:#7d8fa0">
-        メール派の方は <a href="mailto:info@kidskart.org?subject=%E9%96%8B%E5%82%AC%E9%80%9A%E7%9F%A5%E5%B8%8C%E6%9C%9B" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> に「開催通知希望」で送信
       </p>
     </div>
 
