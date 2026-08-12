@@ -36,6 +36,11 @@ const {
     }
     *{box-sizing:border-box}
     html,body{margin:0;padding:0}
+    /* The HTML `hidden` attribute must always win over per-component
+       display overrides. Without this, a rule like `.badge { display: inline-flex }`
+       silently un-hides `<div class="badge" hidden>`, which caused a
+       real bug where a signed-out user saw a stale "signed in" badge. */
+    [hidden]{display:none !important}
     body{
       font-family:var(--jp); background:var(--bg-2); color:var(--ink);
       line-height:1.65; -webkit-font-smoothing:antialiased;
