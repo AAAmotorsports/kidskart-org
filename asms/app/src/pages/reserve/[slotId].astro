@@ -60,6 +60,14 @@ const safetyItems = (terms?.safety_items as Array<{ id: number; text: string }>)
 const turnstileSiteKey = env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
 const turnstileEnabled = !!turnstileSiteKey;
 
+// Magic Link auth config (Phase 2 #6): passed to client-side JS so it
+// can (a) detect an existing auth session and pull prefill from
+// /api/me/prefill, and (b) send users to /reserve/signin?next= for
+// cross-device sign-in.
+const supabaseUrl = env.PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
+const signinUrl = `/reserve/signin?next=${encodeURIComponent(Astro.request.url ? new URL(Astro.request.url).pathname : '/reserve/')}`;
+
 // Tiny markdown → HTML for the seeded terms. Covers only what the seed
 // uses: ATX headings, unordered lists, bold, paragraphs. Escapes HTML
 // input, so it's safe to feed the raw terms body straight in.
@@ -164,12 +172,18 @@ const termsHtml = terms
             <h2>1. 予約内容の確認</h2>
 
             <div id="prefillPanel" hidden class="prefill-panel">
-              <div class="pp-h">🔁 このブラウザに前回のご予約情報が保存されています</div>
+              <div class="pp-h" id="prefillHeading">🔁 このブラウザに前回のご予約情報が保存されています</div>
               <div class="pp-actions">
                 <button type="button" id="prefillApply" class="btn btn-primary">前回の情報を使う</button>
                 <button type="button" id="prefillClear" class="btn btn-ghost">情報を削除</button>
               </div>
-              <p class="hint">※ この端末のブラウザ内にのみ保存されています。他の端末や他人のブラウザからは見えません。署名は毎回必要です。</p>
+              <p class="hint" id="prefillHint">※ この端末のブラウザ内にのみ保存されています。他の端末や他人のブラウザからは見えません。署名は毎回必要です。</p>
+            </div>
+
+            <div id="signinInvite" hidden class="signin-invite">
+              <div class="si-h">📧 別端末（機種変更・PC 等）でご利用の方</div>
+              <p class="si-hint">メールでサインインすると、前回の予約情報を呼び出せます。</p>
+              <a class="btn btn-ghost" href={signinUrl}>メールでサインイン</a>
             </div>
 
             <div class="field">
@@ -465,6 +479,10 @@ const termsHtml = terms
   </main>
 </Base>
 
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey }}>
+  window.__ASMS_AUTH_CFG = { supabaseUrl, supabaseAnonKey };
+</script>
+
 <script>
   const form = document.getElementById('wz') as HTMLFormElement | null;
   if (form) initWizard(form);
@@ -692,20 +710,74 @@ const termsHtml = terms
       sigDrawn = false;
     });
 
-    // localStorage-based repeat-customer prefill. Zero server calls,
-    // zero privacy leakage risk — data stays on the user's own device.
-    // Saved on successful submission (see submit handler below).
+    // Prefill has two sources with the same shape:
+    //   1. localStorage 'asms:lastReservation' — set on successful
+    //      submission on this device (fast, zero server calls).
+    //   2. Server /api/me/prefill — if the user is signed in via
+    //      Magic Link (Supabase Auth), pull their guardian info from
+    //      the DB. This is the cross-device path.
+    // Whichever is present wins; if both, server takes precedence
+    // (a signed-in user's DB state is authoritative).
     const LS_KEY = 'asms:lastReservation';
     const prefillPanel = document.getElementById('prefillPanel');
     const prefillApply = document.getElementById('prefillApply') as HTMLButtonElement | null;
     const prefillClear = document.getElementById('prefillClear') as HTMLButtonElement | null;
+    const prefillHeading = document.getElementById('prefillHeading');
+    const prefillHint = document.getElementById('prefillHint');
+    const signinInvite = document.getElementById('signinInvite');
 
     let savedPrefill: any = null;
+    let prefillSource: 'local' | 'auth' = 'local';
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (raw) savedPrefill = JSON.parse(raw);
     } catch {}
     if (savedPrefill && prefillPanel) prefillPanel.hidden = false;
+
+    // Async: check Supabase auth session and, if signed in, fetch
+    // server-side prefill. If found, override local prefill.
+    (async () => {
+      const cfg = (window as any).__ASMS_AUTH_CFG;
+      // Fast path: if there's no auth session in localStorage, skip
+      // loading the 217KB supabase-js bundle entirely. Storage key
+      // matches authWrapper's `storageKey: 'asms:auth'` config.
+      const hasSessionHint = (() => {
+        try { return !!localStorage.getItem('asms:auth'); } catch { return false; }
+      })();
+      if (!cfg?.supabaseUrl || !hasSessionHint) {
+        if (!savedPrefill && signinInvite) signinInvite.hidden = false;
+        return;
+      }
+      try {
+        const { getAuthClient, currentSession } = await import('@lib/authWrapper');
+        const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        const session = await currentSession(client);
+        if (!session) {
+          if (!savedPrefill && signinInvite) signinInvite.hidden = false;
+          return;
+        }
+        const r = await fetch('/api/me/prefill', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data?.ok && data.guardian) {
+          savedPrefill = {
+            guardian: data.guardian,
+            sameAsGuardian: data.sameAsGuardian,
+            emergency: data.emergency,
+            participants: data.participants ?? [],
+          };
+          prefillSource = 'auth';
+          if (prefillHeading) prefillHeading.textContent = '🔑 サインイン中: 前回のご予約情報を呼び出せます';
+          if (prefillHint) prefillHint.textContent = '※ サインイン済みアカウントの前回情報です。署名は毎回必要です。';
+          if (prefillPanel) prefillPanel.hidden = false;
+          if (signinInvite) signinInvite.hidden = true;
+        }
+      } catch (e) {
+        console.warn('[prefill] auth fetch failed', e);
+      }
+    })();
 
     const setFieldValue = (name: string, value: string | null | undefined) => {
       const el = form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
@@ -780,9 +852,21 @@ const termsHtml = terms
       if (prefillPanel) prefillPanel.hidden = true;
     });
 
-    prefillClear?.addEventListener('click', () => {
-      if (!confirm('このブラウザに保存されている予約情報を削除しますか？')) return;
-      try { localStorage.removeItem(LS_KEY); } catch {}
+    prefillClear?.addEventListener('click', async () => {
+      if (prefillSource === 'auth') {
+        if (!confirm('サインアウトして、予約情報の呼び出しを解除しますか？')) return;
+        try {
+          const cfg = (window as any).__ASMS_AUTH_CFG;
+          if (cfg?.supabaseUrl) {
+            const { getAuthClient, signOut } = await import('@lib/authWrapper');
+            const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+            await signOut(client);
+          }
+        } catch (e) { console.warn('[signout] failed', e); }
+      } else {
+        if (!confirm('このブラウザに保存されている予約情報を削除しますか？')) return;
+        try { localStorage.removeItem(LS_KEY); } catch {}
+      }
       savedPrefill = null;
       if (prefillPanel) prefillPanel.hidden = true;
     });
@@ -1143,6 +1227,21 @@ const termsHtml = terms
     padding: .9rem 1rem;
     margin-bottom: 1rem;
   }
+  .signin-invite {
+    background: linear-gradient(135deg, rgba(255,201,67,.10), rgba(255,201,67,.02));
+    border: 1px dashed var(--sun);
+    border-radius: 10px;
+    padding: .8rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .si-h {
+    font-weight: 700; font-size: .84rem; color: var(--orange-deep);
+    margin-bottom: .3rem;
+  }
+  .si-hint {
+    font-size: .74rem; color: var(--ink-2); margin: 0 0 .6rem;
+  }
+  .signin-invite .btn { margin: 0; padding: .5rem 1rem; font-size: .8rem; }
   .pp-h {
     font-weight: 700; font-size: .88rem; color: var(--sky-deep);
     margin-bottom: .6rem;

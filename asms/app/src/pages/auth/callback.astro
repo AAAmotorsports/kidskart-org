@@ -1,0 +1,95 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+
+// Magic Link comes back as https://.../auth/callback?next=...#access_token=...
+// The hash fragment is INVISIBLE to the server, so all the parsing
+// has to happen client-side via supabase-js's detectSessionInUrl.
+
+const env = envFrom(Astro.locals);
+const supabaseUrl = env.PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
+
+const url = new URL(Astro.request.url);
+const next = url.searchParams.get('next') || '/reserve/';
+---
+<Base title="サインイン中... — 福岡キッズカートアカデミー">
+  <main>
+    <div id="status" class="status">
+      <div class="spinner"></div>
+      <p id="msg">🔐 サインイン処理中...</p>
+    </div>
+  </main>
+</Base>
+
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey, next }}>
+  window.__ASMS_CALLBACK = { supabaseUrl, supabaseAnonKey, next };
+</script>
+
+<script>
+  import { getAuthClient, currentSession } from '@lib/authWrapper';
+
+  const cfg = (window as any).__ASMS_CALLBACK;
+  const msg = document.getElementById('msg') as HTMLParagraphElement | null;
+
+  const fail = (text: string) => {
+    if (msg) {
+      msg.innerHTML = `❌ ${text}<br><a href="/reserve/signin" style="color:#1a7fb8">サインインをやり直す</a>`;
+    }
+  };
+
+  (async () => {
+    if (!cfg?.supabaseUrl) return fail('設定が読み込めませんでした');
+
+    const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+
+    // detectSessionInUrl is enabled in the client, so getSession()
+    // will parse the hash-fragment tokens automatically on first call.
+    const session = await currentSession(client);
+    if (!session) {
+      return fail('サインインリンクが期限切れか無効です');
+    }
+
+    // Server-side: link guardian.auth_user_id (idempotent). Also confirms
+    // the JWT is valid on the API side and returns whether a matching
+    // guardian was found. Failures are non-fatal — a brand new user
+    // with no prior guardian is a normal case.
+    try {
+      const r = await fetch('/api/me/link', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!r.ok) console.warn('[callback] link failed', r.status);
+    } catch (e) {
+      console.warn('[callback] link exception', e);
+    }
+
+    if (msg) msg.textContent = '✅ サインイン完了。移動しています...';
+    // Small delay so user sees success before redirect
+    setTimeout(() => { window.location.href = cfg.next || '/reserve/'; }, 400);
+  })();
+</script>
+
+<style>
+  main {
+    max-width: 420px; margin: 0 auto;
+    padding: 4rem 1.25rem;
+    text-align: center;
+  }
+  .status {
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 12px; padding: 2rem 1.5rem;
+  }
+  .spinner {
+    width: 40px; height: 40px; margin: 0 auto 1rem;
+    border: 3px solid var(--bg-3);
+    border-top-color: var(--sky-deep);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #msg {
+    margin: 0; font-size: .95rem; color: var(--ink);
+    line-height: 1.6;
+  }
+</style>

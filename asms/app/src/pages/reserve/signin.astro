@@ -1,0 +1,154 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+
+// SSR-render URL config into the page so the client-side script can
+// contact Supabase. Only PUBLIC_* values leave the server.
+const env = envFrom(Astro.locals);
+const supabaseUrl = env.PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
+
+const url = new URL(Astro.request.url);
+const next = url.searchParams.get('next') || '/reserve/';
+// Callback URL is absolute — Supabase needs full URL for emailRedirectTo
+const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURIComponent(next)}`;
+---
+<Base title="別端末サインイン — 福岡キッズカートアカデミー">
+  <main>
+    <header class="hd">
+      <a class="back" href={next}>← 戻る</a>
+      <h1>📧 メールで本人確認</h1>
+      <p class="sub">機種変更・PC 利用など、初めての端末からご予約の方向け</p>
+    </header>
+
+    <section class="explain">
+      <p>以前ご予約いただいた保護者様のメールアドレスを入力してください。<br>ワンタイムリンクをメールでお送りします。</p>
+      <p class="warn">⚠️ このリンクは他人に転送しないでください。転送された方が本人としてログインできてしまいます。</p>
+    </section>
+
+    <form id="signinForm" class="form">
+      <label class="field">
+        <span>メールアドレス</span>
+        <input type="email" id="email" required autocomplete="email"
+               inputmode="email" placeholder="you@example.com" />
+      </label>
+      <button type="submit" id="submitBtn" class="btn btn-primary">サインインリンクを送る</button>
+    </form>
+
+    <div id="status" class="status" hidden></div>
+
+    <section class="alt">
+      <p>初めてご利用の方は、<a href={next}>そのままご予約フォーム</a>にお進みください。</p>
+    </section>
+  </main>
+</Base>
+
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey, callbackUrl }}>
+  window.__ASMS_SIGNIN = { supabaseUrl, supabaseAnonKey, callbackUrl };
+</script>
+
+<script>
+  import { getAuthClient, sendMagicLink } from '@lib/authWrapper';
+
+  const cfg = (window as any).__ASMS_SIGNIN;
+  if (!cfg?.supabaseUrl) {
+    console.warn('[signin] auth config missing');
+  } else {
+    const client = getAuthClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+
+    const form = document.getElementById('signinForm') as HTMLFormElement | null;
+    const emailInput = document.getElementById('email') as HTMLInputElement | null;
+    const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
+    const status = document.getElementById('status') as HTMLDivElement | null;
+
+    const escape = (s: string) =>
+      s.replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any
+      )[c]);
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!emailInput || !submitBtn || !status) return;
+      const email = emailInput.value.trim();
+      if (!email) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中...';
+      status.hidden = true;
+
+      const result = await sendMagicLink(client, email, cfg.callbackUrl);
+      if (result.ok) {
+        status.className = 'status ok';
+        status.innerHTML = `✅ <strong>${escape(email)}</strong> にサインインリンクを送りました。<br>メールをご確認のうえ、リンクをクリックしてください（有効期限: 1 時間）。`;
+        status.hidden = false;
+        submitBtn.textContent = '送信済み';
+      } else {
+        status.className = 'status err';
+        status.innerHTML = `❌ 送信に失敗しました: ${escape(result.error ?? '不明なエラー')}`;
+        status.hidden = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'もう一度送る';
+      }
+    });
+  }
+</script>
+
+<style>
+  main { max-width: 520px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 800; }
+  .sub { margin: 0; color: var(--ink-3); font-size: .82rem; }
+
+  .explain {
+    background: var(--sky-mist); border: 1px solid var(--sky-light);
+    border-radius: 10px; padding: 1rem; margin-bottom: 1.2rem;
+    font-size: .88rem; line-height: 1.6;
+  }
+  .explain p { margin: 0 0 .5rem; }
+  .explain p:last-child { margin: 0; }
+  .warn {
+    padding: .6rem .8rem; background: rgba(255,201,67,.15);
+    border: 1px solid var(--sun); border-radius: 6px;
+    color: var(--orange-deep); font-size: .82rem !important;
+  }
+
+  .form { display: grid; gap: .8rem; margin-bottom: 1.2rem; }
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field span { font-size: .78rem; font-weight: 700; color: var(--ink-2); }
+  .field input {
+    padding: .7rem .8rem; font-size: 1rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); font-family: var(--jp);
+  }
+  .field input:focus { outline: none; border-color: var(--sky-deep); }
+
+  .btn {
+    padding: .7rem 1.2rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .95rem; font-weight: 800;
+    border: none; cursor: pointer;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; box-shadow: 0 3px 10px rgba(58,169,232,.25);
+  }
+  .btn-primary:disabled { opacity: .6; cursor: wait; }
+
+  .status {
+    padding: .8rem 1rem; border-radius: 8px;
+    font-size: .88rem; line-height: 1.6; margin-bottom: 1rem;
+  }
+  .status.ok {
+    background: rgba(164,214,94,.15); border: 1px solid var(--lime-deep);
+    color: var(--lime-deep);
+  }
+  .status.err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep);
+  }
+
+  .alt {
+    text-align: center; font-size: .82rem; color: var(--ink-3);
+    padding-top: 1rem; border-top: 1px dashed var(--line);
+  }
+  .alt a { color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+</style>
