@@ -282,8 +282,14 @@ async function sendConfirmationEmail(env: Env, args: {
       ? '当社確認のうえ、あらためて確定通知をお送りします。'
       : '当日は運動靴でお越しください。つなぎ・ヘルメットは当社で無料貸出します（長袖長ズボン不要）。軍手は初回のみプレゼント、2 回目以降はご持参をお願いします。',
     '',
+    '▼ 🔔 開催のお知らせを受け取る',
+    '新しいスケジュールが公開されたら通知を受け取れます:',
+    '  💬 LINE 友達追加: https://line.me/R/ti/p/@kidskart',
+    '  ✉️ メール登録: info@kidskart.org (件名「開催通知希望」)',
+    '',
     '━━━━━━━━━━━━━━━━━━━━',
     '福岡キッズカートアカデミー / エーワンサーキット',
+    '✉️ info@kidskart.org',
     '📞 092-927-1177',
     '🌐 https://kidskart.org/',
     '━━━━━━━━━━━━━━━━━━━━',
@@ -312,10 +318,23 @@ async function sendConfirmationEmail(env: Env, args: {
     ${cancelUrl ? `<p style="text-align:center;margin:.5rem 0 1rem;font-size:.78rem"><a href="${cancelUrl}" style="color:#c73854;text-decoration:none;font-weight:700">🚫 予約をキャンセルする</a></p>` : ''}
     ${isPending
       ? '<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">当社にて内容を確認のうえ、あらためて確定通知をお送りします。</p>'
-      : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>（ご持参ください）</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>（長袖長ズボン不要）</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>'}
+      : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>(ご持参ください)</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>(長袖長ズボン不要)</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>'}
+
+    <div style="background:linear-gradient(135deg,rgba(6,199,85,.06),rgba(6,199,85,.02));border:1px solid #06c755;border-radius:10px;padding:.9rem;margin:1rem 0;text-align:center">
+      <div style="font-weight:800;color:#06c755;font-size:.9rem;margin-bottom:.4rem">🔔 開催のお知らせを受け取る</div>
+      <p style="font-size:.76rem;color:#3d556f;margin:0 0 .7rem">新しいスケジュールが公開されたら通知を受け取れます</p>
+      <p style="margin:0 0 .4rem">
+        <a href="https://line.me/R/ti/p/@kidskart" style="display:inline-block;padding:.55rem 1.1rem;background:#06c755;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">💬 LINE 友達追加</a>
+      </p>
+      <p style="margin:0;font-size:.72rem;color:#7d8fa0">
+        メール派の方は <a href="mailto:info@kidskart.org?subject=%E9%96%8B%E5%82%AC%E9%80%9A%E7%9F%A5%E5%B8%8C%E6%9C%9B" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> に「開催通知希望」で送信
+      </p>
+    </div>
+
     <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
       福岡キッズカートアカデミー / エーワンサーキット<br>
-      📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
+      ✉️ <a href="mailto:info@kidskart.org" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> / 📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a><br>
+      🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
     </p>
   </div>
 </body></html>`;
