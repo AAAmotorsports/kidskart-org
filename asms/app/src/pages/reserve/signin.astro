@@ -13,17 +13,21 @@ const next = url.searchParams.get('next') || '/reserve/';
 // Callback URL is absolute — Supabase needs full URL for emailRedirectTo
 const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURIComponent(next)}`;
 ---
-<Base title="別端末サインイン — 福岡キッズカートアカデミー">
+<Base title="以前の予約情報を呼び出す — 福岡キッズカートアカデミー">
   <main>
     <header class="hd">
       <a class="back" href={next}>← 戻る</a>
-      <h1>📧 メールで本人確認</h1>
-      <p class="sub">機種変更・PC 利用など、初めての端末からご予約の方向け</p>
+      <h1>🔁 以前の予約情報を呼び出す</h1>
+      <p class="sub">機種変更・PC 利用など、別の端末から予約するリピーター向け</p>
     </header>
 
+    <aside class="first-time-hint">
+      <span class="fh-icon">💡</span>
+      <span class="fh-text"><strong>初めての方はログイン不要</strong>です — <a href={next}>そのままご予約フォームへ</a></span>
+    </aside>
+
     <section class="explain">
-      <p>以前ご予約いただいた保護者様のメールアドレスを入力してください。<br>ワンタイムリンクをメールでお送りします。</p>
-      <p class="warn">⚠️ このリンクは他人に転送しないでください。転送された方が本人としてログインできてしまいます。</p>
+      <p>以前ご予約いただいた保護者様のメールアドレスを入力してください。<br>ワンタイムリンクをメールでお送りしますので、リンクをタップすると前回の情報が自動で予約フォームに入ります。</p>
     </section>
 
     <form id="signinForm" class="form">
@@ -34,6 +38,8 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
       </label>
       <button type="submit" id="submitBtn" class="btn btn-primary">サインインリンクを送る</button>
     </form>
+
+    <p class="warn-note">※ お送りするリンクは他人に転送しないでください（転送された方が本人としてログインできてしまいます）</p>
 
     <div id="errStatus" class="status err" hidden></div>
 
@@ -58,7 +64,7 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
       </div>
     </section>
 
-    <section id="altSection" class="alt">
+    <section id="altSection" class="alt" hidden>
       <p>初めてご利用の方は、<a href={next}>そのままご予約フォーム</a>にお進みください。</p>
     </section>
   </main>
@@ -159,17 +165,34 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
   h1 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 800; }
   .sub { margin: 0; color: var(--ink-3); font-size: .82rem; }
 
+  .first-time-hint {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .7rem .9rem; margin-bottom: 1rem;
+    background: rgba(164,214,94,.12);
+    border: 1px solid var(--lime-deep);
+    border-radius: 8px;
+    font-size: .84rem; line-height: 1.5;
+  }
+  .fh-icon { font-size: 1rem; flex-shrink: 0; }
+  .fh-text { color: var(--ink); }
+  .fh-text strong { color: var(--lime-deep); }
+  .fh-text a {
+    color: var(--sky-deep); text-decoration: none; font-weight: 700;
+  }
+  .fh-text a:hover { text-decoration: underline; }
+
   .explain {
     background: var(--sky-mist); border: 1px solid var(--sky-light);
     border-radius: 10px; padding: 1rem; margin-bottom: 1.2rem;
     font-size: .88rem; line-height: 1.6;
   }
-  .explain p { margin: 0 0 .5rem; }
-  .explain p:last-child { margin: 0; }
-  .warn {
-    padding: .6rem .8rem; background: rgba(255,201,67,.15);
-    border: 1px solid var(--sun); border-radius: 6px;
-    color: var(--orange-deep); font-size: .82rem !important;
+  .explain p { margin: 0; }
+
+  .warn-note {
+    margin: .5rem 0 1rem;
+    font-size: .72rem; color: var(--ink-3);
+    text-align: center;
+    line-height: 1.5;
   }
 
   .form { display: grid; gap: .8rem; margin-bottom: 1.2rem; }
