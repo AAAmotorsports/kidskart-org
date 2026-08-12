@@ -232,25 +232,39 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     <section class="courses">
       <div class="section-h">
         <h2>コース一覧</h2>
-        <p>コース名をタップすると開催カレンダーがそのコースに絞り込まれます</p>
+        <p>「このコースで予約する」で開催カレンダーが絞り込まれます</p>
       </div>
       <div class="course-grid">
         {courses?.map((c) => (
-          <a class={`course c-${c.code} ${activeCourse?.code === c.code ? 'active' : ''}`}
-             href={courseHref(c.code)}>
-            <div class="course-name">
-              {c.name}
-              {c.vehicle !== 'mini_default' && (
-                <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
-              )}
-              {activeCourse?.code === c.code && <span class="course-active">✓ 表示中</span>}
+          <div class={`course c-${c.code} ${activeCourse?.code === c.code ? 'active' : ''}`}>
+            <div class="course-head">
+              <div class="course-name">
+                {c.code === 'taiken' && <span class="course-star">⭐️ 初めての方はこちら</span>}
+                <span class="course-name-text">{c.name}</span>
+                {c.vehicle !== 'mini_default' && (
+                  <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
+                )}
+                {activeCourse?.code === c.code && <span class="course-active">✓ 表示中</span>}
+              </div>
+              <div class="course-meta">
+                <span class="course-dur">{c.duration_min}分</span>
+                <span class="course-price">{priceLabel(c.price_regular, c.price_member)}</span>
+              </div>
             </div>
-            <div class="course-meta">
-              <span class="course-dur">{c.duration_min}分</span>
-              <span class="course-price">{priceLabel(c.price_regular, c.price_member)}</span>
-            </div>
-            {c.description && <p class="course-desc">{c.description}</p>}
-          </a>
+            {c.description && (
+              <details class="course-details">
+                <summary>📖 コース内容を見る</summary>
+                <div class="course-desc-body">
+                  {c.description.split('\n').filter(Boolean).map((line) => (
+                    <p>{line}</p>
+                  ))}
+                </div>
+              </details>
+            )}
+            <a class="course-cta" href={courseHref(c.code)}>
+              {activeCourse?.code === c.code ? '✓ このコースで表示中' : 'このコースで予約する →'}
+            </a>
+          </div>
         ))}
       </div>
       <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。</p>
@@ -596,25 +610,32 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   .course.c-repeat_30 { border-left-color: var(--lime); }
   .course.c-challenge_ts { border-left-color: var(--sun); }
   .course.c-challenge_rx { border-left-color: var(--orange); }
-  a.course {
-    text-decoration: none; color: inherit;
-    transition: transform .1s, box-shadow .15s;
-    position: relative;
-  }
-  a.course:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(0,0,0,.06);
-  }
-  a.course.active {
+  .course.active {
     background: var(--sky-mist);
     border-color: var(--sky);
     box-shadow: 0 0 0 3px rgba(58,169,232,.15);
   }
+  .course.c-taiken {
+    background: linear-gradient(135deg, rgba(58,169,232,.06), rgba(58,169,232,.01));
+    border-left-width: 5px;
+  }
+  .course-head { margin-bottom: .3rem; }
   .course-active {
     font-size: .64rem; font-weight: 800;
     background: var(--sky); color: #fff;
     padding: 2px 8px; border-radius: 100px;
     margin-left: auto;
+  }
+  .course-star {
+    display: inline-block; width: 100%;
+    font-size: .72rem; font-weight: 800;
+    color: var(--orange-deep);
+    background: linear-gradient(135deg, rgba(255,201,67,.25), rgba(255,138,61,.15));
+    border: 1px solid var(--sun);
+    padding: 3px 10px; border-radius: 100px;
+    margin-bottom: .3rem;
+    text-align: center;
+    letter-spacing: .02em;
   }
   .course-name {
     font-weight: 800;
@@ -625,6 +646,47 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     gap: .5rem;
     flex-wrap: wrap;
   }
+  .course-name-text { }
+
+  .course-details {
+    margin-top: .5rem;
+    border-top: 1px dashed var(--line);
+    padding-top: .5rem;
+  }
+  .course-details > summary {
+    cursor: pointer; list-style: none;
+    font-size: .78rem; font-weight: 700; color: var(--sky-deep);
+    padding: .3rem 0;
+  }
+  .course-details > summary::-webkit-details-marker { display: none; }
+  .course-desc-body {
+    padding: .5rem .7rem;
+    background: var(--bg-2); border-radius: 6px;
+    margin-top: .3rem;
+  }
+  .course-desc-body p {
+    margin: 0 0 .3rem; font-size: .78rem; color: var(--ink);
+    line-height: 1.7;
+  }
+  .course-desc-body p:last-child { margin-bottom: 0; }
+
+  .course-cta {
+    display: block; margin-top: .6rem;
+    padding: .55rem .9rem; text-align: center;
+    background: var(--sky); color: #fff;
+    border-radius: 8px; text-decoration: none;
+    font-size: .84rem; font-weight: 800;
+    transition: background .1s;
+  }
+  .course-cta:hover { background: var(--sky-deep); }
+  .course.active .course-cta {
+    background: var(--sky-deep);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.3);
+  }
+  .course.c-taiken .course-cta {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+  }
+  .course.c-taiken .course-cta:hover { opacity: .92; }
   .course-veh {
     font-size: .68rem;
     background: var(--bg-3);
