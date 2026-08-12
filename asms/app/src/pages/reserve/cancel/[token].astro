@@ -1,0 +1,255 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const admin = getSupabaseAdmin(env);
+const { token } = Astro.params;
+
+if (!token) return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
+
+// Load reservation by cancel token
+const { data: res } = await admin
+  .from('reservations')
+  .select(`
+    id, reservation_number, status, price_tier, total_amount,
+    cancelled_at, cancelled_reason,
+    slots(date, start_time, end_time, courses(name)),
+    guardians(name, email, phone),
+    reservation_participants(name_snapshot)
+  `)
+  .eq('cancel_token', token)
+  .maybeSingle();
+
+const slot: any = res?.slots ?? {};
+const course: any = slot.courses ?? {};
+const guardian: any = res?.guardians ?? {};
+const parts = ((res as any)?.reservation_participants as any[])?.map((p) => p.name_snapshot) ?? [];
+
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+function jaDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+}
+const dateLabel = slot.date ? jaDate(slot.date) : '';
+const timeLabel = slot.start_time ? `${slot.start_time.slice(0, 5)}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}` : '';
+
+// Cancellation-fee guidance based on how close the slot is
+function feeGuidance(dateIso: string, startTime: string): { level: 'free' | 'half' | 'full' | 'past'; text: string } {
+  if (!dateIso || !startTime) return { level: 'free', text: '' };
+  const slotDt = new Date(`${dateIso}T${startTime}`);
+  const now = new Date();
+  const hoursUntil = (slotDt.getTime() - now.getTime()) / 36e5;
+  if (hoursUntil < 0) return { level: 'past', text: '既に開催日時を過ぎています' };
+  if (hoursUntil < 2) return { level: 'full', text: '開始 2 時間前以降のためキャンセル料 100% が発生する場合があります' };
+  // Check "previous day 20:00" cutoff
+  const cutoff = new Date(slotDt);
+  cutoff.setDate(cutoff.getDate() - 1);
+  cutoff.setHours(20, 0, 0, 0);
+  if (now > cutoff) return { level: 'half', text: '前日 20:00 を過ぎているためキャンセル料 50% が発生する場合があります' };
+  return { level: 'free', text: '前日 20:00 前のためキャンセル料はかかりません' };
+}
+const fee = res && slot.date ? feeGuidance(slot.date, slot.start_time) : { level: 'free' as const, text: '' };
+
+const notFound = !res;
+const isCancelled = res?.status === 'cancelled';
+const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
+---
+<Base title={notFound ? 'キャンセル — 予約が見つかりません' : `キャンセル — ${res!.reservation_number}`}>
+  <main>
+    <header class="hd">
+      <a class="back" href="/reserve/">← 予約トップへ</a>
+      <h1>予約のキャンセル</h1>
+    </header>
+
+    {notFound && (
+      <div class="card err-card">
+        <div class="err-icon">🔍</div>
+        <h2>該当する予約が見つかりません</h2>
+        <p>URL が正しいかご確認いただくか、確認メールに記載のリンクから再度アクセスしてください。</p>
+        <p class="hint">ご不明な点は <a href="tel:0929271177">092-927-1177</a> までお問い合わせください。</p>
+      </div>
+    )}
+
+    {res && (
+      <>
+        <section class="card">
+          <div class="row"><span class="k">予約番号</span><span class="v mono big">{res.reservation_number}</span></div>
+          <div class="row"><span class="k">状態</span>
+            {isCancelled ? (
+              <span class="v badge badge-cancelled">キャンセル済み</span>
+            ) : isTerminal ? (
+              <span class="v badge badge-terminal">{res.status === 'attended' ? '出席済み' : '無断欠席'}</span>
+            ) : (
+              <span class="v badge badge-active">確定</span>
+            )}
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>予約枠</h2>
+          <div class="row"><span class="k">コース</span><span class="v">{course.name}</span></div>
+          <div class="row"><span class="k">日付</span><span class="v mono">{dateLabel}</span></div>
+          <div class="row"><span class="k">時間</span><span class="v mono">{timeLabel}</span></div>
+          <div class="row"><span class="k">料金</span><span class="v mono">¥{(res.total_amount ?? 0).toLocaleString()}（{res.price_tier === 'member' ? '会員' : '一般'} × {parts.length}名）</span></div>
+        </section>
+
+        <section class="card">
+          <h2>参加者</h2>
+          <ul class="p-list">
+            {parts.map((n, i) => <li>{i + 1}. {n}</li>)}
+          </ul>
+        </section>
+
+        {isCancelled && (
+          <div class="banner banner-info">
+            この予約は <strong>{res.cancelled_at?.slice(0, 10)}</strong> にキャンセル済みです。
+            {res.cancelled_reason && <><br />理由: {res.cancelled_reason}</>}
+          </div>
+        )}
+
+        {isTerminal && (
+          <div class="banner banner-info">
+            この予約は既に「{res.status === 'attended' ? '出席済み' : '無断欠席'}」として記録されているため、キャンセルできません。
+          </div>
+        )}
+
+        {!isCancelled && !isTerminal && (
+          <>
+            <div class={`banner banner-${fee.level === 'free' ? 'ok' : fee.level === 'past' ? 'muted' : 'warn'}`}>
+              <strong>{fee.level === 'free' ? '✅ ' : '⚠️ '}キャンセル料について</strong>
+              <br />{fee.text}
+            </div>
+
+            <div class="card cta-card">
+              <h2>この予約をキャンセルする</h2>
+              <p class="hint">押した瞬間にキャンセルが確定します。取り消せません。<br />
+                キャンセル料が発生する場合は別途ご連絡いたします。</p>
+              <form id="cancelForm">
+                <input type="hidden" name="token" value={token} />
+                <div class="field">
+                  <label for="reason">キャンセル理由（任意）</label>
+                  <input type="text" id="reason" name="reason" maxlength="120"
+                    placeholder="例: 体調不良、予定変更 など" />
+                </div>
+                <button type="submit" class="btn btn-danger" id="submitBtn">🚫 キャンセルを確定する</button>
+              </form>
+              <div id="cancelResult" hidden></div>
+            </div>
+          </>
+        )}
+      </>
+    )}
+  </main>
+</Base>
+
+<script>
+  const form = document.getElementById('cancelForm') as HTMLFormElement | null;
+  const result = document.getElementById('cancelResult');
+  const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
+  if (form && result && submitBtn) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!confirm('本当にキャンセルしますか？取り消せません。')) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'キャンセル中…';
+      const fd = new FormData(form);
+      try {
+        const r = await fetch('/api/reserve/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: fd.get('token'),
+            reason: fd.get('reason') || 'お客様都合（Web からキャンセル）',
+          }),
+        });
+        const body = await r.json();
+        if (!r.ok) throw new Error(body?.error || 'キャンセル失敗');
+        form.hidden = true;
+        result.innerHTML =
+          '<div class="banner banner-ok">' +
+          '✅ キャンセル完了しました。<br>' +
+          'ご登録のメールアドレスにキャンセル通知をお送りします。' +
+          '</div>' +
+          '<p style="text-align:center;margin-top:1rem"><a href="/reserve/" class="btn btn-primary">別の日程を予約する</a></p>';
+        result.hidden = false;
+      } catch (err: any) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🚫 キャンセルを確定する';
+        alert('エラー: ' + (err.message || err));
+      }
+    });
+  }
+</script>
+
+<style>
+  main { max-width: 640px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
+  .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
+  h1 { margin: 0; font-size: 1.4rem; font-weight: 800; }
+
+  .card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1.15rem; margin-bottom: .8rem;
+  }
+  .card h2 { margin: 0 0 .5rem; font-size: .82rem; font-weight: 800; color: var(--sky-deep); letter-spacing: .05em; text-transform: uppercase; }
+  .row { display: flex; justify-content: space-between; gap: .5rem; padding: .35rem 0; border-bottom: 1px dashed var(--line); font-size: .84rem; }
+  .row:last-child { border-bottom: none; }
+  .k { color: var(--ink-3); font-size: .74rem; font-weight: 700; }
+  .v { color: var(--ink); }
+  .mono { font-family: var(--mono); }
+  .big { font-size: 1.15rem; font-weight: 800; color: var(--sky-deep); }
+  .badge { padding: 3px 10px; border-radius: 100px; font-size: .72rem; font-weight: 800; }
+  .badge-active { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .badge-cancelled { background: rgba(160,160,160,.2); color: var(--ink-3); }
+  .badge-terminal { background: rgba(58,169,232,.15); color: var(--sky-deep); }
+
+  .p-list { list-style: none; margin: 0; padding: 0; }
+  .p-list li { padding: .3rem 0; font-size: .84rem; border-bottom: 1px dashed var(--line); }
+  .p-list li:last-child { border-bottom: none; }
+
+  .banner {
+    padding: .8rem 1rem; border-radius: 8px; margin: 1rem 0;
+    font-size: .82rem; line-height: 1.7;
+  }
+  .banner-info { background: var(--sky-mist); border: 1px solid var(--sky-light); color: var(--ink); }
+  .banner-ok { background: rgba(164,214,94,.15); border: 1px solid var(--lime-deep); color: var(--lime-deep); font-weight: 700; text-align: center; }
+  .banner-warn { background: rgba(255,201,67,.12); border: 1px solid rgba(255,201,67,.5); color: var(--ink); }
+  .banner-muted { background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-3); }
+
+  .cta-card { border-color: var(--rose); background: rgba(229,85,111,.02); }
+  .cta-card h2 { color: var(--rose-deep); }
+  .cta-card .hint { margin: 0 0 .8rem; font-size: .78rem; color: var(--ink-2); }
+
+  .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .8rem; }
+  .field label { font-size: .72rem; font-weight: 700; color: var(--ink-2); }
+  .field input {
+    padding: .55rem .7rem; font-size: .9rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg);
+  }
+
+  .btn {
+    display: block; width: 100%; text-align: center;
+    padding: .85rem 1.2rem; border-radius: 10px;
+    font-family: var(--jp); font-size: .95rem; font-weight: 800;
+    border: none; cursor: pointer; text-decoration: none;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-danger {
+    background: linear-gradient(135deg, var(--rose), var(--rose-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229, 85, 111, .3);
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229, 99, 26, .3);
+  }
+
+  .err-card { text-align: center; padding: 2rem 1.5rem; }
+  .err-icon { font-size: 2.5rem; margin-bottom: .5rem; }
+  .err-card h2 { color: var(--ink); font-size: 1.05rem; margin: 0 0 .5rem; text-transform: none; letter-spacing: 0; }
+  .err-card p { font-size: .84rem; color: var(--ink-2); }
+  .err-card .hint { font-size: .78rem; color: var(--ink-3); margin-top: 1rem; }
+  .err-card a { color: var(--sky-deep); }
+</style>

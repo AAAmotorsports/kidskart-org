@@ -57,20 +57,58 @@ if (Astro.request.method === 'POST') {
     let cascadeMsg = '';
     if (cascade && newStatus === 'cancelled') {
       // Cascade the cancellation to all reservations on this slot that
-      // aren't already terminal. This is opt-in because sometimes staff
-      // just want to mark the slot cancelled but resolve reservations
-      // manually.
-      const { error: rErr, count } = await supabase
+      // aren't already terminal. Snapshot the affected reservations
+      // first so we can email each guardian after the UPDATE succeeds.
+      const cancelReason = ((form.get('cancel_reason') as string) || '運営側キャンセル（雨天・車両不備・スタッフ都合等）').trim();
+      const { data: targetRes, error: fetchErr } = await supabase
         .from('reservations')
-        .update({
-          status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-          cancelled_reason: '運営側キャンセル（雨天・車両不備・スタッフ都合等）',
-        }, { count: 'exact' })
+        .select(`
+          id, reservation_number, price_tier, total_amount,
+          guardians(name, email, phone),
+          reservation_participants(name_snapshot),
+          slots(date, start_time, end_time, courses(name))
+        `)
+        .eq('slot_id', id)
+        .not('status', 'in', '(cancelled,attended,no_show)');
+      if (fetchErr) return back('', `対象予約の取得に失敗: ${fmt(fetchErr)}`);
+
+      const nowIso = new Date().toISOString();
+      const { error: rErr } = await supabase
+        .from('reservations')
+        .update({ status: 'cancelled', cancelled_at: nowIso, cancelled_reason: cancelReason })
         .eq('slot_id', id)
         .not('status', 'in', '(cancelled,attended,no_show)');
       if (rErr) return back(`枠を「${newStatus}」に変更しましたが、予約側の更新でエラー: ${fmt(rErr)}`, '');
-      cascadeMsg = `（既存予約 ${count ?? 0} 件も cancelled に更新）`;
+
+      // Fire-and-forget cancellation emails per reservation.
+      const apiUrl = new URL(Astro.request.url);
+      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
+      let mailQueued = 0;
+      for (const r of (targetRes ?? []) as any[]) {
+        const slot = r.slots ?? {};
+        const guardian = r.guardians ?? {};
+        const parts = (r.reservation_participants ?? []).map((p: any) => p.name_snapshot);
+        if (!guardian.email) continue;
+        const p = sendSlotCancelEmail(env, {
+          to: guardian.email,
+          guardianName: guardian.name ?? '',
+          reservationNumber: r.reservation_number,
+          dateIso: slot.date,
+          startTime: slot.start_time,
+          endTime: slot.end_time,
+          courseName: slot.courses?.name ?? '',
+          participants: parts,
+          totalAmount: r.total_amount ?? 0,
+          priceTier: r.price_tier ?? 'regular',
+          reason: cancelReason,
+          origin,
+          phone: guardian.phone ?? '',
+        }).catch((e) => console.warn('[slot-cancel] email failed', r.reservation_number, e));
+        if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
+        mailQueued++;
+      }
+      cascadeMsg = `（既存予約 ${(targetRes ?? []).length} 件も cancelled に更新、${mailQueued} 件へ通知メール送信）`;
     }
     const label = { open: '受付中', closed: '募集停止', cancelled: 'キャンセル' }[newStatus];
     return back(`枠を「${label}」に変更しました ${cascadeMsg}`);
@@ -159,6 +197,106 @@ const summary = {
 
 const genderJa = (g: string) => ({ male: '男', female: '女', other: 'その他' } as any)[g] ?? g;
 const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' } as any)[p] ?? p;
+
+// Fire-and-forget: notify the guardian that their reservation was
+// cancelled by staff (slot-wide cancellation). Kept inline to avoid a
+// cross-file dependency for one email template.
+async function sendSlotCancelEmail(env: Env, args: {
+  to: string;
+  guardianName: string;
+  reservationNumber: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  participants: string[];
+  totalAmount: number;
+  priceTier: string;
+  reason: string;
+  origin: string;
+  phone: string;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey || !args.to) return;
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+  const subject = `【重要・お詫び】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} 開催中止のお知らせ`;
+
+  const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+
+  const text = [
+    `${args.guardianName} 様`,
+    '',
+    'ご予約いただいた開催枠を、運営側都合により中止させていただきます。',
+    'ご迷惑をおかけし、誠に申し訳ございません。',
+    '',
+    `▼ 中止となった予約`,
+    `予約番号: ${args.reservationNumber}`,
+    `コース  : ${args.courseName}`,
+    `日時   : ${dateLabel} ${timeLabel}`,
+    `参加者  : ${args.participants.join('・')} (${args.participants.length}名)`,
+    '',
+    `▼ 中止理由`,
+    args.reason,
+    '',
+    '運営側都合による中止のため、キャンセル料は発生いたしません。',
+    'また改めての開催をお待ちいただけますと幸いです。',
+    'ご不明な点は 092-927-1177 までお問い合わせください。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '福岡キッズカートアカデミー / エーワンサーキット',
+    '📞 092-927-1177',
+    '🌐 https://kidskart.org/',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${esc(subject)}</title></head>
+<body style="font-family:'Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">⚠️</div>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.1rem;color:#c73854">開催中止のお知らせ</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${esc(args.guardianName)} 様</p>
+    <p style="font-size:.86rem;color:#163048;margin:0 0 1rem">ご予約いただいた開催枠を、<strong>運営側都合により中止</strong>させていただきます。<br>ご迷惑をおかけし、誠に申し訳ございません。</p>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace">${esc(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.courseName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">日時</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${esc(dateLabel)} ${esc(timeLabel)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">参加者</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.participants.join('・'))} (${args.participants.length}名)</td></tr>
+    </table>
+    <p style="font-size:.82rem;color:#3d556f;background:rgba(229,85,111,.08);padding:.7rem;border-radius:8px;border:1px solid rgba(229,85,111,.3);margin:0 0 1rem"><strong>中止理由</strong><br>${esc(args.reason)}</p>
+    <p style="font-size:.82rem;color:#3d556f;background:rgba(164,214,94,.12);padding:.7rem;border-radius:8px;border:1px solid #a4d65e;margin:0 0 1rem">✅ 運営側都合による中止のため、<strong>キャンセル料は発生いたしません</strong>。</p>
+    <p style="text-align:center;margin:1.5rem 0 0">
+      <a href="${args.origin}/reserve/" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">別の日程を予約する</a>
+    </p>
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
+      福岡キッズカートアカデミー / エーワンサーキット<br>
+      📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
+    </p>
+  </div>
+</body></html>`;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [args.to],
+      subject,
+      text,
+      html,
+      reply_to: env.MAIL_REPLY_TO || undefined,
+    }),
+  });
+  if (!r.ok) throw new Error(`Resend slot-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
 ---
 <Base title={`${dateLabel} ${timeLabel} · ${course.name} — ASMS`}>
   <main>
@@ -204,13 +342,22 @@ const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしの�
           </form>
         )}
         {slot.status !== 'cancelled' && (
-          <form method="post" class="sa-form"
-                onsubmit="return confirm('この枠をキャンセルしますか？（新規予約もできなくなり、既存予約も自動でキャンセルされます）');">
-            <input type="hidden" name="op" value="set_slot_status" />
-            <input type="hidden" name="slot_status" value="cancelled" />
-            <input type="hidden" name="cascade" value="1" />
-            <button type="submit" class="btn-cancel">🔴 枠をキャンセル（既存予約も cancel）</button>
-          </form>
+          <details class="cancel-details">
+            <summary class="btn-cancel-summary">🔴 枠をキャンセル（既存予約も cancel + 保護者へ通知メール）</summary>
+            <form method="post" class="sa-form cancel-form"
+                  onsubmit="return confirm('この枠をキャンセルし、既存予約者に通知メールを送信しますか？');">
+              <input type="hidden" name="op" value="set_slot_status" />
+              <input type="hidden" name="slot_status" value="cancelled" />
+              <input type="hidden" name="cascade" value="1" />
+              <label>
+                <span class="cf-label">キャンセル理由（メール本文に載ります）</span>
+                <input type="text" name="cancel_reason" maxlength="120"
+                  placeholder="例: 雨天による中止、車両不備、スタッフ都合 など"
+                  value="運営側キャンセル（雨天・車両不備・スタッフ都合等）" />
+              </label>
+              <button type="submit" class="btn-cancel">🚫 この理由でキャンセル通知を送信</button>
+            </form>
+          </details>
         )}
         {slot.status !== 'open' && (
           <form method="post" class="sa-form"
@@ -514,6 +661,40 @@ const photoJa = (p: string) => ({ allow: 'OK', face_blur_only: '顔ぼかしの�
     border-color: var(--rose);
   }
   .btn-cancel:hover { background: var(--rose); color: #fff; }
+
+  .cancel-details {
+    display: block; padding: 0; background: transparent; border: none;
+  }
+  .btn-cancel-summary {
+    display: block; padding: .5rem 1rem; font-size: .82rem; font-weight: 700;
+    border-radius: 8px; border: 1.5px solid var(--rose); cursor: pointer;
+    background: rgba(229,85,111,.1); color: var(--rose-deep);
+    list-style: none; text-align: center;
+  }
+  .btn-cancel-summary::-webkit-details-marker { display: none; }
+  .cancel-details[open] .btn-cancel-summary {
+    background: var(--rose); color: #fff; border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  }
+  .cancel-form {
+    display: flex; flex-direction: column; gap: .5rem;
+    padding: .8rem; background: rgba(229,85,111,.05);
+    border: 1.5px solid var(--rose); border-top: none;
+    border-radius: 0 0 8px 8px;
+  }
+  .cancel-form .cf-label {
+    display: block; font-size: .72rem; font-weight: 700; color: var(--rose-deep); margin-bottom: .3rem;
+  }
+  .cancel-form input[type="text"] {
+    padding: .5rem .65rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    background: var(--bg); font-family: var(--jp); width: 100%;
+    box-sizing: border-box;
+  }
+  .cancel-form button {
+    align-self: flex-start; padding: .5rem 1rem; font-size: .82rem; font-weight: 700;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--rose-deep); color: #fff;
+  }
   .btn-reopen {
     background: rgba(164,214,94,.15); color: var(--lime-deep);
     border-color: var(--lime-deep);
