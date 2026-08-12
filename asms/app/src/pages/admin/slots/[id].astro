@@ -114,6 +114,72 @@ if (Astro.request.method === 'POST') {
     return back(`枠を「${label}」に変更しました ${cascadeMsg}`);
   }
 
+  if (op === 'cancel_reservation') {
+    const reservationId = form.get('reservation_id') as string;
+    const reason = ((form.get('cancel_reason') as string) || '電話でのキャンセル受付').trim();
+    const notify = form.get('notify_email') === '1';
+    if (!reservationId) return back('', 'reservation_id は必須です');
+
+    // Snapshot for email before mutating
+    const { data: r, error: fErr } = await supabase
+      .from('reservations')
+      .select(`
+        id, reservation_number, status, price_tier, total_amount,
+        guardians(name, email, phone),
+        reservation_participants(id, name_snapshot),
+        slots(date, start_time, end_time, courses(name))
+      `)
+      .eq('id', reservationId)
+      .maybeSingle();
+    if (fErr) return back('', `予約取得に失敗: ${fmt(fErr)}`);
+    if (!r) return back('', '予約が見つかりません');
+    if (r.status === 'cancelled') return back('', 'この予約はすでにキャンセル済みです');
+
+    const nowIso = new Date().toISOString();
+    const { error: uErr } = await supabase
+      .from('reservations')
+      .update({ status: 'cancelled', cancelled_at: nowIso, cancelled_reason: reason })
+      .eq('id', reservationId);
+    if (uErr) return back('', `予約更新に失敗: ${fmt(uErr)}`);
+
+    // Cascade participant attendance → cancelled (only those still expected)
+    const { error: pErr } = await supabase
+      .from('reservation_participants')
+      .update({ attendance_status: 'cancelled' })
+      .eq('reservation_id', reservationId)
+      .eq('attendance_status', 'expected');
+    if (pErr) return back(`予約をキャンセルしましたが、参加者ステータス更新でエラー: ${fmt(pErr)}`, '');
+
+    let mailMsg = '（メール送信なし）';
+    const guardian = (r as any).guardians ?? {};
+    if (notify && guardian.email) {
+      const slot = (r as any).slots ?? {};
+      const parts = ((r as any).reservation_participants ?? []).map((p: any) => p.name_snapshot);
+      const apiUrl = new URL(Astro.request.url);
+      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
+      const p = sendReservationCancelEmail(env, {
+        to: guardian.email,
+        guardianName: guardian.name ?? '',
+        reservationNumber: (r as any).reservation_number,
+        dateIso: slot.date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        courseName: slot.courses?.name ?? '',
+        participants: parts,
+        totalAmount: (r as any).total_amount ?? 0,
+        priceTier: (r as any).price_tier ?? 'regular',
+        reason,
+        origin,
+      }).catch((e) => console.warn('[admin-cancel] email failed', (r as any).reservation_number, e));
+      if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
+      mailMsg = `（保護者 ${guardian.email} へ通知メール送信）`;
+    } else if (notify && !guardian.email) {
+      mailMsg = '（保護者メールが未登録のため送信スキップ）';
+    }
+    return back(`予約 ${(r as any).reservation_number} をキャンセルしました ${mailMsg}`);
+  }
+
   if (op === 'set_level') {
     const partId = form.get('participant_id') as string;
     const customerId = form.get('customer_id') as string;
@@ -297,6 +363,104 @@ async function sendSlotCancelEmail(env: Env, args: {
   });
   if (!r.ok) throw new Error(`Resend slot-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
+
+// Fire-and-forget: notify the guardian that their reservation was
+// cancelled at their request (typically staff processing a phone
+// cancellation). Tone is "承りました" rather than "中止のお詫び".
+async function sendReservationCancelEmail(env: Env, args: {
+  to: string;
+  guardianName: string;
+  reservationNumber: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  participants: string[];
+  totalAmount: number;
+  priceTier: string;
+  reason: string;
+  origin: string;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey || !args.to) return;
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+  const subject = `【キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`;
+
+  const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+
+  const text = [
+    `${args.guardianName} 様`,
+    '',
+    'ご予約のキャンセルを承りました。',
+    'またのご利用を心よりお待ちしております。',
+    '',
+    `▼ キャンセルされた予約`,
+    `予約番号: ${args.reservationNumber}`,
+    `コース  : ${args.courseName}`,
+    `日時   : ${dateLabel} ${timeLabel}`,
+    `参加者  : ${args.participants.join('・')} (${args.participants.length}名)`,
+    '',
+    `▼ 受付内容`,
+    args.reason,
+    '',
+    'キャンセル料が発生する場合は別途ご連絡いたします。',
+    'ご不明な点は 092-927-1177 までお問い合わせください。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '福岡キッズカートアカデミー / エーワンサーキット',
+    '📞 092-927-1177',
+    '🌐 https://kidskart.org/',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${esc(subject)}</title></head>
+<body style="font-family:'Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">✅</div>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.1rem;color:#1a7fb8">キャンセル承りました</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${esc(args.guardianName)} 様</p>
+    <p style="font-size:.86rem;color:#163048;margin:0 0 1rem">ご予約のキャンセルを承りました。<br>またのご利用を心よりお待ちしております。</p>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace">${esc(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.courseName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">日時</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${esc(dateLabel)} ${esc(timeLabel)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">参加者</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.participants.join('・'))} (${args.participants.length}名)</td></tr>
+    </table>
+    <p style="font-size:.82rem;color:#3d556f;background:var(--bg-2,#f4f9fc);padding:.7rem;border-radius:8px;border:1px solid #d8e6f0;margin:0 0 1rem"><strong>受付内容</strong><br>${esc(args.reason)}</p>
+    <p style="font-size:.78rem;color:#7d8fa0;margin:0 0 1rem">※ キャンセル料が発生する場合は別途ご連絡いたします。</p>
+    <p style="text-align:center;margin:1.5rem 0 0">
+      <a href="${args.origin}/reserve/" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">別の日程を予約する</a>
+    </p>
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
+      福岡キッズカートアカデミー / エーワンサーキット<br>
+      📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a> / 🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
+    </p>
+  </div>
+</body></html>`;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [args.to],
+      subject,
+      text,
+      html,
+      reply_to: env.MAIL_REPLY_TO || undefined,
+    }),
+  });
+  if (!r.ok) throw new Error(`Resend reservation-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
 ---
 <Base title={`${dateLabel} ${timeLabel} · ${course.name} — ASMS`}>
   <main>
@@ -370,7 +534,7 @@ async function sendSlotCancelEmail(env: Env, args: {
       </div>
       {slot.status === 'cancelled' && (
         <p class="sa-note">
-          ⚠️ キャンセル後、参加者への連絡は電話で個別に行ってください（Phase 2 で自動通知メール予定）。
+          ⚠️ この枠はキャンセル状態です。既存予約者への通知メールはキャンセル操作時に送信済みです。
         </p>
       )}
     </section>
@@ -452,6 +616,28 @@ async function sendSlotCancelEmail(env: Env, args: {
                     <button type="submit" class="btn btn-primary">更新</button>
                   </form>
                 </details>
+
+                {r.status !== 'cancelled' && (
+                  <details class="rc-details">
+                    <summary>🚫 この予約全体をキャンセル（保護者へメール通知）</summary>
+                    <form method="post" class="rc-form"
+                          onsubmit="return confirm('この予約をキャンセルし、保護者へ通知メールを送信しますか？');">
+                      <input type="hidden" name="op" value="cancel_reservation" />
+                      <input type="hidden" name="reservation_id" value={r.id} />
+                      <div class="field">
+                        <label>受付内容（メール本文に載ります）</label>
+                        <input type="text" name="cancel_reason" maxlength="120"
+                          placeholder="例: お子様の体調不良により電話でキャンセル受付"
+                          value="電話でのキャンセル受付" />
+                      </div>
+                      <label class="chk">
+                        <input type="checkbox" name="notify_email" value="1" checked />
+                        <span>保護者（{g.email || 'メール未登録'}）へキャンセル確認メールを送信する</span>
+                      </label>
+                      <button type="submit" class="btn-rc">🚫 予約をキャンセル</button>
+                    </form>
+                  </details>
+                )}
               </div>
 
               <div class="p-guardian">
@@ -706,4 +892,31 @@ async function sendSlotCancelEmail(env: Env, args: {
     background: rgba(229,85,111,.06); border: 1px solid rgba(229,85,111,.25);
     border-radius: 6px; font-size: .74rem; color: var(--ink-2);
   }
+
+  .rc-details {
+    background: rgba(229,85,111,.05); border-radius: 8px;
+    padding: .5rem .8rem; margin-top: .5rem;
+    border: 1px solid rgba(229,85,111,.2);
+  }
+  .rc-details > summary {
+    cursor: pointer; font-size: .78rem; font-weight: 700; color: var(--rose-deep);
+    list-style: none; padding: .2rem 0;
+  }
+  .rc-details > summary::-webkit-details-marker { display: none; }
+  .rc-form { display: grid; gap: .5rem; margin-top: .5rem; }
+  .rc-form .chk {
+    display: flex; align-items: flex-start; gap: .4rem;
+    font-size: .76rem; color: var(--ink-2); cursor: pointer;
+    padding: .3rem 0;
+  }
+  .rc-form .chk input[type="checkbox"] {
+    margin: .15rem 0 0; flex-shrink: 0;
+  }
+  .btn-rc {
+    padding: .55rem 1rem; font-size: .82rem; font-weight: 800;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: var(--rose-deep); color: #fff;
+    justify-self: start; font-family: var(--jp);
+  }
+  .btn-rc:hover { opacity: .9; }
 </style>
