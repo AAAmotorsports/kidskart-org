@@ -20,7 +20,7 @@ const { data: consent } = await supabase
     reservations!inner(
       id, reservation_number, status, price_tier, total_amount,
       cancelled_at, cancelled_reason,
-      slots(date, start_time, end_time, courses(name, code)),
+      slots(id, date, start_time, end_time, courses(name, code)),
       guardians(name, kana, phone, email, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation),
       reservation_participants(name_snapshot, kana_snapshot, birth_date_snapshot, age_at_booking, gender_snapshot, height_cm)
     )
@@ -117,7 +117,11 @@ const safetyItemsHtml = Array.isArray(consent.checked_safety_items)
 <Base title={`同意書 · ${res.reservation_number} — ASMS`}>
   <main>
     <div class="no-print admin-nav">
-      <a class="back" href={`/admin/slots/${slot.id ?? ''}`}>← スロット詳細へ戻る</a>
+      {slot.id ? (
+        <a class="back" href={`/admin/slots/${slot.id}`}>← スロット詳細へ戻る</a>
+      ) : (
+        <a class="back" href="/admin/reservations">← 予約一覧へ戻る</a>
+      )}
       <button type="button" onclick="window.print()" class="btn-print">🖨 印刷 / PDF 保存</button>
     </div>
 
