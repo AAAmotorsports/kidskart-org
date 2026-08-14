@@ -30,32 +30,92 @@ const monthStart = `${calYm}-01`;
 const nextMonth = new Date(calYear, calMonth, 1);
 const monthEndExcl = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
 
-const { data: monthResRows } = await supabase
-  .from('reservations')
-  .select('id, status, slots!inner(date)')
-  .neq('status', 'cancelled')
-  .gte('slots.date', monthStart)
-  .lt('slots.date', monthEndExcl);
+// スロット情報 (全ステータス) + 予約参加者数を日別集計
+const { data: monthSlotRows } = await supabase
+  .from('slots')
+  .select('id, date, capacity, status, weather_condition')
+  .gte('date', monthStart)
+  .lt('date', monthEndExcl);
 
-const dailyCount = new Map<string, number>();
-for (const r of (monthResRows ?? []) as any[]) {
-  const d = r.slots?.date;
+const slotIdsForMonth = (monthSlotRows ?? []).map((s: any) => s.id);
+const monthResBySlot = new Map<string, number>(); // slot_id → active participant count
+if (slotIdsForMonth.length > 0) {
+  const { data: resRows } = await supabase
+    .from('reservations')
+    .select('id, slot_id, status, reservation_participants(id, attendance_status)')
+    .in('slot_id', slotIdsForMonth)
+    .neq('status', 'cancelled');
+  for (const r of (resRows ?? []) as any[]) {
+    const activeParts = ((r.reservation_participants as any[]) ?? [])
+      .filter((p) => p.attendance_status !== 'cancelled');
+    const cur = monthResBySlot.get(r.slot_id) ?? 0;
+    monthResBySlot.set(r.slot_id, cur + activeParts.length);
+  }
+}
+
+// 日別サマリー: {slots数, 合計定員, 合計予約, 天候, 状態別スロット数}
+type DailySummary = {
+  slotCount: number;
+  totalCapacity: number;
+  totalReserved: number;
+  openCount: number;
+  closedCount: number;
+  cancelledCount: number;
+  weathers: string[]; // sunny/cloudy/... の集合
+};
+const dailySummary = new Map<string, DailySummary>();
+for (const s of (monthSlotRows ?? []) as any[]) {
+  const d = s.date;
   if (!d) continue;
-  dailyCount.set(d, (dailyCount.get(d) ?? 0) + 1);
+  const cur = dailySummary.get(d) ?? {
+    slotCount: 0, totalCapacity: 0, totalReserved: 0,
+    openCount: 0, closedCount: 0, cancelledCount: 0, weathers: [],
+  };
+  cur.slotCount++;
+  cur.totalCapacity += Number(s.capacity ?? 0);
+  cur.totalReserved += monthResBySlot.get(s.id) ?? 0;
+  if (s.status === 'open') cur.openCount++;
+  else if (s.status === 'closed') cur.closedCount++;
+  else if (s.status === 'cancelled') cur.cancelledCount++;
+  if (s.weather_condition && !cur.weathers.includes(s.weather_condition)) {
+    cur.weathers.push(s.weather_condition);
+  }
+  dailySummary.set(d, cur);
+}
+
+function weatherEmoji(cond: string): string {
+  return ({
+    sunny: '☀️',
+    cloudy: '☁️',
+    cloudy_then_rain: '☁️🌧',
+    rain: '🌧',
+    rain_then_cloudy: '🌧☁️',
+    other: '⚡',
+  } as Record<string, string>)[cond] ?? '';
 }
 
 // Build calendar cells
 const firstDay = new Date(calYear, calMonth - 1, 1);
 const startPad = firstDay.getDay();
 const daysInMonth = new Date(calYear, calMonth, 0).getDate();
-type CalCell = { date: string | null; day: number | null; count: number; isToday: boolean };
+type CalCell = {
+  date: string | null;
+  day: number | null;
+  isToday: boolean;
+  summary: DailySummary | null;
+};
 const cells: CalCell[] = [];
-for (let i = 0; i < startPad; i++) cells.push({ date: null, day: null, count: 0, isToday: false });
+for (let i = 0; i < startPad; i++) cells.push({ date: null, day: null, isToday: false, summary: null });
 for (let d = 1; d <= daysInMonth; d++) {
   const iso = `${calYm}-${String(d).padStart(2, '0')}`;
-  cells.push({ date: iso, day: d, count: dailyCount.get(iso) ?? 0, isToday: iso === today });
+  cells.push({
+    date: iso,
+    day: d,
+    isToday: iso === today,
+    summary: dailySummary.get(iso) ?? null,
+  });
 }
-while (cells.length % 7 !== 0) cells.push({ date: null, day: null, count: 0, isToday: false });
+while (cells.length % 7 !== 0) cells.push({ date: null, day: null, isToday: false, summary: null });
 
 const prevMonthDate = new Date(calYear, calMonth - 2, 1);
 const nextMonthDate = new Date(calYear, calMonth, 1);
@@ -148,17 +208,54 @@ const statusColor: Record<string, string> = {
         <div class="cal-dow">木</div>
         <div class="cal-dow">金</div>
         <div class="cal-dow dow-sat">土</div>
-        {cells.map((c) => (
-          c.date ? (
-            <a class={`cal-cell ${c.count > 0 ? 'has-res' : ''} ${c.isToday ? 'today' : ''} ${dateFilter === c.date ? 'selected' : ''}`}
-               href={`/admin/reservations?date=${c.date}&ym=${calYm}`}>
+        {cells.map((c) => {
+          if (!c.date) return <div class="cal-cell empty"></div>;
+          const s = c.summary;
+          const hasSlots = !!s && s.slotCount > 0;
+          const allCancelled = hasSlots && s.cancelledCount === s.slotCount;
+          const fillPct = hasSlots && s.totalCapacity > 0
+            ? Math.round((s.totalReserved / s.totalCapacity) * 100)
+            : 0;
+          const isFull = hasSlots && fillPct >= 100;
+          const classes = [
+            'cal-cell',
+            hasSlots && s.totalReserved > 0 ? 'has-res' : '',
+            hasSlots ? 'has-slots' : 'no-slots',
+            allCancelled ? 'all-cancelled' : '',
+            isFull ? 'is-full' : '',
+            c.isToday ? 'today' : '',
+            dateFilter === c.date ? 'selected' : '',
+          ].filter(Boolean).join(' ');
+          return (
+            <a class={classes} href={`/admin/reservations?date=${c.date}&ym=${calYm}`}>
               <span class="cal-day">{c.day}</span>
-              {c.count > 0 && <span class="cal-count">{c.count}</span>}
+              {hasSlots && (
+                <>
+                  <span class="cal-slots">{s.slotCount}枠</span>
+                  {allCancelled ? (
+                    <span class="cal-badge cancelled">中止</span>
+                  ) : (
+                    <>
+                      <span class={`cal-fill ${isFull ? 'full' : fillPct >= 80 ? 'high' : fillPct >= 50 ? 'mid' : 'low'}`}>
+                        {s.totalReserved}/{s.totalCapacity}
+                      </span>
+                      {s.weathers.length > 0 && (
+                        <span class="cal-weather">{s.weathers.map(weatherEmoji).join('')}</span>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </a>
-          ) : (
-            <div class="cal-cell empty"></div>
-          )
-        ))}
+          );
+        })}
+      </div>
+      <div class="cal-legend">
+        <span><span class="lg-dot lg-low"></span>空きあり</span>
+        <span><span class="lg-dot lg-mid"></span>半分</span>
+        <span><span class="lg-dot lg-high"></span>残少</span>
+        <span><span class="lg-dot lg-full"></span>満席</span>
+        <span><span class="lg-dot lg-cancel"></span>中止</span>
       </div>
       {dateFilter && (
         <div class="cal-filter-info">
@@ -264,28 +361,70 @@ const statusColor: Record<string, string> = {
   .cal-dow.dow-sun { color: var(--rose-deep); }
   .cal-dow.dow-sat { color: var(--sky-deep); }
   .cal-cell {
-    aspect-ratio: 1 / 1;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 68px;
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start;
+    padding: 3px 2px;
     background: var(--bg-2); border: 1px solid transparent;
     border-radius: 6px; text-decoration: none; color: var(--ink);
-    font-size: .78rem;
+    font-size: .68rem;
     position: relative;
     transition: background .1s;
+    overflow: hidden;
   }
   .cal-cell:hover { background: var(--bg-3); }
   .cal-cell.empty { background: transparent; pointer-events: none; }
-  .cal-day { font-weight: 700; font-family: var(--mono); }
-  .cal-count {
-    position: absolute; bottom: 3px;
-    font-size: .58rem; font-weight: 800;
-    background: var(--sky); color: #fff;
-    padding: 1px 6px; border-radius: 100px;
-    font-family: var(--mono);
+  .cal-day {
+    font-weight: 800; font-family: var(--mono);
+    font-size: .8rem; text-align: center;
+  }
+  .cal-slots {
+    text-align: center; font-size: .6rem;
+    color: var(--ink-3); font-family: var(--mono);
+    margin-top: 1px;
+  }
+  .cal-fill {
+    text-align: center; font-size: .6rem; font-weight: 800;
+    font-family: var(--mono); margin-top: 1px;
+    padding: 1px 4px; border-radius: 100px;
+  }
+  .cal-fill.low { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .cal-fill.mid { background: rgba(58,169,232,.2); color: var(--sky-deep); }
+  .cal-fill.high { background: rgba(255,201,67,.25); color: var(--orange-deep); }
+  .cal-fill.full { background: rgba(229,85,111,.2); color: var(--rose-deep); }
+  .cal-badge {
+    text-align: center; font-size: .58rem; font-weight: 800;
+    padding: 1px 5px; border-radius: 100px; margin-top: 1px;
+  }
+  .cal-badge.cancelled { background: var(--bg-3); color: var(--ink-3); }
+  .cal-weather { text-align: center; font-size: .7rem; line-height: 1; }
+  .cal-cell.no-slots { opacity: .5; }
+  .cal-cell.has-slots {
+    background: var(--bg); border-color: var(--line);
   }
   .cal-cell.has-res {
-    background: rgba(58,169,232,.08);
+    background: rgba(58,169,232,.06);
     border-color: var(--sky-light);
   }
+  .cal-cell.all-cancelled {
+    background: var(--bg-3); border-color: var(--line);
+  }
+  .cal-cell.is-full {
+    background: rgba(229,85,111,.08);
+    border-color: var(--rose);
+  }
+  .cal-legend {
+    display: flex; gap: .8rem; flex-wrap: wrap; justify-content: center;
+    margin-top: .6rem; font-size: .68rem; color: var(--ink-3);
+  }
+  .cal-legend span { display: inline-flex; align-items: center; gap: .25rem; }
+  .lg-dot {
+    width: 10px; height: 10px; border-radius: 100px; display: inline-block;
+  }
+  .lg-low { background: rgba(164,214,94,.5); border: 1px solid var(--lime-deep); }
+  .lg-mid { background: rgba(58,169,232,.4); border: 1px solid var(--sky-deep); }
+  .lg-high { background: rgba(255,201,67,.45); border: 1px solid var(--sun); }
+  .lg-full { background: rgba(229,85,111,.4); border: 1px solid var(--rose); }
+  .lg-cancel { background: var(--bg-3); border: 1px solid var(--line-2); }
   .cal-cell.today {
     background: rgba(255,201,67,.15);
     border-color: var(--sun);
