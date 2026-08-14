@@ -1,0 +1,307 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { jaDateLabel } from '@lib/admin';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const { reservationId } = Astro.params;
+if (!reservationId) return new Response('missing reservationId', { status: 400 });
+
+// Load consent + reservation + related for full legal context
+const { data: consent } = await supabase
+  .from('consents')
+  .select(`
+    id, term_id, term_version, term_body_snapshot, term_hash_snapshot,
+    consented_at, consenter_name, signature_type, signature_typed_name,
+    signature_image_key, ip_address, user_agent, checked_safety_items,
+    declaration_text,
+    reservations!inner(
+      id, reservation_number, status, price_tier, total_amount,
+      cancelled_at, cancelled_reason,
+      slots(date, start_time, end_time, courses(name, code)),
+      guardians(name, kana, phone, email, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation),
+      reservation_participants(name_snapshot, kana_snapshot, birth_date_snapshot, age_at_booking, gender_snapshot, height_cm)
+    )
+  `)
+  .eq('reservation_id', reservationId)
+  .maybeSingle();
+
+if (!consent) {
+  return new Response('同意書が見つかりません (この予約は同意書なしで作成されたか、reservation_id が不正です)', { status: 404 });
+}
+
+const res: any = (consent as any).reservations ?? {};
+const slot: any = res.slots ?? {};
+const course: any = slot.courses ?? {};
+const guardian: any = res.guardians ?? {};
+const participants: any[] = res.reservation_participants ?? [];
+
+const signatureDataUrl = consent.signature_type === 'drawn' && consent.signature_image_key
+  ? `data:image/png;base64,${consent.signature_image_key}`
+  : null;
+
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+function dtLabel(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  const w = weekdayJa[d.getDay()];
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${y}年${mo}月${da}日 (${w}) ${hh}:${mm}:${ss}`;
+}
+
+// Convert markdown-lite to HTML for term body
+function renderTerms(md: string): string {
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+  const lines = esc(md).split(/\r?\n/);
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line) { closeList(); continue; }
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) {
+      closeList();
+      out.push(`<h${h[1].length}>${h[2]}</h${h[1].length}>`);
+      continue;
+    }
+    const li = line.match(/^-\s+(.*)$/);
+    if (li) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${li[1].replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>`);
+  }
+  closeList();
+  return out.join('\n');
+}
+
+const safetyItemsHtml = Array.isArray(consent.checked_safety_items)
+  ? (consent.checked_safety_items as any[]).map((it: any) => {
+      if (typeof it === 'object' && it?.text) return String(it.text);
+      return String(it);
+    })
+  : [];
+---
+<Base title={`同意書 · ${res.reservation_number} — ASMS`}>
+  <main>
+    <div class="no-print admin-nav">
+      <a class="back" href={`/admin/slots/${slot.id ?? ''}`}>← スロット詳細へ戻る</a>
+      <button type="button" onclick="window.print()" class="btn-print">🖨 印刷 / PDF 保存</button>
+    </div>
+
+    <div class="doc">
+      <header class="doc-hd">
+        <div class="doc-brand">福岡キッズカートアカデミー</div>
+        <h1>参加同意書 (電子署名)</h1>
+        <div class="doc-meta">
+          <div><strong>予約番号:</strong> <span class="mono">{res.reservation_number}</span></div>
+          <div><strong>同意日時:</strong> <span class="mono">{dtLabel(consent.consented_at)}</span></div>
+          <div><strong>利用規約バージョン:</strong> <span class="mono">{consent.term_version}</span></div>
+          <div><strong>規約ハッシュ (SHA-256):</strong> <span class="mono small">{consent.term_hash_snapshot}</span></div>
+        </div>
+      </header>
+
+      <section class="sec">
+        <h2>予約内容</h2>
+        <table class="kv">
+          <tr><th>コース</th><td>{course.name}</td></tr>
+          <tr><th>開催日</th><td>{slot.date ? jaDateLabel(slot.date) : '?'}</td></tr>
+          <tr><th>時間</th><td>{slot.start_time?.slice(0,5) ?? ''}{slot.end_time ? '–' + slot.end_time.slice(0,5) : ''}</td></tr>
+          <tr><th>料金</th><td>¥{(res.total_amount ?? 0).toLocaleString('ja-JP')} ({res.price_tier === 'member' ? '会員' : '一般'})</td></tr>
+          <tr><th>予約状態</th><td>{res.status}{res.cancelled_at && ` (キャンセル日時: ${dtLabel(res.cancelled_at)})`}</td></tr>
+          {res.cancelled_reason && <tr><th>キャンセル理由</th><td>{res.cancelled_reason}</td></tr>}
+        </table>
+      </section>
+
+      <section class="sec">
+        <h2>参加者 ({participants.length} 名)</h2>
+        <table class="kv">
+          {participants.map((p, i) => (
+            <>
+              <tr><th>参加者 {i + 1}</th><td><strong>{p.name_snapshot}</strong> ({p.kana_snapshot})</td></tr>
+              <tr><th>生年月日</th><td class="mono">{p.birth_date_snapshot} ({p.age_at_booking}歳・{p.gender_snapshot === 'male' ? '男' : p.gender_snapshot === 'female' ? '女' : 'その他'}・身長 {p.height_cm}cm)</td></tr>
+            </>
+          ))}
+        </table>
+      </section>
+
+      <section class="sec">
+        <h2>保護者情報</h2>
+        <table class="kv">
+          <tr><th>お名前</th><td><strong>{guardian.name}</strong> ({guardian.kana})</td></tr>
+          <tr><th>電話</th><td class="mono">{guardian.phone}</td></tr>
+          <tr><th>メール</th><td class="mono">{guardian.email}</td></tr>
+          <tr><th>住所</th><td>{guardian.address ?? '(未入力)'}</td></tr>
+          <tr><th>緊急連絡先</th><td>{guardian.emergency_contact_name} ({guardian.emergency_contact_relation}) <span class="mono">{guardian.emergency_contact_phone}</span></td></tr>
+        </table>
+      </section>
+
+      <section class="sec">
+        <h2>同意宣言</h2>
+        <p class="declaration">{consent.declaration_text}</p>
+      </section>
+
+      <section class="sec">
+        <h2>安全ルール確認事項 ({safetyItemsHtml.length} 項目 · 全チェック済)</h2>
+        <ol class="safety-list">
+          {safetyItemsHtml.map((text) => <li>{text}</li>)}
+        </ol>
+      </section>
+
+      <section class="sec sig-sec">
+        <h2>電子署名</h2>
+        <table class="kv">
+          <tr><th>署名者</th><td><strong>{consent.consenter_name}</strong></td></tr>
+          <tr><th>署名方式</th><td>{consent.signature_type === 'drawn' ? '✍️ 手書き' : '⌨ タイプ入力'}</td></tr>
+          <tr><th>署名日時</th><td class="mono">{dtLabel(consent.consented_at)}</td></tr>
+          {consent.ip_address && <tr><th>IP アドレス</th><td class="mono">{consent.ip_address}</td></tr>}
+          {consent.user_agent && <tr><th>ブラウザ情報</th><td class="mono small">{consent.user_agent}</td></tr>}
+        </table>
+
+        <div class="sig-visual">
+          {signatureDataUrl ? (
+            <img src={signatureDataUrl} alt="手書き署名" class="sig-img" />
+          ) : consent.signature_typed_name ? (
+            <div class="sig-typed">
+              <div class="sig-typed-label">タイプ入力署名:</div>
+              <div class="sig-typed-name">{consent.signature_typed_name}</div>
+            </div>
+          ) : (
+            <div class="sig-none">署名データなし</div>
+          )}
+        </div>
+      </section>
+
+      <section class="sec terms-sec">
+        <h2>同意時点の利用規約全文 (バージョン {consent.term_version})</h2>
+        <div class="terms-body" set:html={renderTerms(consent.term_body_snapshot)} />
+      </section>
+
+      <footer class="doc-ft">
+        <p>本書は電子署名により締結された参加同意の記録です。予約番号 {res.reservation_number} · 印刷日時 {dtLabel(new Date().toISOString())}</p>
+        <p class="doc-ft-org">福岡キッズカートアカデミー / エーワンサーキット</p>
+      </footer>
+    </div>
+  </main>
+</Base>
+
+<style>
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+
+  .admin-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 1rem; margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .back { font-size: .78rem; color: var(--ink-3); text-decoration: none; }
+  .back:hover { text-decoration: underline; }
+  .btn-print {
+    padding: .5rem 1rem; font-size: .82rem; font-weight: 700;
+    background: var(--sky); color: #fff; border: none; border-radius: 8px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .btn-print:hover { background: var(--sky-deep); }
+
+  .doc {
+    background: #fff; padding: 2rem 1.8rem;
+    border: 1px solid var(--line); border-radius: 4px;
+    color: #1a1a1a;
+  }
+  .doc-hd { text-align: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #1a1a1a; }
+  .doc-brand { font-size: .85rem; color: var(--ink-3); font-weight: 700; margin-bottom: .3rem; }
+  .doc h1 { margin: 0 0 1rem; font-size: 1.6rem; font-weight: 800; letter-spacing: .05em; }
+  .doc-meta {
+    display: flex; flex-direction: column; gap: .2rem;
+    font-size: .78rem; text-align: left;
+    background: var(--bg-2); padding: .7rem 1rem; border-radius: 6px;
+  }
+  .doc-meta strong { display: inline-block; min-width: 12em; }
+  .doc-meta .small { font-size: .68rem; word-break: break-all; }
+
+  .sec { margin-bottom: 1.8rem; }
+  .sec h2 {
+    margin: 0 0 .7rem; padding-bottom: .3rem;
+    font-size: 1rem; font-weight: 800; color: #1a1a1a;
+    border-bottom: 1px solid var(--line);
+  }
+  .kv {
+    width: 100%; border-collapse: collapse; font-size: .84rem;
+  }
+  .kv th, .kv td { padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  .kv th {
+    width: 30%; font-weight: 700; color: var(--ink-3); font-size: .74rem;
+    background: var(--bg-2); border: 1px solid var(--line);
+  }
+  .kv td { border: 1px solid var(--line); }
+  .mono { font-family: var(--mono); }
+  .small { font-size: .7rem; }
+
+  .declaration {
+    padding: 1rem; background: rgba(58,169,232,.08);
+    border-left: 4px solid var(--sky); border-radius: 4px;
+    font-size: .95rem; font-weight: 700; margin: 0;
+  }
+
+  .safety-list { margin: 0; padding-left: 1.5rem; font-size: .84rem; line-height: 1.8; }
+  .safety-list li { margin-bottom: .3rem; }
+  .safety-list li::marker { color: var(--lime-deep); font-weight: 800; }
+
+  .sig-sec .sig-visual {
+    margin-top: 1rem; padding: 1rem;
+    background: #fafafa; border: 1px dashed var(--line-2); border-radius: 6px;
+    text-align: center; min-height: 200px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sig-img {
+    max-width: 100%; max-height: 300px;
+    background: #fff; border: 1px solid var(--line); border-radius: 4px;
+    padding: .5rem;
+  }
+  .sig-typed { text-align: center; }
+  .sig-typed-label { font-size: .74rem; color: var(--ink-3); margin-bottom: .5rem; }
+  .sig-typed-name { font-size: 1.8rem; font-weight: 700; font-family: 'Sawarabi Mincho', serif; padding: 1rem 2rem; border: 1px solid var(--line); border-radius: 4px; background: #fff; display: inline-block; }
+  .sig-none { color: var(--rose-deep); font-weight: 700; }
+
+  .terms-sec { page-break-before: always; }
+  .terms-body {
+    font-size: .82rem; line-height: 1.8;
+    padding: 1rem; background: var(--bg-2); border-radius: 6px;
+  }
+  .terms-body :global(h1), .terms-body :global(h2), .terms-body :global(h3) {
+    margin: 1rem 0 .5rem; font-weight: 800;
+  }
+  .terms-body :global(h1) { font-size: 1.1rem; }
+  .terms-body :global(h2) { font-size: .95rem; }
+  .terms-body :global(h3) { font-size: .88rem; }
+  .terms-body :global(p) { margin: .5rem 0; }
+  .terms-body :global(ul) { margin: .5rem 0; padding-left: 1.5rem; }
+  .terms-body :global(li) { margin-bottom: .2rem; }
+
+  .doc-ft {
+    margin-top: 2rem; padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    text-align: center; font-size: .72rem; color: var(--ink-3);
+  }
+  .doc-ft-org { font-weight: 700; margin-top: .3rem; }
+
+  @media print {
+    body { background: #fff !important; }
+    .no-print { display: none !important; }
+    main { max-width: none; padding: 0; }
+    .doc {
+      border: none; padding: 1rem; box-shadow: none;
+    }
+    .sec { page-break-inside: avoid; }
+  }
+</style>

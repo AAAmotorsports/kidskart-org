@@ -1020,6 +1020,12 @@ async function sendReservationCancelEmail(env: Env, args: {
               </div>
 
               <div class="p-photo mono">写真: {photoJa(p.photo_consent)}</div>
+
+              <div class="p-consent">
+                <a class="consent-link" href={`/admin/consents/${r.id}`} target="_blank" rel="noopener">
+                  ✍️ 同意書・電子署名を見る
+                </a>
+              </div>
             </li>
           );
         })}
@@ -1165,6 +1171,14 @@ async function sendReservationCancelEmail(env: Env, args: {
   .p-guardian a { color: var(--sky-deep); text-decoration: none; }
   .p-num { margin-left: auto; color: var(--ink-3); font-size: .68rem; }
   .p-photo { font-size: .68rem; color: var(--ink-3); margin-top: .3rem; }
+  .p-consent { margin-top: .4rem; }
+  .consent-link {
+    display: inline-block; padding: .3rem .7rem; font-size: .72rem; font-weight: 700;
+    color: var(--rose-deep); background: rgba(229,85,111,.06);
+    border: 1px solid rgba(229,85,111,.3); border-radius: 100px;
+    text-decoration: none;
+  }
+  .consent-link:hover { background: rgba(229,85,111,.15); }
 
   .badge {
     padding: 3px 10px; border-radius: 100px;
