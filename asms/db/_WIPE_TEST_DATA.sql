@@ -23,12 +23,20 @@
 
 begin;
 
-delete from consents;
-delete from reservation_participants;
-delete from reservations;
+-- FK 依存順:
+-- consents               → reservations
+-- customer_progressions  → reservation_participants, customers  ← rp より先
+-- customer_bests         → customers
+-- reservation_participants → reservations, customers
+-- reservations           → slots, guardians
+-- guardian_customer_links → guardians, customers
+-- customers, guardians   → (葉)
 
+delete from consents;
 delete from customer_progressions;
 delete from customer_bests;
+delete from reservation_participants;
+delete from reservations;
 delete from guardian_customer_links;
 delete from customers;
 delete from guardians;
