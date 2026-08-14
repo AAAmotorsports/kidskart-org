@@ -94,6 +94,59 @@ function weatherEmoji(cond: string): string {
   } as Record<string, string>)[cond] ?? '';
 }
 
+// 日付絞込中なら、その日のスロット一覧を取得 (時刻順・コース情報付き)
+type DaySlot = {
+  id: string;
+  start_time: string;
+  end_time: string | null;
+  capacity: number;
+  status: string;
+  weather_condition: string | null;
+  temperature_c: number | null;
+  weather_note: string | null;
+  course_name: string;
+  activeReserved: number;
+  cancelledReserved: number;
+};
+let daySlots: DaySlot[] = [];
+if (dateFilter) {
+  const { data: rawSlots } = await supabase
+    .from('slots')
+    .select('id, start_time, end_time, capacity, status, weather_condition, temperature_c, weather_note, courses(name)')
+    .eq('date', dateFilter)
+    .order('start_time');
+  const idsToday = (rawSlots ?? []).map((s: any) => s.id);
+  const activeMap = new Map<string, number>();
+  const cancelMap = new Map<string, number>();
+  if (idsToday.length > 0) {
+    const { data: rows } = await supabase
+      .from('reservations')
+      .select('slot_id, status, reservation_participants(id, attendance_status)')
+      .in('slot_id', idsToday)
+      .neq('status', 'cancelled');
+    for (const r of (rows ?? []) as any[]) {
+      const parts = ((r.reservation_participants as any[]) ?? []);
+      const active = parts.filter((p) => p.attendance_status !== 'cancelled').length;
+      const cancelled = parts.filter((p) => p.attendance_status === 'cancelled').length;
+      activeMap.set(r.slot_id, (activeMap.get(r.slot_id) ?? 0) + active);
+      cancelMap.set(r.slot_id, (cancelMap.get(r.slot_id) ?? 0) + cancelled);
+    }
+  }
+  daySlots = ((rawSlots ?? []) as any[]).map((s) => ({
+    id: s.id,
+    start_time: s.start_time,
+    end_time: s.end_time,
+    capacity: s.capacity,
+    status: s.status,
+    weather_condition: s.weather_condition,
+    temperature_c: s.temperature_c,
+    weather_note: s.weather_note,
+    course_name: s.courses?.name ?? '',
+    activeReserved: activeMap.get(s.id) ?? 0,
+    cancelledReserved: cancelMap.get(s.id) ?? 0,
+  }));
+}
+
 // Build calendar cells
 const firstDay = new Date(calYear, calMonth - 1, 1);
 const startPad = firstDay.getDay();
@@ -265,6 +318,76 @@ const statusColor: Record<string, string> = {
       )}
     </section>
 
+    {dateFilter && daySlots.length > 0 && (
+      <section class="day-slots">
+        <h2>📆 {dateFilter} のスロット ({daySlots.length}枠)</h2>
+        {daySlots.some((s) => s.weather_condition || s.temperature_c || s.weather_note) && (
+          <div class="ds-weather-line">
+            🌤 {daySlots.map((s) => {
+              const parts: string[] = [];
+              if (s.weather_condition) {
+                const emoji = ({
+                  sunny: '☀️', cloudy: '☁️', cloudy_then_rain: '☁️🌧',
+                  rain: '🌧', rain_then_cloudy: '🌧☁️', other: '⚡',
+                } as any)[s.weather_condition] ?? '';
+                const label = ({
+                  sunny: '晴れ', cloudy: '曇り', cloudy_then_rain: '曇りのち雨',
+                  rain: '雨', rain_then_cloudy: '雨のち曇り', other: 'その他',
+                } as any)[s.weather_condition] ?? '';
+                parts.push(`${emoji}${label}`);
+              }
+              if (s.temperature_c != null) parts.push(`${s.temperature_c}°C`);
+              return parts.length > 0 ? `${s.start_time.slice(0,5)} ${parts.join(' ')}` : null;
+            }).filter(Boolean).join(' · ')}
+          </div>
+        )}
+        <ul class="ds-list">
+          {daySlots.map((s) => {
+            const isCancelled = s.status === 'cancelled';
+            const isClosed = s.status === 'closed';
+            const isOpen = s.status === 'open';
+            const remaining = Math.max(0, s.capacity - s.activeReserved);
+            const fillPct = s.capacity > 0 ? Math.round((s.activeReserved / s.capacity) * 100) : 0;
+            const isFull = remaining === 0 && s.activeReserved > 0;
+            return (
+              <li class={`ds-item ${isCancelled ? 'is-cancel' : isClosed ? 'is-closed' : ''} ${isFull ? 'is-full' : ''}`}>
+                <a class="ds-link" href={`/admin/slots/${s.id}`}>
+                  <div class="ds-head">
+                    <span class="ds-time mono">{s.start_time.slice(0,5)}{s.end_time ? '–' + s.end_time.slice(0,5) : ''}</span>
+                    <span class="ds-course">{s.course_name}</span>
+                    <span class={`ds-status ${isOpen ? 'st-open' : isClosed ? 'st-closed' : 'st-cancel'}`}>
+                      {isOpen ? '🟢 受付中' : isClosed ? '🟡 停止' : '🔴 中止'}
+                    </span>
+                  </div>
+                  <div class="ds-meta">
+                    <span>定員 <strong>{s.capacity}</strong></span>
+                    {!isCancelled && (
+                      <>
+                        <span>予約 <strong>{s.activeReserved}</strong></span>
+                        <span class={`ds-fill fill-${isFull ? 'full' : fillPct >= 80 ? 'high' : fillPct >= 50 ? 'mid' : 'low'}`}>
+                          残 {remaining}
+                        </span>
+                        {s.cancelledReserved > 0 && (
+                          <span class="ds-cancel-count">キャンセル {s.cancelledReserved}</span>
+                        )}
+                      </>
+                    )}
+                    <span class="ds-arrow">詳細 →</span>
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    )}
+
+    {dateFilter && daySlots.length === 0 && (
+      <div class="ds-empty">
+        📭 {dateFilter} には開催スロットが生成されていません。
+      </div>
+    )}
+
     <div class="toolbar">
       <div class="scope-tabs">
         <a class={`tab ${scope === 'upcoming' && !search && !dateFilter ? 'active' : ''}`} href="/admin/reservations?scope=upcoming">📆 今後</a>
@@ -425,6 +548,62 @@ const statusColor: Record<string, string> = {
   .lg-high { background: rgba(255,201,67,.45); border: 1px solid var(--sun); }
   .lg-full { background: rgba(229,85,111,.4); border: 1px solid var(--rose); }
   .lg-cancel { background: var(--bg-3); border: 1px solid var(--line-2); }
+
+  .day-slots {
+    background: var(--bg); border: 1px solid var(--sky-light); border-radius: 12px;
+    padding: 1rem; margin-bottom: 1rem;
+  }
+  .day-slots h2 {
+    margin: 0 0 .7rem; font-size: .95rem; font-weight: 800; color: var(--sky-deep);
+  }
+  .ds-weather-line {
+    padding: .5rem .8rem; margin-bottom: .8rem;
+    background: linear-gradient(135deg, rgba(58,169,232,.05), rgba(255,201,67,.05));
+    border-radius: 8px; font-size: .78rem; color: var(--ink-2);
+  }
+  .ds-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .ds-item {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px; transition: transform .1s, box-shadow .15s;
+  }
+  .ds-item:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(58,169,232,.15); }
+  .ds-item.is-cancel { opacity: .65; }
+  .ds-item.is-closed { background: rgba(255,201,67,.05); border-color: var(--sun); }
+  .ds-item.is-full { background: rgba(229,85,111,.05); border-color: var(--rose); }
+  .ds-link {
+    display: block; padding: .7rem 1rem;
+    text-decoration: none; color: var(--ink);
+  }
+  .ds-head {
+    display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+    margin-bottom: .3rem;
+  }
+  .ds-time { color: var(--sky-deep); font-weight: 800; font-size: .95rem; }
+  .ds-course { font-weight: 700; color: var(--ink); flex: 1; min-width: 0; }
+  .ds-status { font-size: .72rem; font-weight: 800; padding: 2px 8px; border-radius: 100px; white-space: nowrap; }
+  .st-open { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .st-closed { background: rgba(255,201,67,.2); color: var(--orange-deep); }
+  .st-cancel { background: var(--bg-3); color: var(--ink-3); }
+  .ds-meta {
+    display: flex; gap: .8rem; align-items: baseline; flex-wrap: wrap;
+    font-size: .78rem; color: var(--ink-2);
+  }
+  .ds-meta strong { color: var(--ink); font-family: var(--mono); font-weight: 800; margin: 0 .1rem; }
+  .ds-fill {
+    padding: 1px 8px; border-radius: 100px; font-weight: 800; font-family: var(--mono);
+  }
+  .fill-low { background: rgba(164,214,94,.2); color: var(--lime-deep); }
+  .fill-mid { background: rgba(58,169,232,.2); color: var(--sky-deep); }
+  .fill-high { background: rgba(255,201,67,.25); color: var(--orange-deep); }
+  .fill-full { background: rgba(229,85,111,.2); color: var(--rose-deep); }
+  .ds-cancel-count { color: var(--ink-3); font-family: var(--mono); font-size: .72rem; }
+  .ds-arrow { margin-left: auto; color: var(--sky-deep); font-weight: 700; font-size: .78rem; }
+
+  .ds-empty {
+    background: var(--bg-2); border: 1px dashed var(--line-2);
+    border-radius: 8px; padding: 1.2rem; text-align: center;
+    color: var(--ink-3); font-size: .84rem; margin-bottom: 1rem;
+  }
   .cal-cell.today {
     background: rgba(255,201,67,.15);
     border-color: var(--sun);
