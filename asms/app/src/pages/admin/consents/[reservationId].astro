@@ -32,14 +32,30 @@ if (!consent) {
   return new Response('同意書が見つかりません (この予約は同意書なしで作成されたか、reservation_id が不正です)', { status: 404 });
 }
 
+// checked_safety_items は ID の配列で保存されているので、
+// consent.term_version に対応する terms 行の safety_items から本文を lookup。
+// (安全ルール文言は規約バージョンごとに変わるので同意時のバージョンで引く)
+const { data: termRow } = await supabase
+  .from('terms')
+  .select('safety_items')
+  .eq('version', consent.term_version)
+  .maybeSingle();
+const termSafetyItems: Array<{ id: number; text: string }> =
+  (termRow?.safety_items as any[]) ?? [];
+const termSafetyMap = new Map(termSafetyItems.map((it) => [Number(it.id), it.text]));
+
 const res: any = (consent as any).reservations ?? {};
 const slot: any = res.slots ?? {};
 const course: any = slot.courses ?? {};
 const guardian: any = res.guardians ?? {};
 const participants: any[] = res.reservation_participants ?? [];
 
-const signatureDataUrl = consent.signature_type === 'drawn' && consent.signature_image_key
-  ? `data:image/png;base64,${consent.signature_image_key}`
+// signature_image_key には wizard が canvas.toDataURL('image/png') で
+// 生成した「data:image/png;base64,XXX」形式の完全な data URL がそのまま
+// 保存されている。念のため prefix が無い旧データにも対応。
+const sigRaw = consent.signature_image_key ?? '';
+const signatureDataUrl = consent.signature_type === 'drawn' && sigRaw
+  ? (sigRaw.startsWith('data:') ? sigRaw : `data:image/png;base64,${sigRaw}`)
   : null;
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
@@ -86,10 +102,15 @@ function renderTerms(md: string): string {
   return out.join('\n');
 }
 
+// checked_safety_items は次のどちらかの形で保存されている:
+//   [1, 2, 3, ...] (ID のみ、現行フォーマット)
+//   [{id: 1, text: "..."}, ...] (稀に完全形が保存されるレガシー)
+// どちらでも本文が取れるように lookup + fallback。
 const safetyItemsHtml = Array.isArray(consent.checked_safety_items)
   ? (consent.checked_safety_items as any[]).map((it: any) => {
       if (typeof it === 'object' && it?.text) return String(it.text);
-      return String(it);
+      const id = Number(it);
+      return termSafetyMap.get(id) ?? `(項目 ${id}: 本文取得不可)`;
     })
   : [];
 ---
