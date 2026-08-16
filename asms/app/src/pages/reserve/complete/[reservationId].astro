@@ -44,6 +44,11 @@ function checkInLabel(startTime: string): string {
 const checkIn = slot.start_time ? checkInLabel(slot.start_time) : '';
 
 const isPending = res.status === 'pending_approval';
+
+// 体験教室予約が完了したときは、続けて「リピート練習も追加予約」する導線を出す。
+// 実装は最小: /reserve?course=repeat_60 (or repeat_30) に遷移させるだけで、
+// ウィザード側の localStorage プリフィルが保護者・お子さま情報を自動で復元する。
+const isTaiken = course.code === 'taiken';
 ---
 <Base title={`予約${isPending ? '受付' : '完了'} — ${res.reservation_number}`}>
   <main>
@@ -109,8 +114,30 @@ const isPending = res.status === 'pending_approval';
       💌 ご登録のメールアドレスに確認メールをお送りしました。届かない場合は迷惑メールフォルダをご確認いただくか、<a href="mailto:info@kidskart.org">info@kidskart.org</a> までお問い合わせください。
     </div>
 
+    {isTaiken && !isPending && (
+      <section class="upsell">
+        <div class="upsell-badge">🏁 続けてご予約もどうぞ</div>
+        <h2 class="upsell-title">リピート練習も追加予約しませんか？</h2>
+        <p class="upsell-lead">
+          体験の後に <strong>リピート練習</strong> を続けると、上達が早くなります。<br />
+          お子さまごとに <strong>25 分 / 50 分</strong> からお選びいただけます。<br />
+          <span class="upsell-hint">※ ご入力いただいた保護者・お子さまの情報はそのままご利用いただけます。</span>
+        </p>
+        <div class="upsell-cta">
+          <a class="btn btn-primary" href="/reserve/?course=repeat_60#dates">
+            リピート練習 <strong>50 分</strong> を予約する
+            <span class="btn-sub">¥6,500 / 会員 ¥4,500</span>
+          </a>
+          <a class="btn btn-secondary" href="/reserve/?course=repeat_30#dates">
+            リピート練習 <strong>25 分</strong> を予約する
+            <span class="btn-sub">¥3,500 / 会員 ¥3,000</span>
+          </a>
+        </div>
+      </section>
+    )}
+
     <div class="cta">
-      <a class="btn btn-primary" href="/reserve/">別の日程を予約する</a>
+      <a class="btn btn-ghost" href="/reserve/">別の日程・別のコースを予約する</a>
       <a class="btn btn-ghost" href="https://kidskart.org/">kidskart.org へ戻る</a>
     </div>
   </main>
@@ -196,5 +223,58 @@ const isPending = res.status === 'pending_approval';
   .btn-ghost {
     background: var(--bg-2); color: var(--ink);
     border: 1.5px solid var(--line);
+  }
+  .btn-secondary {
+    background: linear-gradient(135deg, #4aa8e8, var(--sky-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(26,127,184,.25);
+  }
+  .btn-sub {
+    display: block; font-size: .72rem; font-weight: 600;
+    opacity: .9; margin-top: .2rem;
+  }
+
+  /* --- 体験教室完了時のみ表示するリピート追加予約セクション ---------- */
+  .upsell {
+    margin: 1.5rem 0 .5rem;
+    padding: 1.15rem 1.15rem 1.25rem;
+    background: linear-gradient(135deg, rgba(255,138,61,.08), rgba(255,201,67,.08));
+    border: 2px solid rgba(255,138,61,.35);
+    border-radius: 14px;
+    position: relative;
+  }
+  .upsell-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff;
+    padding: .3rem .8rem;
+    border-radius: 100px;
+    font-size: .72rem;
+    font-weight: 800;
+    margin-bottom: .6rem;
+    box-shadow: 0 3px 8px rgba(229,99,26,.25);
+  }
+  .upsell-title {
+    margin: 0 0 .5rem;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .upsell-lead {
+    margin: 0 0 1rem;
+    font-size: .84rem;
+    line-height: 1.7;
+    color: var(--ink);
+  }
+  .upsell-hint {
+    display: inline-block;
+    margin-top: .3rem;
+    font-size: .72rem;
+    color: var(--ink-3);
+    line-height: 1.55;
+  }
+  .upsell-cta {
+    display: flex; flex-direction: column; gap: .55rem;
   }
 </style>
