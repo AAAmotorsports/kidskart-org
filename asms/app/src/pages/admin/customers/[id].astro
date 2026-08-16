@@ -79,12 +79,11 @@ if (Astro.request.method === 'POST') {
 
   if (op === 'add_best') {
     const recordType = ((form.get('record_type') as string) || '').trim();
-    const minutes = parseInt((form.get('minutes') as string) || '0', 10);
     const seconds = parseFloat((form.get('seconds') as string) || '0');
     const vehicle = ((form.get('vehicle_name') as string) || '').trim() || null;
     const note = ((form.get('note') as string) || '').trim() || null;
     if (!recordType) return back('', '記録種別は必須です');
-    const totalMs = Math.round(minutes * 60000 + seconds * 1000);
+    const totalMs = Math.round(seconds * 1000);
     if (totalMs <= 0) return back('', 'タイムは 0 より大きい値を入力してください');
 
     const { error } = await supabase.from('customer_bests').insert({
@@ -210,7 +209,7 @@ const { data: participations } = await supabase
   .select(`
     id, attendance_status, height_cm, age_at_booking, created_at,
     reservations(id, reservation_number, status,
-                 slots(date, start_time, courses(name, code)))
+                 slots(id, date, start_time, courses(name, code)))
   `)
   .eq('customer_id', id)
   .order('created_at', { ascending: false })
@@ -395,11 +394,11 @@ if (searchQ.length >= 1) {
                 placeholder="例: ミニカート 3号車" />
             </div>
             <div class="field">
-              <label>分 : 秒（例 1:23.456 → 1 と 23.456）</label>
+              <label>タイム（秒・小数点以下 3 桁）</label>
               <div class="time-row">
-                <input type="number" name="minutes" min="0" max="59" step="1" value="0" />
-                <span>:</span>
-                <input type="number" name="seconds" min="0" max="59.999" step="0.001" value="0" />
+                <input type="number" name="seconds" min="0" max="999.999" step="0.001"
+                  placeholder="例: 23.958" required />
+                <span class="time-unit">秒</span>
               </div>
             </div>
             <div class="field">
@@ -428,22 +427,41 @@ if (searchQ.length >= 1) {
             const c = s.courses ?? {};
             return (
               <li>
-                <a class="part-link" href={r.id ? `/admin/slots/${s.id ?? ''}` : '#'}>
-                  <div class="part-l">
-                    <div class="part-date mono">
-                      {s.date ? jaDateShort(s.date) : '?'} {s.start_time?.slice(0, 5) ?? ''}
+                {s.id ? (
+                  <a class="part-link" href={`/admin/slots/${s.id}`}>
+                    <div class="part-l">
+                      <div class="part-date mono">
+                        {s.date ? jaDateShort(s.date) : '?'} {s.start_time?.slice(0, 5) ?? ''}
+                      </div>
+                      <div class="part-course">{c.name ?? ''}</div>
                     </div>
-                    <div class="part-course">{c.name ?? ''}</div>
+                    <div class="part-r">
+                      <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
+                        {attendanceLabel(p.attendance_status)}
+                      </span>
+                      <span class="part-meta mono">
+                        {p.height_cm}cm · {p.age_at_booking}歳
+                      </span>
+                    </div>
+                  </a>
+                ) : (
+                  <div class="part-link part-link-nolink">
+                    <div class="part-l">
+                      <div class="part-date mono">
+                        {s.date ? jaDateShort(s.date) : '?'} {s.start_time?.slice(0, 5) ?? ''}
+                      </div>
+                      <div class="part-course">{c.name ?? ''}</div>
+                    </div>
+                    <div class="part-r">
+                      <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
+                        {attendanceLabel(p.attendance_status)}
+                      </span>
+                      <span class="part-meta mono">
+                        {p.height_cm}cm · {p.age_at_booking}歳
+                      </span>
+                    </div>
                   </div>
-                  <div class="part-r">
-                    <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
-                      {attendanceLabel(p.attendance_status)}
-                    </span>
-                    <span class="part-meta mono">
-                      {p.height_cm}cm · {p.age_at_booking}歳
-                    </span>
-                  </div>
-                </a>
+                )}
               </li>
             );
           })}
@@ -654,8 +672,8 @@ if (searchQ.length >= 1) {
   .field input[type="number"] { font-family: var(--mono); }
 
   .time-row { display: flex; align-items: center; gap: .5rem; }
-  .time-row input { width: 5rem; }
-  .time-row span { font-family: var(--mono); font-size: 1.1rem; color: var(--ink-3); }
+  .time-row input { width: 8rem; font-family: var(--mono); }
+  .time-row .time-unit { font-family: var(--jp); font-size: 1rem; color: var(--ink-2); font-weight: 700; }
 
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
   @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } }

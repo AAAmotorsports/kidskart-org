@@ -117,7 +117,7 @@ function makeUrl(params: Record<string, string | number>): string {
   return q ? `/reserve/?${q}` : '/reserve/';
 }
 function courseHref(code: string): string {
-  return activeCourse?.code === code ? '/reserve/' : `/reserve/?course=${code}`;
+  return activeCourse?.code === code ? '/reserve/#dates' : `/reserve/?course=${code}#dates`;
 }
 
 // Calendar cells: leading blanks then day entries. Sunday-start (JS default).
@@ -180,7 +180,6 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
       <a class="back" href="/">← ホーム</a>
       <h1>予約 <span class="beta">β</span></h1>
       <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
-      <a id="signinLink" class="signin-link" href="/reserve/signin?next=/reserve/">📧 別端末でご利用の方はこちら</a>
       <div id="signedInBadge" class="signedin-badge" hidden>
         <span class="sb-icon">🔑</span>
         <span class="sb-text">サインイン中: <span id="signedInEmail" class="sb-email"></span></span>
@@ -271,11 +270,14 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           </div>
         ))}
       </div>
-      <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。</p>
+      <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。<br>
+        <a class="toyopet-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
+        <a class="toyopet-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
+      </p>
     </section>
 
     {hasSlots ? (
-      <section class="dates">
+      <section class="dates" id="dates">
         <div class="section-h">
           <h2>開催予定日を選ぶ</h2>
           {activeCourse ? (
@@ -432,7 +434,6 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   // Show signed-in badge and hide the "sign in" invite when a Supabase
   // session exists. Fast-path localStorage check avoids loading the
   // supabase-js bundle on every calendar view.
-  const signinLink = document.getElementById('signinLink');
   const signedInBadge = document.getElementById('signedInBadge');
   const signedInEmail = document.getElementById('signedInEmail');
   const signOutBtn = document.getElementById('signOutBtn');
@@ -457,7 +458,6 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           return;
         }
         if (signedInEmail) signedInEmail.textContent = session.user.email;
-        if (signinLink) signinLink.hidden = true;
         if (signedInBadge) signedInBadge.hidden = false;
         signOutBtn?.addEventListener('click', async () => {
           if (!confirm('サインアウトしますか？')) return;
@@ -714,6 +714,14 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     line-height: 1.6;
   }
   .member-note strong { color: var(--orange-deep); }
+  .toyopet-link {
+    display: inline-block; margin-top: .4rem; margin-right: .3rem;
+    padding: .35rem .8rem; font-size: .74rem; font-weight: 700;
+    background: var(--bg); color: var(--orange-deep);
+    border: 1px solid var(--sun); border-radius: 100px;
+    text-decoration: none;
+  }
+  .toyopet-link:hover { background: var(--sun); color: #fff; }
 
   /* Calendar */
   .cal-wrap {

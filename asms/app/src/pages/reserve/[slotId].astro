@@ -183,8 +183,8 @@ const termsHtml = terms
             </div>
 
             <div id="signinInvite" hidden class="signin-invite">
-              <div class="si-h">📧 別端末（機種変更・PC 等）でご利用の方</div>
-              <p class="si-hint">メールでサインインすると、前回の予約情報を呼び出せます。</p>
+              <div class="si-h">📧 以前、別端末でご予約したことがある方は</div>
+              <p class="si-hint">メールでサインインすると、前回のご予約情報が自動でフォームに入ります（機種変更・PC 利用など）。</p>
               <a class="btn btn-ghost" href={signinUrl}>メールでサインイン</a>
             </div>
 
@@ -226,6 +226,10 @@ const termsHtml = terms
                   <span>✅ <strong>トヨピー会員に登録済み</strong>です</span>
                 </label>
                 <p class="hint">会員価格でのご予約には、当日または事前にトヨピー会員登録が必要です。</p>
+                <div class="toyopet-links">
+                  <a class="toyopet-regist-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
+                  <a class="toyopet-regist-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
+                </div>
               </div>
             </div>
 
@@ -1312,6 +1316,17 @@ const termsHtml = terms
     width: 20px; height: 20px; accent-color: var(--orange);
     flex: none;
   }
+  .toyopet-links {
+    display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .5rem;
+  }
+  .toyopet-regist-link {
+    display: inline-block;
+    padding: .4rem .85rem; font-size: .76rem; font-weight: 700;
+    background: var(--bg); color: var(--orange-deep);
+    border: 1px solid var(--sun); border-radius: 100px;
+    text-decoration: none;
+  }
+  .toyopet-regist-link:hover { background: var(--sun); color: #fff; }
   .same-as-guardian {
     background: rgba(58,169,232,.08); border-color: var(--sky);
     margin-bottom: 1rem;

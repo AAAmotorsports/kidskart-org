@@ -24,6 +24,14 @@ interface Env {
   PUBLIC_APP_URL?: string;
   PUBLIC_RESERVE_PATH?: string;
 
+  // 予約当日サンキューメール内のご感想アンケートリンク (Google Form 等)
+  // 未設定なら本文からアンケートセクションを省略する。
+  PUBLIC_SURVEY_URL?: string;
+
+  // /api/cron/* を GitHub Actions cron 等から叩くときの共有シークレット
+  // Cloudflare Dashboard の Secret として設定する。
+  CRON_SECRET?: string;
+
   // Simple admin gate for MVP — will be replaced by Supabase Auth later.
   // Password is stored as a SHA-256 hex digest so the plain value never
   // leaves the operator's machine.
