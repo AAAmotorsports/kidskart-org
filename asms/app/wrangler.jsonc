@@ -66,10 +66,9 @@
     // (graceful degradation)。有効化手順は README / CLAUDE.md 参照。
     "PUBLIC_TURNSTILE_SITE_KEY": "",
     // 予約当日サンキューメール内の「ご感想アンケート」リンク先
-    // (Google Form 等)。空文字ならメール本文からアンケートセクション
-    // を省略する。運用開始後にフォームを用意してからここに URL を貼付
-    // → PR → deploy で有効化する。
-    "PUBLIC_SURVEY_URL": ""
+    // (Google Form)。空文字ならメール本文からアンケートセクションを
+    // 省略する。差し替え時はここを編集 → PR → deploy。
+    "PUBLIC_SURVEY_URL": "https://forms.gle/xvV4x1XrjQ3mrp6VA"
   }
   //
   // Secrets (stay in Cloudflare Dashboard, encrypted):
