@@ -1,0 +1,64 @@
+# ==============================================================================
+# ASMS 予約当日サンキューメール送信 (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# 毎日 09:00 UTC (= 18:00 JST) に ASMS の /api/cron/thankyou-mail を叩き、
+# その日開催の全予約に対して「本日はご参加ありがとうございました」＋
+# 「参加者ごとの次回案内」メールを保護者宛に送信する。
+#
+# 二重送信防止は API 側 (reservations.thankyou_email_sent_at) で担保。
+#
+# 必要な GitHub Actions Secrets:
+#   ASMS_API_BASE      - 例: https://kidskart-asms.<subdomain>.workers.dev
+#                        (本番 DNS 移行後は https://reserve.kidskart.org)
+#   ASMS_CRON_SECRET   - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから「Run workflow」で任意の日付を指定して再送可能。
+# ==============================================================================
+
+name: ASMS Thank-you Mail
+
+on:
+  schedule:
+    # GitHub Actions cron は UTC。09:00 UTC = 18:00 JST
+    # 注意: GitHub cron は 5-15 分の遅延あり (完全な定時性は保証されない)
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 (YYYY-MM-DD, 空欄なら今日 JST)'
+        required: false
+        default: ''
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/thankyou-mail
+        env:
+          ASMS_API_BASE: ${{ secrets.ASMS_API_BASE }}
+          ASMS_CRON_SECRET: ${{ secrets.ASMS_CRON_SECRET }}
+          OVERRIDE_DATE: ${{ github.event.inputs.date }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASMS_API_BASE:-}" ] || [ -z "${ASMS_CRON_SECRET:-}" ]; then
+            echo "::error::ASMS_API_BASE and ASMS_CRON_SECRET secrets must be set" >&2
+            exit 1
+          fi
+          URL="${ASMS_API_BASE%/}/api/cron/thankyou-mail"
+          if [ -n "${OVERRIDE_DATE:-}" ]; then
+            URL="${URL}?date=${OVERRIDE_DATE}"
+          fi
+          echo "POST $URL"
+          HTTP_CODE=$(curl -sS -X POST "$URL" \
+            -H "x-cron-secret: $ASMS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Thank-you mail cron failed with HTTP $HTTP_CODE" >&2
+            exit 1
+          fi
