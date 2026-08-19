@@ -168,6 +168,99 @@ if (Astro.request.method === 'POST') {
       : finalize(`${date} ${startTime.slice(0,5)} の枠を抑止しました`, '');
   }
 
+  if (op === 'bulk_add_extra_slots') {
+    // コース × 複数日 × 複数時間の掛け合わせで extra_slot を一括作成し、
+    // その場で generate_slots_for_month を回してスロットまで実体化する。
+    // 「例外追加 → プレビュー → 適用」の 3 ステップを 1 クリックにまとめるのが目的。
+    const courseId = ((form.get('course_id') as string) || '').trim();
+    const datesRaw = ((form.get('dates') as string) || '').trim();
+    const timesRaw = ((form.get('times') as string) || '').trim();
+    const rawCapacity = ((form.get('capacity') as string) || '').trim();
+    const title = ((form.get('title') as string) || '').trim() || null;
+
+    if (!courseId) return finalize('', 'コースを選んでください');
+    const dates = datesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    const times = timesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (dates.length === 0) return finalize('', '日付を 1 つ以上選んでください');
+    if (times.length === 0) return finalize('', '時間を 1 つ以上選んでください');
+    if (dates.length * times.length > 200) {
+      return finalize('', `一度に登録できるのは 200 枠まで (現在 ${dates.length * times.length} 枠)`);
+    }
+
+    const capacity = rawCapacity ? parseInt(rawCapacity, 10) : null;
+
+    // Skip combinations already present so re-submit is idempotent
+    const { data: existing } = await supabase
+      .from('schedule_exceptions')
+      .select('date, start_time, course_id')
+      .eq('type', 'extra_slot')
+      .eq('course_id', courseId)
+      .in('date', dates);
+    const dupKey = new Set(
+      (existing ?? []).map((r: any) => `${r.date}|${(r.start_time ?? '').slice(0, 5)}`)
+    );
+
+    const rows: any[] = [];
+    for (const date of dates) {
+      for (const time of times) {
+        const key = `${date}|${time.slice(0, 5)}`;
+        if (dupKey.has(key)) continue;
+        const row: any = {
+          type: 'extra_slot',
+          date,
+          start_time: time,
+          course_id: courseId,
+        };
+        if (capacity) row.capacity = capacity;
+        if (title) row.title = title;
+        rows.push(row);
+      }
+    }
+    const dupCount = dates.length * times.length - rows.length;
+
+    if (rows.length === 0) {
+      return finalize(
+        `指定された ${dates.length * times.length} 枠はすべて登録済みです`,
+        ''
+      );
+    }
+
+    const { error: insErr } = await supabase.from('schedule_exceptions').insert(rows);
+    if (insErr) return finalize('', fmtErr(insErr));
+
+    // Auto-apply: run generate_slots_for_month for each affected year-month
+    const monthsSet = new Set<string>();
+    for (const date of dates) monthsSet.add(date.slice(0, 7));
+    let totalCreated = 0;
+    let genErr: string | null = null;
+    for (const ym of monthsSet) {
+      const [y, m] = ym.split('-').map(Number);
+      const { data: genResult, error: gErr } = await supabase.rpc('generate_slots_for_month', {
+        p_year: y,
+        p_month: m,
+        p_dry_run: false,
+      });
+      if (gErr) {
+        genErr = fmtErr(gErr);
+        break;
+      }
+      if (genResult) {
+        totalCreated += (genResult as any[]).filter((r) => r.action === 'created').length;
+      }
+    }
+    if (genErr) {
+      return finalize(
+        `例外は ${rows.length} 件追加しましたが、スロット生成でエラー: ${genErr}`,
+        ''
+      );
+    }
+
+    const parts = [`✅ ${rows.length} 枠を追加`];
+    if (dupCount > 0) parts.push(`(既存 ${dupCount} 件はスキップ)`);
+    parts.push(`→ うち ${totalCreated} 枠を実体化`);
+    return finalize(parts.join(' '), '');
+  }
+
   if (op === 'bulk_holidays') {
     const yr = parseInt(backYear, 10);
     const mo = parseInt(backMonth, 10);
@@ -322,6 +415,42 @@ const actionColor: Record<string, string> = {
 
 // Default date for the add form: first day of selected month
 const addDefaultDate = monthStart;
+
+// -----------------------------------------------------------------------
+// 「まとめて追加」のカレンダーグリッド用データ
+// 選択中の年月について: 週始まりの日曜〜土曜配置で 7 x 6 行のセルを組む。
+// 各日は date-string を data-date として、クリック時に client-side JS が
+// selected トグルする (hidden input <bulkDates> にカンマ区切りで反映)。
+// -----------------------------------------------------------------------
+const closureDatesInMonth = new Set<string>(
+  (exceptions ?? []).filter((e: any) => e.type === 'closure').map((e: any) => e.date)
+);
+const firstOfMonth = new Date(year, month - 1, 1);
+const firstDayOfWeek = firstOfMonth.getDay(); // 0 = Sunday
+const daysInMonth = new Date(year, month, 0).getDate();
+const todayStr = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+type CalCell =
+  | { type: 'empty' }
+  | { type: 'day'; date: string; day: number; weekday: number; isClosure: boolean; isToday: boolean; isPast: boolean };
+const calCells: CalCell[] = [];
+for (let i = 0; i < firstDayOfWeek; i++) calCells.push({ type: 'empty' });
+for (let d = 1; d <= daysInMonth; d++) {
+  const dt = new Date(year, month - 1, d);
+  const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  calCells.push({
+    type: 'day',
+    date,
+    day: d,
+    weekday: dt.getDay(),
+    isClosure: closureDatesInMonth.has(date),
+    isToday: date === todayStr,
+    isPast: date < todayStr,
+  });
+}
+const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 ---
 <Base title="スケジュール管理 — ASMS">
   <main>
@@ -347,6 +476,121 @@ const addDefaultDate = monthStart;
 
     {msg && <div class="ok-banner">{msg}</div>}
     {err && <div class="err">{err}</div>}
+
+    <section class="bulk-add">
+      <div class="bulk-hd">
+        <h2>🎯 まとめて追加枠を作成</h2>
+        <p class="bulk-sub">
+          コース × 複数日 × 複数時間 の掛け合わせで、通常の繰り返しルールとは別に枠を追加します。
+          追加した瞬間に自動で予約可能な状態になります（プレビュー/適用不要）。
+        </p>
+      </div>
+
+      <form method="post" class="bulk-form" id="bulkForm">
+        <input type="hidden" name="op" value="bulk_add_extra_slots" />
+        <input type="hidden" name="year" value={year} />
+        <input type="hidden" name="month" value={month} />
+        <input type="hidden" name="dates" id="bulkDates" value="" />
+        <input type="hidden" name="times" id="bulkTimes" value="" />
+
+        <div class="bulk-step">
+          <div class="bulk-step-label">
+            <span class="step-num">1</span>
+            <span>コースを選ぶ</span>
+          </div>
+          <div class="course-choices">
+            {courses.map((c: any) => (
+              <label class="course-choice">
+                <input type="radio" name="course_id" value={c.id}
+                       data-default-capacity={c.default_capacity}
+                       data-name={c.name} />
+                <div class="cc-body">
+                  <span class="cc-name">{c.name}</span>
+                  <span class="cc-cap">定員 {c.default_capacity}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="bulk-step">
+          <div class="bulk-step-label">
+            <span class="step-num">2</span>
+            <span>日にちを選ぶ（複数可・{year}年{month}月）</span>
+            <span class="bulk-count" id="datesCount">未選択</span>
+          </div>
+          <div class="cal-grid" id="calGrid">
+            <div class="cal-wd cal-wd-sun">日</div>
+            <div class="cal-wd">月</div>
+            <div class="cal-wd">火</div>
+            <div class="cal-wd">水</div>
+            <div class="cal-wd">木</div>
+            <div class="cal-wd">金</div>
+            <div class="cal-wd cal-wd-sat">土</div>
+            {calCells.map((c) => (
+              c.type === 'empty'
+                ? <div class="cal-empty"></div>
+                : (
+                  <button type="button"
+                    class={`cal-day wd-${c.weekday} ${c.isClosure ? 'is-closure' : ''} ${c.isToday ? 'is-today' : ''} ${c.isPast ? 'is-past' : ''}`}
+                    data-date={c.date}
+                    disabled={c.isClosure || c.isPast}
+                    title={c.isClosure ? '休業日 (選択不可)' : c.isPast ? '過去日 (選択不可)' : ''}>
+                    <span class="cd-num">{c.day}</span>
+                    {c.isClosure && <span class="cd-badge">休</span>}
+                  </button>
+                )
+            ))}
+          </div>
+          <p class="bulk-inline-hint">🚫 休業日と過去日はタップできません（グレー表示）</p>
+        </div>
+
+        <div class="bulk-step">
+          <div class="bulk-step-label">
+            <span class="step-num">3</span>
+            <span>時間を選ぶ（複数可）</span>
+            <span class="bulk-count" id="timesCount">未選択</span>
+          </div>
+          <div class="time-chips" id="timeChips">
+            {bulkTimeChoices.map((t) => (
+              <button type="button" class="time-chip" data-time={t}>{t}</button>
+            ))}
+          </div>
+          <div class="custom-time">
+            <label for="customTime">その他の時間を追加</label>
+            <input type="time" id="customTime" step="900" />
+            <button type="button" id="addCustomTime" class="btn-mini">＋ 追加</button>
+          </div>
+        </div>
+
+        <div class="bulk-step bulk-step-inline">
+          <div class="bulk-step-label">
+            <span class="step-num">4</span>
+            <span>定員</span>
+          </div>
+          <div class="inline-input">
+            <input type="number" name="capacity" id="bulkCapacity" min="1" max="30"
+                   placeholder="コース既定値を使用" />
+            <span class="bulk-hint">空欄にするとコース選択に応じた既定値で作成</span>
+          </div>
+        </div>
+
+        <div class="bulk-step bulk-step-inline">
+          <div class="bulk-step-label">
+            <span class="step-num">5</span>
+            <span>メモ（任意）</span>
+          </div>
+          <div class="inline-input">
+            <input type="text" name="title" maxlength="80"
+                   placeholder="例: テスト配信用、GWキャンペーン" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-big bulk-submit" id="bulkSubmit" disabled>
+          コースを選んでください
+        </button>
+      </form>
+    </section>
 
     {mode && (
       <div class="mode-banner">
@@ -674,6 +918,127 @@ const addDefaultDate = monthStart;
     typeInputs.forEach((r) => r.addEventListener('change', sync));
     sync();
   }
+
+  // -----------------------------------------------------------------
+  // まとめて追加: 日付・時間のマルチセレクト + 送信ボタン動的更新
+  // -----------------------------------------------------------------
+  const bulkForm = document.getElementById('bulkForm') as HTMLFormElement | null;
+  if (bulkForm) {
+    const selectedDates = new Set<string>();
+    const selectedTimes = new Set<string>();
+    const datesInput = document.getElementById('bulkDates') as HTMLInputElement;
+    const timesInput = document.getElementById('bulkTimes') as HTMLInputElement;
+    const datesCount = document.getElementById('datesCount') as HTMLElement;
+    const timesCount = document.getElementById('timesCount') as HTMLElement;
+    const bulkSubmit = document.getElementById('bulkSubmit') as HTMLButtonElement;
+    const capacityInput = document.getElementById('bulkCapacity') as HTMLInputElement;
+    const timeChips = document.getElementById('timeChips') as HTMLElement;
+
+    const update = () => {
+      const courseInput = bulkForm.querySelector<HTMLInputElement>('input[name="course_id"]:checked');
+      const dCount = selectedDates.size;
+      const tCount = selectedTimes.size;
+      datesCount.textContent = dCount > 0 ? `${dCount}日選択中` : '未選択';
+      timesCount.textContent = tCount > 0 ? `${tCount}時間選択中` : '未選択';
+
+      if (!courseInput) {
+        bulkSubmit.disabled = true;
+        bulkSubmit.textContent = 'コースを選んでください';
+      } else if (dCount === 0) {
+        bulkSubmit.disabled = true;
+        bulkSubmit.textContent = '日付を選んでください';
+      } else if (tCount === 0) {
+        bulkSubmit.disabled = true;
+        bulkSubmit.textContent = '時間を選んでください';
+      } else {
+        bulkSubmit.disabled = false;
+        bulkSubmit.textContent = `✅ ${dCount}日 × ${tCount}時間 = ${dCount * tCount}枠を作成`;
+      }
+      datesInput.value = Array.from(selectedDates).sort().join(',');
+      timesInput.value = Array.from(selectedTimes).sort().join(',');
+    };
+
+    // Date cells
+    document.querySelectorAll<HTMLButtonElement>('.cal-day').forEach((btn) => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', () => {
+        const date = btn.dataset.date;
+        if (!date) return;
+        if (selectedDates.has(date)) {
+          selectedDates.delete(date);
+          btn.classList.remove('is-selected');
+        } else {
+          selectedDates.add(date);
+          btn.classList.add('is-selected');
+        }
+        update();
+      });
+    });
+
+    // Time chips
+    const toggleTime = (time: string, chip: HTMLElement) => {
+      if (selectedTimes.has(time)) {
+        selectedTimes.delete(time);
+        chip.classList.remove('is-selected');
+      } else {
+        selectedTimes.add(time);
+        chip.classList.add('is-selected');
+      }
+      update();
+    };
+    document.querySelectorAll<HTMLButtonElement>('.time-chip').forEach((btn) => {
+      const time = btn.dataset.time;
+      if (!time) return;
+      btn.addEventListener('click', () => toggleTime(time, btn));
+    });
+
+    // Custom time add
+    const customTimeInput = document.getElementById('customTime') as HTMLInputElement;
+    const addCustomBtn = document.getElementById('addCustomTime') as HTMLButtonElement;
+    addCustomBtn?.addEventListener('click', () => {
+      const raw = (customTimeInput.value ?? '').trim();
+      if (!raw) return;
+      // Already exists as a chip? just toggle
+      const existing = timeChips.querySelector<HTMLElement>(`.time-chip[data-time="${raw}"]`);
+      if (existing) {
+        if (!selectedTimes.has(raw)) toggleTime(raw, existing);
+        customTimeInput.value = '';
+        return;
+      }
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'time-chip is-selected';
+      chip.dataset.time = raw;
+      chip.textContent = raw;
+      chip.addEventListener('click', () => toggleTime(raw, chip));
+      timeChips.appendChild(chip);
+      selectedTimes.add(raw);
+      customTimeInput.value = '';
+      update();
+    });
+
+    // Course radio → auto-hint capacity placeholder
+    bulkForm.querySelectorAll<HTMLInputElement>('input[name="course_id"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        const def = r.dataset.defaultCapacity;
+        if (def) capacityInput.placeholder = `${def} (${r.dataset.name} 既定値)`;
+        update();
+      });
+    });
+
+    // Guard against accidental submit without confirm on big batches
+    bulkForm.addEventListener('submit', (e) => {
+      const dCount = selectedDates.size;
+      const tCount = selectedTimes.size;
+      const total = dCount * tCount;
+      if (total >= 20) {
+        const ok = confirm(`${total} 枠を一括で追加します。よろしいですか？`);
+        if (!ok) e.preventDefault();
+      }
+    });
+
+    update();
+  }
 </script>
 
 <style>
@@ -991,5 +1356,193 @@ const addDefaultDate = monthStart;
     padding: .3rem .7rem; font-size: .68rem; font-weight: 700;
     color: var(--ink-3); background: var(--bg-3);
     border-radius: 100px;
+  }
+
+  /* --- まとめて追加枠 -------------------------------------------------- */
+  .bulk-add {
+    background: linear-gradient(135deg, rgba(255,138,61,.06), rgba(255,201,67,.05));
+    border: 2px solid rgba(255,138,61,.35);
+    border-radius: 14px;
+    padding: 1.15rem 1.15rem 1.3rem;
+    margin: 1rem 0 1.5rem;
+  }
+  .bulk-hd { margin-bottom: 1.1rem; }
+  .bulk-hd h2 {
+    margin: 0 0 .3rem;
+    font-size: 1.05rem; font-weight: 800; color: var(--ink);
+  }
+  .bulk-sub {
+    margin: 0; font-size: .78rem; color: var(--ink-2); line-height: 1.65;
+  }
+  .bulk-form { display: flex; flex-direction: column; gap: 1.15rem; }
+  .bulk-step { display: flex; flex-direction: column; gap: .5rem; }
+  .bulk-step-inline { flex-direction: row; align-items: center; gap: .8rem; flex-wrap: wrap; }
+  .bulk-step-label {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .82rem; font-weight: 800; color: var(--ink);
+  }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.4rem; height: 1.4rem;
+    background: var(--orange-deep); color: #fff;
+    border-radius: 100px; font-family: var(--mono); font-size: .72rem; font-weight: 800;
+  }
+  .bulk-count {
+    margin-left: auto;
+    font-size: .72rem; font-weight: 700;
+    padding: .2rem .55rem; border-radius: 100px;
+    background: var(--bg-2); color: var(--ink-3);
+    font-family: var(--mono);
+  }
+  .bulk-inline-hint {
+    font-size: .68rem; color: var(--ink-3); margin: 0;
+  }
+
+  /* course choices */
+  .course-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .5rem;
+  }
+  .course-choice {
+    position: relative; cursor: pointer; display: block;
+  }
+  .course-choice input { position: absolute; opacity: 0; pointer-events: none; }
+  .cc-body {
+    display: flex; flex-direction: column; gap: .2rem;
+    padding: .7rem .8rem;
+    background: var(--bg); border: 2px solid var(--line);
+    border-radius: 10px;
+    transition: border-color .15s, background .15s;
+  }
+  .course-choice:hover .cc-body { border-color: var(--sky); }
+  .course-choice input:checked + .cc-body {
+    border-color: var(--orange-deep);
+    background: rgba(255,138,61,.08);
+  }
+  .cc-name { font-size: .85rem; font-weight: 800; color: var(--ink); }
+  .cc-cap { font-size: .68rem; color: var(--ink-3); font-family: var(--mono); }
+
+  /* calendar grid */
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: .35rem;
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: .55rem;
+  }
+  .cal-wd {
+    text-align: center; font-size: .68rem; font-weight: 800;
+    color: var(--ink-3); padding: .25rem 0;
+  }
+  .cal-wd-sun { color: #c73854; }
+  .cal-wd-sat { color: #1a7fb8; }
+  .cal-empty { visibility: hidden; }
+  .cal-day {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    aspect-ratio: 1;
+    background: transparent; border: 1.5px solid var(--line);
+    border-radius: 8px; cursor: pointer;
+    font-family: var(--mono); font-size: .88rem; font-weight: 700;
+    color: var(--ink);
+    transition: background .1s, border-color .1s, transform .05s;
+  }
+  .cal-day:hover:not(:disabled) {
+    background: var(--sky-mist); border-color: var(--sky);
+  }
+  .cal-day:active:not(:disabled) { transform: scale(.95); }
+  .cal-day.wd-0 { color: #c73854; }
+  .cal-day.wd-6 { color: #1a7fb8; }
+  .cal-day.is-today {
+    box-shadow: inset 0 0 0 1.5px var(--orange-deep);
+  }
+  .cal-day.is-selected {
+    background: var(--orange-deep) !important;
+    color: #fff !important;
+    border-color: var(--orange-deep) !important;
+    font-weight: 900;
+  }
+  .cal-day.is-closure,
+  .cal-day.is-past {
+    background: var(--bg-2); color: var(--ink-3);
+    cursor: not-allowed; opacity: .55;
+  }
+  .cal-day.is-closure { border-style: dashed; }
+  .cd-badge {
+    position: absolute; bottom: 2px;
+    font-size: .55rem; font-weight: 800;
+    color: var(--rose-deep);
+    letter-spacing: 0;
+  }
+
+  /* time chips */
+  .time-chips {
+    display: flex; flex-wrap: wrap; gap: .4rem;
+  }
+  .time-chip {
+    padding: .5rem 1rem; font-family: var(--mono); font-size: .82rem; font-weight: 700;
+    background: var(--bg); border: 1.5px solid var(--line);
+    border-radius: 100px; cursor: pointer;
+    color: var(--ink);
+    transition: background .1s, border-color .1s, transform .05s;
+  }
+  .time-chip:hover { background: var(--sky-mist); border-color: var(--sky); }
+  .time-chip:active { transform: scale(.95); }
+  .time-chip.is-selected {
+    background: var(--orange-deep); color: #fff;
+    border-color: var(--orange-deep);
+  }
+  .custom-time {
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    margin-top: .3rem; padding: .5rem .7rem;
+    background: var(--bg-2); border-radius: 8px;
+    font-size: .74rem;
+  }
+  .custom-time label { color: var(--ink-3); font-weight: 700; }
+  .custom-time input[type="time"] {
+    padding: .3rem .5rem; font-family: var(--mono); font-size: .82rem;
+    border: 1.5px solid var(--line); border-radius: 6px;
+  }
+  .btn-mini {
+    padding: .35rem .8rem; font-size: .74rem; font-weight: 700;
+    background: var(--sky-mist); color: var(--sky-deep);
+    border: 1px solid var(--sky-light); border-radius: 100px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .btn-mini:hover { background: var(--sky); color: #fff; }
+
+  /* inline inputs (capacity, memo) */
+  .inline-input {
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex: 1;
+  }
+  .inline-input input {
+    padding: .55rem .8rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    min-width: 8rem;
+  }
+  .inline-input input[type="number"] {
+    width: 8rem; font-family: var(--mono);
+  }
+  .inline-input input[type="text"] { flex: 1; min-width: 12rem; }
+  .bulk-hint { font-size: .68rem; color: var(--ink-3); }
+
+  /* submit */
+  .bulk-submit {
+    margin-top: .5rem;
+    font-size: .95rem; font-weight: 800;
+    padding: .85rem 1.2rem;
+    letter-spacing: .01em;
+  }
+  .bulk-submit:disabled {
+    background: var(--bg-3); color: var(--ink-3);
+    cursor: not-allowed; opacity: .8;
+  }
+
+  @media (max-width: 480px) {
+    .bulk-add { padding: .9rem .8rem 1rem; }
+    .course-choices { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+    .cal-day { font-size: .78rem; }
+    .time-chip { padding: .4rem .8rem; font-size: .76rem; }
   }
 </style>
