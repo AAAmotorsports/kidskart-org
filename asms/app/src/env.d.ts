@@ -32,6 +32,11 @@ interface Env {
   // Cloudflare Dashboard の Secret として設定する。
   CRON_SECRET?: string;
 
+  // Google Analytics 4 の測定 ID (例: G-XXXXXXXXXX)。
+  // wrangler.jsonc の vars に入れる → Base.astro が読み gtag を挿入する。
+  // 空文字 / 未設定なら計測タグを一切吐かない。
+  PUBLIC_GA4_MEASUREMENT_ID?: string;
+
   // Simple admin gate for MVP — will be replaced by Supabase Auth later.
   // Password is stored as a SHA-256 hex digest so the plain value never
   // leaves the operator's machine.

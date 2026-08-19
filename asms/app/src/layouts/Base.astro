@@ -1,5 +1,6 @@
 ---
 import { getLocaleFromRequest, LOCALE_COOKIE, type Locale } from '@lib/i18n';
+import { envFrom } from '@lib/supabase';
 
 interface Props {
   title: string;
@@ -19,6 +20,15 @@ const {
 
 const otherLocale: Locale = lang === 'ja' ? 'en' : 'ja';
 const otherLabel = otherLocale === 'ja' ? '🇯🇵 日本語' : '🇬🇧 English';
+
+// GA4: reserve.kidskart.org と kidskart.org (静的サイト側) を同一データ
+// ストリームで計測し、集客 → 予約完了までの単一ファネルとして測る。
+// cookie_domain: 'kidskart.org' が親ドメイン発行のカギ (subdomain 跨ぎで
+// client_id / session_id を継続させる)。GA 側 データストリーム設定で
+// kidskart.org と reserve.kidskart.org を「クロスドメインを構成」に登録し、
+// reserve.kidskart.org を「除外する参照のリスト」にも入れる必要あり。
+const env = envFrom(Astro.locals);
+const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
 ---
 <!doctype html>
 <html lang={lang}>
@@ -30,6 +40,37 @@ const otherLabel = otherLocale === 'ja' ? '🇯🇵 日本語' : '🇬🇧 Engli
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>{title}</title>
+  {gaId && (
+    <>
+      <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}></script>
+      <script is:inline define:vars={{ gaId }}>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){ window.dataLayer.push(arguments); }
+        window.gtag = gtag;
+        gtag('js', new Date());
+        gtag('config', gaId, {
+          cookie_domain: 'kidskart.org',
+          cookie_flags: 'SameSite=None;Secure',
+          send_page_view: true,
+        });
+        // 予約フロー用の薄いラッパ。GA が未ロード / ブロックされていても
+        // 例外にならないよう try/catch で包む。
+        window.asmsTrack = function (name, params) {
+          try {
+            if (typeof window.gtag === 'function') {
+              window.gtag('event', name, params || {});
+            }
+          } catch (_e) { /* noop */ }
+        };
+      </script>
+    </>
+  )}
+  {!gaId && (
+    <script is:inline>
+      // GA 未設定 (dev / preview) でも asmsTrack を呼べるように no-op を差す。
+      window.asmsTrack = function () {};
+    </script>
+  )}
   <style is:global>
     :root {
       --sky:#3aa9e8; --sky-deep:#1a7fb8; --sky-light:#cae7f7; --sky-mist:#eef7fc;
