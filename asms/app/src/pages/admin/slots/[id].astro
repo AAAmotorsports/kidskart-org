@@ -1341,18 +1341,31 @@ async function sendReservationCancelEmail(env: Env, args: {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem;
   }
   .pay-method {
+    position: relative;
     display: flex; flex-direction: column; align-items: center; gap: .1rem;
     padding: .5rem .2rem; border: 1.5px solid var(--line);
     border-radius: 8px; background: var(--bg); cursor: pointer;
     font-size: .74rem; font-weight: 700; color: var(--ink-2);
-    transition: all .1s;
+    transition: background .1s, border-color .1s, color .1s, transform .05s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
-  .pay-method:hover { background: var(--bg-2); }
-  .pay-method.active {
+  .pay-method:hover { background: var(--bg-2); border-color: var(--sky); }
+  .pay-method:active { transform: scale(.96); }
+  /* 選択中のラベルを即座にハイライト (サーバー再レンダー待たずに反映) */
+  .pay-method.active,
+  .pay-method:has(input[type="radio"]:checked) {
     background: var(--sun); color: #fff; border-color: var(--orange-deep);
+    box-shadow: 0 2px 6px rgba(255,201,67,.4);
   }
   .pay-method input[type="radio"] {
-    position: absolute; opacity: 0; width: 0; height: 0;
+    /* clip で隠す (position:absolute で外に飛ばさない = 親 label 内に留まる) */
+    position: absolute;
+    opacity: 0;
+    width: 100%; height: 100%;
+    top: 0; left: 0;
+    margin: 0;
+    cursor: pointer;
   }
   .pay-emoji { font-size: 1.3rem; }
   .pay-name { font-size: .72rem; }
