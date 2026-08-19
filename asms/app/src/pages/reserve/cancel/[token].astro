@@ -1,10 +1,13 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 
 const env = envFrom(Astro.locals);
 const admin = getSupabaseAdmin(env);
 const { token } = Astro.params;
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
 
 if (!token) return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
 
@@ -31,12 +34,16 @@ const perPersonPrice = res?.price_tier === 'member' ? (course.price_member ?? 0)
 const parts = activeParticipants.map((p) => p.name_snapshot);
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
-function jaDate(iso: string): string {
+const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  return isEn
+    ? `${monthsEn[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} (${weekdayEn[d.getDay()]})`
+    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
 }
-const dateLabel = slot.date ? jaDate(slot.date) : '';
+const dateLabel = slot.date ? fmtDate(slot.date) : '';
 const timeLabel = slot.start_time ? `${slot.start_time.slice(0, 5)}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}` : '';
 
 // Cancellation-fee guidance based on how close the slot is
@@ -45,14 +52,14 @@ function feeGuidance(dateIso: string, startTime: string): { level: 'free' | 'hal
   const slotDt = new Date(`${dateIso}T${startTime}`);
   const now = new Date();
   const hoursUntil = (slotDt.getTime() - now.getTime()) / 36e5;
-  if (hoursUntil < 0) return { level: 'past', text: '既に開催日時を過ぎています' };
-  if (hoursUntil < 2) return { level: 'full', text: '開始 2 時間前以降のためキャンセル料 100% が発生する場合があります' };
+  if (hoursUntil < 0) return { level: 'past', text: isEn ? 'The session date has already passed.' : '既に開催日時を過ぎています' };
+  if (hoursUntil < 2) return { level: 'full', text: isEn ? 'Within 2 hours of start — 100% cancellation fee may apply.' : '開始 2 時間前以降のためキャンセル料 100% が発生する場合があります' };
   // Check "previous day 20:00" cutoff
   const cutoff = new Date(slotDt);
   cutoff.setDate(cutoff.getDate() - 1);
   cutoff.setHours(20, 0, 0, 0);
-  if (now > cutoff) return { level: 'half', text: '前日 20:00 を過ぎているためキャンセル料 50% が発生する場合があります' };
-  return { level: 'free', text: '前日 20:00 前のためキャンセル料はかかりません' };
+  if (now > cutoff) return { level: 'half', text: isEn ? 'After 8:00 PM the day before — 50% cancellation fee may apply.' : '前日 20:00 を過ぎているためキャンセル料 50% が発生する場合があります' };
+  return { level: 'free', text: isEn ? 'Before 8:00 PM the day before — no cancellation fee.' : '前日 20:00 前のためキャンセル料はかかりません' };
 }
 const fee = res && slot.date ? feeGuidance(slot.date, slot.start_time) : { level: 'free' as const, text: '' };
 
@@ -60,51 +67,84 @@ const notFound = !res;
 const isCancelled = res?.status === 'cancelled';
 const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
 ---
-<Base title={notFound ? 'キャンセル — 予約が見つかりません' : `キャンセル — ${res!.reservation_number}`}>
+<Base
+  title={notFound
+    ? (isEn ? 'Cancel — Reservation not found' : 'キャンセル — 予約が見つかりません')
+    : (isEn ? `Cancel — ${res!.reservation_number}` : `キャンセル — ${res!.reservation_number}`)}
+  lang={locale}
+  showLocaleSwitch={true}
+>
   <main>
     <header class="hd">
-      <a class="back" href="/reserve/">← 予約トップへ</a>
-      <h1>予約のキャンセル</h1>
+      <a class="back" href="/reserve/">{isEn ? '← Back to booking' : '← 予約トップへ'}</a>
+      <h1>{isEn ? 'Cancel Reservation' : '予約のキャンセル'}</h1>
     </header>
 
     {notFound && (
       <div class="card err-card">
         <div class="err-icon">🔍</div>
-        <h2>該当する予約が見つかりません</h2>
-        <p>URL が正しいかご確認いただくか、確認メールに記載のリンクから再度アクセスしてください。</p>
-        <p class="hint">ご不明な点は <a href="tel:0929271177">092-927-1177</a> までお問い合わせください。</p>
+        <h2>{isEn ? 'Reservation not found' : '該当する予約が見つかりません'}</h2>
+        <p>
+          {isEn
+            ? 'Please check the URL, or access via the link in your confirmation email.'
+            : 'URL が正しいかご確認いただくか、確認メールに記載のリンクから再度アクセスしてください。'}
+        </p>
+        <p class="hint">
+          {isEn
+            ? (<>For questions, please call <a href="tel:0929271177">+81-92-927-1177</a>.</>)
+            : (<>ご不明な点は <a href="tel:0929271177">092-927-1177</a> までお問い合わせください。</>)}
+        </p>
       </div>
     )}
 
     {res && (
       <>
         <section class="card">
-          <div class="row"><span class="k">予約番号</span><span class="v mono big">{res.reservation_number}</span></div>
-          <div class="row"><span class="k">状態</span>
+          <div class="row">
+            <span class="k">{isEn ? 'Reservation number' : '予約番号'}</span>
+            <span class="v mono big">{res.reservation_number}</span>
+          </div>
+          <div class="row"><span class="k">{isEn ? 'Status' : '状態'}</span>
             {isCancelled ? (
-              <span class="v badge badge-cancelled">キャンセル済み</span>
+              <span class="v badge badge-cancelled">{isEn ? 'Cancelled' : 'キャンセル済み'}</span>
             ) : isTerminal ? (
-              <span class="v badge badge-terminal">{res.status === 'attended' ? '出席済み' : '無断欠席'}</span>
+              <span class="v badge badge-terminal">
+                {isEn
+                  ? (res.status === 'attended' ? 'Attended' : 'No-show')
+                  : (res.status === 'attended' ? '出席済み' : '無断欠席')}
+              </span>
             ) : (
-              <span class="v badge badge-active">確定</span>
+              <span class="v badge badge-active">{isEn ? 'Confirmed' : '確定'}</span>
             )}
           </div>
         </section>
 
         <section class="card">
-          <h2>予約枠</h2>
-          <div class="row"><span class="k">コース</span><span class="v">{course.name}</span></div>
-          <div class="row"><span class="k">日付</span><span class="v mono">{dateLabel}</span></div>
-          <div class="row"><span class="k">時間</span><span class="v mono">{timeLabel}</span></div>
-          <div class="row"><span class="k">料金</span><span class="v mono">¥{(res.total_amount ?? 0).toLocaleString()}（{res.price_tier === 'member' ? '会員' : '一般'} × {parts.length}名）</span></div>
+          <h2>{isEn ? 'Session' : '予約枠'}</h2>
+          <div class="row"><span class="k">{isEn ? 'Course' : 'コース'}</span><span class="v">{course.name}</span></div>
+          <div class="row"><span class="k">{isEn ? 'Date' : '日付'}</span><span class="v mono">{dateLabel}</span></div>
+          <div class="row"><span class="k">{isEn ? 'Time' : '時間'}</span><span class="v mono">{timeLabel}</span></div>
+          <div class="row">
+            <span class="k">{isEn ? 'Total' : '料金'}</span>
+            <span class="v mono">
+              ¥{(res.total_amount ?? 0).toLocaleString()}
+              {isEn
+                ? ` (${parts.length} × ${res.price_tier === 'member' ? 'Member' : 'Regular'})`
+                : `（${res.price_tier === 'member' ? '会員' : '一般'} × ${parts.length}名）`}
+            </span>
+          </div>
         </section>
 
         <section class="card">
-          <h2>参加者 (キャンセルする人にチェック)</h2>
+          <h2>{isEn ? 'Participants (check those to cancel)' : '参加者 (キャンセルする人にチェック)'}</h2>
           <p class="p-hint">
-            {activeParticipants.length >= 2
-              ? '一部の方だけキャンセルする場合、残る方のチェックを外してください。'
-              : '1 名予約のため、キャンセルすると予約全体がキャンセルになります。'}
+            {isEn
+              ? (activeParticipants.length >= 2
+                  ? 'To cancel only some participants, uncheck those who will still attend.'
+                  : 'Single-person booking — cancelling cancels the whole reservation.')
+              : (activeParticipants.length >= 2
+                  ? '一部の方だけキャンセルする場合、残る方のチェックを外してください。'
+                  : '1 名予約のため、キャンセルすると予約全体がキャンセルになります。')}
           </p>
           <ul class="p-list checks">
             {activeParticipants.map((p, i) => (
@@ -121,41 +161,53 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
 
         {isCancelled && (
           <div class="banner banner-info">
-            この予約は <strong>{res.cancelled_at?.slice(0, 10)}</strong> にキャンセル済みです。
-            {res.cancelled_reason && <><br />理由: {res.cancelled_reason}</>}
+            {isEn ? (
+              <>This reservation was cancelled on <strong>{res.cancelled_at?.slice(0, 10)}</strong>.
+                {res.cancelled_reason && <><br />Reason: {res.cancelled_reason}</>}</>
+            ) : (
+              <>この予約は <strong>{res.cancelled_at?.slice(0, 10)}</strong> にキャンセル済みです。
+                {res.cancelled_reason && <><br />理由: {res.cancelled_reason}</>}</>
+            )}
           </div>
         )}
 
         {isTerminal && (
           <div class="banner banner-info">
-            この予約は既に「{res.status === 'attended' ? '出席済み' : '無断欠席'}」として記録されているため、キャンセルできません。
+            {isEn
+              ? `This reservation is already recorded as "${res.status === 'attended' ? 'attended' : 'no-show'}" and cannot be cancelled.`
+              : `この予約は既に「${res.status === 'attended' ? '出席済み' : '無断欠席'}」として記録されているため、キャンセルできません。`}
           </div>
         )}
 
         {!isCancelled && !isTerminal && (
           <>
             <div class={`banner banner-${fee.level === 'free' ? 'ok' : fee.level === 'past' ? 'muted' : 'warn'}`}>
-              <strong>{fee.level === 'free' ? '✅ ' : '⚠️ '}キャンセル料について</strong>
+              <strong>{fee.level === 'free' ? '✅ ' : '⚠️ '}{isEn ? 'Cancellation Fee' : 'キャンセル料について'}</strong>
               <br />{fee.text}
             </div>
 
             <div class="card cta-card">
               <div id="summaryBox" class="summary-box">
-                <div class="sm-row"><span>キャンセル人数</span><span id="cancelCountLabel" class="mono">—</span></div>
-                <div class="sm-row"><span>残り参加</span><span id="remainCountLabel" class="mono">—</span></div>
-                <div class="sm-row sm-total"><span>変更後の料金</span><span id="newTotalLabel" class="mono">—</span></div>
+                <div class="sm-row"><span>{isEn ? 'To cancel' : 'キャンセル人数'}</span><span id="cancelCountLabel" class="mono">—</span></div>
+                <div class="sm-row"><span>{isEn ? 'Remaining' : '残り参加'}</span><span id="remainCountLabel" class="mono">—</span></div>
+                <div class="sm-row sm-total"><span>{isEn ? 'New total' : '変更後の料金'}</span><span id="newTotalLabel" class="mono">—</span></div>
               </div>
-              <p class="hint">押した瞬間にキャンセルが確定します。取り消せません。<br />
-                キャンセル料が発生する場合は別途ご連絡いたします。</p>
+              <p class="hint">
+                {isEn
+                  ? (<>Cancellation is final the moment you press the button. Cannot be undone.<br />If a cancellation fee applies, we'll contact you separately.</>)
+                  : (<>押した瞬間にキャンセルが確定します。取り消せません。<br />キャンセル料が発生する場合は別途ご連絡いたします。</>)}
+              </p>
               <form id="cancelForm">
                 <input type="hidden" name="token" value={token} />
                 <input type="hidden" name="perPersonPrice" value={perPersonPrice} />
                 <div class="field">
-                  <label for="reason">キャンセル理由（任意）</label>
+                  <label for="reason">{isEn ? 'Reason for cancellation (optional)' : 'キャンセル理由（任意）'}</label>
                   <input type="text" id="reason" name="reason" maxlength="120"
-                    placeholder="例: 体調不良、予定変更 など" />
+                    placeholder={isEn ? 'e.g. Illness, schedule change' : '例: 体調不良、予定変更 など'} />
                 </div>
-                <button type="submit" class="btn btn-danger" id="submitBtn">🚫 キャンセルを確定する</button>
+                <button type="submit" class="btn btn-danger" id="submitBtn">
+                  {isEn ? '🚫 Confirm cancellation' : '🚫 キャンセルを確定する'}
+                </button>
               </form>
               <div id="cancelResult" hidden></div>
             </div>
@@ -165,6 +217,10 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
     )}
   </main>
 </Base>
+
+<script is:inline define:vars={{ isEn }}>
+  window.__ASMS_LOCALE = { isEn };
+</script>
 
 <script>
   const form = document.getElementById('cancelForm') as HTMLFormElement | null;
@@ -181,31 +237,40 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
   );
   const totalCount = checkboxes.length;
   const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+  const isEn = !!(window as any).__ASMS_LOCALE?.isEn;
+  const tr = (jp: string, en: string) => isEn ? en : jp;
 
   function updateSummary() {
     if (!submitBtn) return;
     const checkedIds = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partId!);
-    const checkedNames = checkboxes.filter((c) => c.checked).map((c) => c.dataset.partName!);
     const remainCount = totalCount - checkedIds.length;
     const isWholeCancel = remainCount === 0;
     const isNoop = checkedIds.length === 0;
 
-    if (cancelCountLabel) cancelCountLabel.textContent = `${checkedIds.length} / ${totalCount} 名`;
-    if (remainCountLabel) remainCountLabel.textContent = `${remainCount} 名`;
-    if (newTotalLabel) newTotalLabel.textContent = isWholeCancel ? '¥0（予約全体キャンセル）' : yen(remainCount * perPersonPrice);
+    if (cancelCountLabel) cancelCountLabel.textContent = isEn
+      ? `${checkedIds.length} / ${totalCount}`
+      : `${checkedIds.length} / ${totalCount} 名`;
+    if (remainCountLabel) remainCountLabel.textContent = isEn ? `${remainCount}` : `${remainCount} 名`;
+    if (newTotalLabel) newTotalLabel.textContent = isWholeCancel
+      ? (isEn ? '¥0 (whole booking cancelled)' : '¥0（予約全体キャンセル）')
+      : yen(remainCount * perPersonPrice);
 
     if (isNoop) {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'キャンセルする方を選択してください';
+      submitBtn.textContent = tr('キャンセルする方を選択してください', 'Please select participant(s) to cancel');
       return;
     }
     submitBtn.disabled = false;
     if (isWholeCancel) {
       submitBtn.textContent = totalCount === 1
-        ? '🚫 キャンセルを確定する'
-        : `🚫 全員（${totalCount}名）をキャンセルする`;
+        ? tr('🚫 キャンセルを確定する', '🚫 Confirm cancellation')
+        : (isEn
+            ? `🚫 Cancel all ${totalCount} participants`
+            : `🚫 全員（${totalCount}名）をキャンセルする`);
     } else {
-      submitBtn.textContent = `🚫 選択した ${checkedIds.length} 名をキャンセルする`;
+      submitBtn.textContent = isEn
+        ? `🚫 Cancel ${checkedIds.length} selected participant(s)`
+        : `🚫 選択した ${checkedIds.length} 名をキャンセルする`;
     }
   }
 
@@ -221,16 +286,19 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
       const isWholeCancel = checkedIds.length === totalCount;
 
       const confirmMsg = isWholeCancel
-        ? '予約全体をキャンセルします。取り消せません。よろしいですか？'
-        : `${checkedNames.join('・')} をキャンセルします。取り消せません。よろしいですか？`;
+        ? tr('予約全体をキャンセルします。取り消せません。よろしいですか？',
+             'This will cancel the entire booking. Cannot be undone. Continue?')
+        : (isEn
+            ? `Cancel ${checkedNames.join(', ')}? Cannot be undone.`
+            : `${checkedNames.join('・')} をキャンセルします。取り消せません。よろしいですか？`);
       if (!confirm(confirmMsg)) return;
 
       submitBtn.disabled = true;
-      submitBtn.textContent = 'キャンセル中…';
+      submitBtn.textContent = tr('キャンセル中…', 'Cancelling…');
       const fd = new FormData(form);
       const payload: any = {
         token: fd.get('token'),
-        reason: fd.get('reason') || 'お客様都合（Web からキャンセル）',
+        reason: fd.get('reason') || tr('お客様都合（Web からキャンセル）', 'Customer request (web cancellation)'),
       };
       // 一部キャンセルのときだけ participant_ids を送る (全員なら省略 = whole cancel)
       if (!isWholeCancel) payload.participant_ids = checkedIds;
@@ -242,19 +310,24 @@ const isTerminal = res?.status === 'attended' || res?.status === 'no_show';
           body: JSON.stringify(payload),
         });
         const body = await r.json();
-        if (!r.ok) throw new Error(body?.error || 'キャンセル失敗');
+        if (!r.ok) throw new Error(body?.error || tr('キャンセル失敗', 'Cancellation failed'));
         form.hidden = true;
         if (summaryBox) summaryBox.hidden = true;
         const msg = body.partial
-          ? `✅ ${checkedNames.join('・')} のキャンセルを承りました。<br>残り ${body.remaining_count} 名は予約継続中です。<br>新しい合計: ${yen(Number(body.new_total || 0))}`
-          : '✅ 予約全体のキャンセルを承りました。';
+          ? (isEn
+              ? `✅ Cancellation confirmed for ${checkedNames.join(', ')}.<br>${body.remaining_count} participant(s) remain booked.<br>New total: ${yen(Number(body.new_total || 0))}`
+              : `✅ ${checkedNames.join('・')} のキャンセルを承りました。<br>残り ${body.remaining_count} 名は予約継続中です。<br>新しい合計: ${yen(Number(body.new_total || 0))}`)
+          : tr('✅ 予約全体のキャンセルを承りました。', '✅ Your entire booking has been cancelled.');
+        const notifyMsg = tr('ご登録のメールアドレスに通知メールをお送りします。',
+                              'A confirmation email will be sent to your registered address.');
+        const backLabel = tr('別の日程を予約する', 'Book another date');
         result.innerHTML =
-          `<div class="banner banner-ok">${msg}<br>ご登録のメールアドレスに通知メールをお送りします。</div>` +
-          '<p style="text-align:center;margin-top:1rem"><a href="/reserve/" class="btn btn-primary">別の日程を予約する</a></p>';
+          `<div class="banner banner-ok">${msg}<br>${notifyMsg}</div>` +
+          `<p style="text-align:center;margin-top:1rem"><a href="/reserve/" class="btn btn-primary">${backLabel}</a></p>`;
         result.hidden = false;
       } catch (err: any) {
         updateSummary();
-        alert('エラー: ' + (err.message || err));
+        alert(tr('エラー: ', 'Error: ') + (err.message || err));
       }
     });
   }

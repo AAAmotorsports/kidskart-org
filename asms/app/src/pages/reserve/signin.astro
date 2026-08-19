@@ -1,6 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 
 // SSR-render URL config into the page so the client-side script can
 // contact Supabase. Only PUBLIC_* values leave the server.
@@ -12,66 +13,124 @@ const url = new URL(Astro.request.url);
 const next = url.searchParams.get('next') || '/reserve/';
 // Callback URL is absolute — Supabase needs full URL for emailRedirectTo
 const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURIComponent(next)}`;
+
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
 ---
-<Base title="以前の予約情報を呼び出す — 福岡キッズカートアカデミー">
+<Base
+  title={isEn ? 'Recall previous booking info — Fukuoka Kids Kart Academy' : '以前の予約情報を呼び出す — 福岡キッズカートアカデミー'}
+  lang={locale}
+  showLocaleSwitch={true}
+>
   <main>
     <header class="hd">
-      <a class="back" href={next}>← 戻る</a>
-      <h1>🔁 以前の予約情報を呼び出す</h1>
-      <p class="sub">機種変更・PC 利用など、別の端末から予約するリピーター向け</p>
+      <a class="back" href={next}>{isEn ? '← Back' : '← 戻る'}</a>
+      <h1>{isEn ? '🔁 Recall previous booking info' : '🔁 以前の予約情報を呼び出す'}</h1>
+      <p class="sub">
+        {isEn
+          ? 'For repeat customers booking from a different device (phone change, PC, etc.)'
+          : '機種変更・PC 利用など、別の端末から予約するリピーター向け'}
+      </p>
     </header>
 
     <aside class="first-time-hint">
       <span class="fh-icon">💡</span>
-      <span class="fh-text"><strong>初めての方はログイン不要</strong>です — <a href={next}>そのままご予約フォームへ</a></span>
+      <span class="fh-text">
+        {isEn ? (
+          <><strong>First-time visitors don't need to sign in</strong> — <a href={next}>go directly to the booking form</a></>
+        ) : (
+          <><strong>初めての方はログイン不要</strong>です — <a href={next}>そのままご予約フォームへ</a></>
+        )}
+      </span>
     </aside>
 
     <section class="explain">
-      <p>以前ご予約いただいた保護者様のメールアドレスを入力してください。<br>ワンタイムリンクをメールでお送りしますので、リンクをタップすると前回の情報が自動で予約フォームに入ります。</p>
+      <p>
+        {isEn ? (
+          <>Enter the guardian's email address you used for your previous booking.<br />We'll send a one-time link — tap it and your previous info will auto-fill the booking form.</>
+        ) : (
+          <>以前ご予約いただいた保護者様のメールアドレスを入力してください。<br />ワンタイムリンクをメールでお送りしますので、リンクをタップすると前回の情報が自動で予約フォームに入ります。</>
+        )}
+      </p>
     </section>
 
     <form id="signinForm" class="form">
       <label class="field">
-        <span>メールアドレス</span>
+        <span>{isEn ? 'Email address' : 'メールアドレス'}</span>
         <input type="email" id="email" required autocomplete="email"
                inputmode="email" placeholder="you@example.com" />
       </label>
-      <button type="submit" id="submitBtn" class="btn btn-primary">サインインリンクを送る</button>
+      <button type="submit" id="submitBtn" class="btn btn-primary">
+        {isEn ? 'Send sign-in link' : 'サインインリンクを送る'}
+      </button>
     </form>
 
-    <p class="warn-note">※ お送りするリンクは他人に転送しないでください（転送された方が本人としてログインできてしまいます）</p>
+    <p class="warn-note">
+      {isEn
+        ? '* Do not forward this link to others (they could sign in as you)'
+        : '※ お送りするリンクは他人に転送しないでください（転送された方が本人としてログインできてしまいます）'}
+    </p>
 
     <div id="errStatus" class="status err" hidden></div>
 
     <section id="successCard" class="success-card" hidden>
       <div class="sc-icon">📬</div>
-      <h2 class="sc-title">サインインリンクを送信しました</h2>
-      <p class="sc-hint">下記のメールアドレスに<strong>1 通のメール</strong>が届きます。</p>
+      <h2 class="sc-title">{isEn ? 'Sign-in link sent' : 'サインインリンクを送信しました'}</h2>
+      <p class="sc-hint">
+        {isEn ? (
+          <><strong>1 email</strong> is on its way to the address below.</>
+        ) : (
+          <>下記のメールアドレスに<strong>1 通のメール</strong>が届きます。</>
+        )}
+      </p>
       <div class="sc-email-box">
         <span class="sc-email" id="sentEmail"></span>
       </div>
       <ol class="sc-steps">
-        <li>メールボックスを確認（迷惑メールも念のため）</li>
-        <li>「<strong>サインインする</strong>」ボタンをタップ</li>
-        <li>予約フォームに戻り、前回情報が自動で入ります</li>
+        {isEn ? (
+          <>
+            <li>Check your inbox (spam folder just in case)</li>
+            <li>Tap the "<strong>Sign in</strong>" button</li>
+            <li>Return to the booking form — your previous info auto-fills</li>
+          </>
+        ) : (
+          <>
+            <li>メールボックスを確認（迷惑メールも念のため）</li>
+            <li>「<strong>サインインする</strong>」ボタンをタップ</li>
+            <li>予約フォームに戻り、前回情報が自動で入ります</li>
+          </>
+        )}
       </ol>
-      <p class="sc-note">⏱ リンクの有効期限は <strong>1 時間</strong> です</p>
+      <p class="sc-note">
+        {isEn ? (<>⏱ Link expires in <strong>1 hour</strong></>) : (<>⏱ リンクの有効期限は <strong>1 時間</strong> です</>)}
+      </p>
       <div class="sc-actions">
         <button type="button" id="resendBtn" class="btn btn-ghost" disabled>
-          もう一度送る（<span id="resendTimer">30</span> 秒後）
+          {isEn ? (
+            <>Resend (in <span id="resendTimer">30</span>s)</>
+          ) : (
+            <>もう一度送る（<span id="resendTimer">30</span> 秒後）</>
+          )}
         </button>
-        <a href={next} class="btn btn-link">← 予約カレンダーに戻る</a>
+        <a href={next} class="btn btn-link">{isEn ? '← Back to booking calendar' : '← 予約カレンダーに戻る'}</a>
       </div>
     </section>
 
     <section id="altSection" class="alt" hidden>
-      <p>初めてご利用の方は、<a href={next}>そのままご予約フォーム</a>にお進みください。</p>
+      <p>
+        {isEn ? (
+          <>First-time visitors: <a href={next}>go directly to the booking form</a>.</>
+        ) : (
+          <>初めてご利用の方は、<a href={next}>そのままご予約フォーム</a>にお進みください。</>
+        )}
+      </p>
     </section>
   </main>
 </Base>
 
-<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey, callbackUrl }}>
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey, callbackUrl, isEn }}>
   window.__ASMS_SIGNIN = { supabaseUrl, supabaseAnonKey, callbackUrl };
+  window.__ASMS_LOCALE = { isEn };
 </script>
 
 <script>
@@ -92,6 +151,9 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
     const sentEmail = document.getElementById('sentEmail') as HTMLSpanElement | null;
     const resendBtn = document.getElementById('resendBtn') as HTMLButtonElement | null;
     const resendTimer = document.getElementById('resendTimer') as HTMLSpanElement | null;
+
+    const isEn = !!(window as any).__ASMS_LOCALE?.isEn;
+    const tr = (jp: string, en: string) => isEn ? en : jp;
 
     const escape = (s: string) =>
       s.replace(/[&<>"']/g, (c) => (
@@ -118,7 +180,7 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
           clearInterval(iv);
           if (resendBtn) {
             resendBtn.disabled = false;
-            resendBtn.textContent = 'もう一度送る';
+            resendBtn.textContent = tr('もう一度送る', 'Resend');
           }
         }
       }, 1000);
@@ -126,8 +188,9 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
 
     const send = async (email: string) => {
       if (!submitBtn && !resendBtn) return;
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '送信中...'; }
-      if (resendBtn) { resendBtn.disabled = true; resendBtn.textContent = '送信中...'; }
+      const sendingLabel = tr('送信中...', 'Sending...');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = sendingLabel; }
+      if (resendBtn) { resendBtn.disabled = true; resendBtn.textContent = sendingLabel; }
       if (errStatus) errStatus.hidden = true;
 
       const result = await sendMagicLink(client, email, cfg.callbackUrl);
@@ -135,11 +198,14 @@ const callbackUrl = `${url.protocol}//${url.host}/auth/callback?next=${encodeURI
         showSuccess(email);
       } else {
         if (errStatus) {
-          errStatus.innerHTML = `❌ 送信に失敗しました: ${escape(result.error ?? '不明なエラー')}`;
+          errStatus.innerHTML = tr(
+            `❌ 送信に失敗しました: ${escape(result.error ?? '不明なエラー')}`,
+            `❌ Failed to send: ${escape(result.error ?? 'Unknown error')}`,
+          );
           errStatus.hidden = false;
         }
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'サインインリンクを送る'; }
-        if (resendBtn) { resendBtn.disabled = false; resendBtn.textContent = 'もう一度送る'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = tr('サインインリンクを送る', 'Send sign-in link'); }
+        if (resendBtn) { resendBtn.disabled = false; resendBtn.textContent = tr('もう一度送る', 'Resend'); }
       }
     };
 

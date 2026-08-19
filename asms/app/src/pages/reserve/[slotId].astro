@@ -1,10 +1,13 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabase, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
 const admin = getSupabaseAdmin(env);
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
 
 const { slotId } = Astro.params;
 
@@ -113,11 +116,19 @@ const termsHtml = terms
       .join('<hr />')
   : '';
 ---
-<Base title={`予約フロー — ${course.name} · ${dateLabel}`}>
+<Base
+  title={isEn
+    ? `Booking — ${course.name} · ${dateLabel}`
+    : `予約フロー — ${course.name} · ${dateLabel}`}
+  lang={locale}
+  showLocaleSwitch={true}
+>
   <main class="wizard">
     <header class="wz-hd">
-      <a class="back" href="/reserve/">← 予約枠一覧へ戻る</a>
-      <h1>予約フロー</h1>
+      <a class="back" href="/reserve/">
+        {isEn ? '← Back to schedule' : '← 予約枠一覧へ戻る'}
+      </a>
+      <h1>{isEn ? 'Booking' : '予約フロー'}</h1>
       <div class="slot-summary">
         <div class="ss-course">{course.name}</div>
         <div class="ss-meta">
@@ -126,37 +137,51 @@ const termsHtml = terms
           <span class="mono">{timeLabel}</span>
         </div>
         <div class="ss-price">
-          料金: <strong>¥{priceRegular.toLocaleString()}</strong> / 会員 ¥{priceMember.toLocaleString()}
-          {priceRegular === priceMember && <span class="ss-note">（一般・会員同額）</span>}
+          {isEn ? (
+            <>Price: <strong>¥{priceRegular.toLocaleString()}</strong> / person</>
+          ) : (
+            <>
+              料金: <strong>¥{priceRegular.toLocaleString()}</strong> / 会員 ¥{priceMember.toLocaleString()}
+              {priceRegular === priceMember && <span class="ss-note">（一般・会員同額）</span>}
+            </>
+          )}
         </div>
-        <div class="ss-remaining">残 <strong>{remaining}</strong> 名</div>
+        <div class="ss-remaining">
+          {isEn
+            ? (<><strong>{remaining}</strong> seat(s) left</>)
+            : (<>残 <strong>{remaining}</strong> 名</>)}
+        </div>
       </div>
     </header>
 
     {remaining === 0 && (
       <div class="err">
-        <strong>満席です。</strong> 他の日程からお選びください。
+        {isEn
+          ? (<><strong>Fully booked.</strong> Please choose another date.</>)
+          : (<><strong>満席です。</strong> 他の日程からお選びください。</>)}
       </div>
     )}
 
     {!terms && (
       <div class="err">
-        <strong>利用規約が未登録です。</strong> 管理者にお問い合わせください。
+        {isEn
+          ? (<><strong>Terms of service not configured.</strong> Please contact the operator.</>)
+          : (<><strong>利用規約が未登録です。</strong> 管理者にお問い合わせください。</>)}
       </div>
     )}
 
     {remaining > 0 && terms && (
       <>
-        <div class="progress-wrap" aria-label="進行状況">
+        <div class="progress-wrap" aria-label={isEn ? 'Progress' : '進行状況'}>
           <ol class="progress">
-            <li data-step="1"><span>1</span>予約内容</li>
-            <li data-step="2"><span>2</span>参加者</li>
-            <li data-step="3"><span>3</span>保護者</li>
-            <li data-step="4"><span>4</span>緊急連絡先</li>
-            <li data-step="5"><span>5</span>規約</li>
-            <li data-step="6"><span>6</span>安全確認</li>
-            <li data-step="7"><span>7</span>署名</li>
-            <li data-step="8"><span>8</span>確認</li>
+            <li data-step="1"><span>1</span>{isEn ? 'Details' : '予約内容'}</li>
+            <li data-step="2"><span>2</span>{isEn ? 'Participants' : '参加者'}</li>
+            <li data-step="3"><span>3</span>{isEn ? 'Guardian' : '保護者'}</li>
+            <li data-step="4"><span>4</span>{isEn ? 'Emergency' : '緊急連絡先'}</li>
+            <li data-step="5"><span>5</span>{isEn ? 'Terms' : '規約'}</li>
+            <li data-step="6"><span>6</span>{isEn ? 'Safety' : '安全確認'}</li>
+            <li data-step="7"><span>7</span>{isEn ? 'Signature' : '署名'}</li>
+            <li data-step="8"><span>8</span>{isEn ? 'Confirm' : '確認'}</li>
           </ol>
         </div>
 
@@ -171,137 +196,179 @@ const termsHtml = terms
               data-requires-approval={requiresApproval ? '1' : '0'}>
 
           <section class="step" data-step="1">
-            <h2>1. 予約内容の確認</h2>
+            <h2>{isEn ? '1. Booking Details' : '1. 予約内容の確認'}</h2>
 
             <div id="prefillPanel" hidden class="prefill-panel">
-              <div class="pp-h" id="prefillHeading">🔁 このブラウザに前回のご予約情報が保存されています</div>
-              <div class="pp-actions">
-                <button type="button" id="prefillApply" class="btn btn-primary">前回の情報を使う</button>
-                <button type="button" id="prefillClear" class="btn btn-ghost">情報を削除</button>
+              <div class="pp-h" id="prefillHeading">
+                {isEn
+                  ? '🔁 Previous booking info found on this browser'
+                  : '🔁 このブラウザに前回のご予約情報が保存されています'}
               </div>
-              <p class="hint" id="prefillHint">※ この端末のブラウザ内にのみ保存されています。他の端末や他人のブラウザからは見えません。署名は毎回必要です。</p>
+              <div class="pp-actions">
+                <button type="button" id="prefillApply" class="btn btn-primary">
+                  {isEn ? 'Use previous info' : '前回の情報を使う'}
+                </button>
+                <button type="button" id="prefillClear" class="btn btn-ghost">
+                  {isEn ? 'Clear' : '情報を削除'}
+                </button>
+              </div>
+              <p class="hint" id="prefillHint">
+                {isEn
+                  ? '* Stored only in this browser. Not visible from other devices. Signature is required each time.'
+                  : '※ この端末のブラウザ内にのみ保存されています。他の端末や他人のブラウザからは見えません。署名は毎回必要です。'}
+              </p>
             </div>
 
             <div id="signinInvite" hidden class="signin-invite">
-              <div class="si-h">📧 以前、別端末でご予約したことがある方は</div>
-              <p class="si-hint">メールでサインインすると、前回のご予約情報が自動でフォームに入ります（機種変更・PC 利用など）。</p>
-              <a class="btn btn-ghost" href={signinUrl}>メールでサインイン</a>
+              <div class="si-h">
+                {isEn
+                  ? '📧 Booked with us before from another device?'
+                  : '📧 以前、別端末でご予約したことがある方は'}
+              </div>
+              <p class="si-hint">
+                {isEn
+                  ? 'Sign in with your email to auto-fill previous booking info.'
+                  : 'メールでサインインすると、前回のご予約情報が自動でフォームに入ります（機種変更・PC 利用など）。'}
+              </p>
+              <a class="btn btn-ghost" href={signinUrl}>
+                {isEn ? 'Sign in with email' : 'メールでサインイン'}
+              </a>
             </div>
 
             <div id="signedInEmpty" hidden class="signedin-empty">
-              <div class="se-h">🔑 サインイン中 <span id="seEmail" class="se-email"></span></div>
-              <p class="se-hint">このアカウントで過去の予約履歴が見つかりませんでした。フォームを入力してご予約ください。</p>
-              <button type="button" id="seSignOut" class="btn-signout-small">サインアウト</button>
+              <div class="se-h">
+                {isEn ? '🔑 Signed in as ' : '🔑 サインイン中 '}
+                <span id="seEmail" class="se-email"></span>
+              </div>
+              <p class="se-hint">
+                {isEn
+                  ? 'No previous booking history found for this account. Please fill in the form below.'
+                  : 'このアカウントで過去の予約履歴が見つかりませんでした。フォームを入力してご予約ください。'}
+              </p>
+              <button type="button" id="seSignOut" class="btn-signout-small">
+                {isEn ? 'Sign out' : 'サインアウト'}
+              </button>
             </div>
 
             <div class="field">
-              <label>参加人数</label>
+              <label>{isEn ? 'Number of participants' : '参加人数'}</label>
               <div class="count-picker">
                 {Array.from({ length: maxParticipants }, (_, i) => i + 1).map((n) => (
                   <label class="cp-choice">
                     <input type="radio" name="participant_count" value={n} checked={n === 1} />
-                    <span>{n} 名</span>
+                    <span>{isEn ? `${n} person${n > 1 ? 's' : ''}` : `${n} 名`}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            <div class="field">
-              <label>会員種別</label>
-              <div class="count-picker">
-                <label class="cp-choice">
-                  <input type="radio" name="price_tier" value="regular" checked />
-                  <span>一般 ¥{priceRegular.toLocaleString()}/名</span>
-                </label>
-                <label class="cp-choice">
-                  <input type="radio" name="price_tier" value="member" />
-                  <span>会員 ¥{priceMember.toLocaleString()}/名</span>
-                </label>
-              </div>
-              <p class="hint">会員未登録の方でも当日受付で会員登録可能です。</p>
+            {isEn ? (
+              // 英語版: 会員種別 UI 全体非表示、常に regular で確定
+              <input type="hidden" name="price_tier" value="regular" />
+            ) : (
+              <div class="field">
+                <label>会員種別</label>
+                <div class="count-picker">
+                  <label class="cp-choice">
+                    <input type="radio" name="price_tier" value="regular" checked />
+                    <span>一般 ¥{priceRegular.toLocaleString()}/名</span>
+                  </label>
+                  <label class="cp-choice">
+                    <input type="radio" name="price_tier" value="member" />
+                    <span>会員 ¥{priceMember.toLocaleString()}/名</span>
+                  </label>
+                </div>
+                <p class="hint">会員未登録の方でも当日受付で会員登録可能です。</p>
 
-              <div id="memberConfirm" hidden class="member-confirm">
-                <label>
-                  <input type="checkbox" id="memberConfirmChk" />
-                  <span>✅ <strong>トヨピー会員に登録済み</strong>です</span>
-                </label>
-                <p class="hint">会員価格でのご予約には、当日または事前にトヨピー会員登録が必要です。</p>
-                <div class="toyopet-links">
-                  <a class="toyopet-regist-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
-                  <a class="toyopet-regist-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
+                <div id="memberConfirm" hidden class="member-confirm">
+                  <label>
+                    <input type="checkbox" id="memberConfirmChk" />
+                    <span>✅ <strong>トヨピー会員に登録済み</strong>です</span>
+                  </label>
+                  <p class="hint">会員価格でのご予約には、当日または事前にトヨピー会員登録が必要です。</p>
+                  <div class="toyopet-links">
+                    <a class="toyopet-regist-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
+                    <a class="toyopet-regist-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div class="total-preview">
-              合計: <strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
+              {isEn ? 'Total: ' : '合計: '}<strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
             </div>
 
             {requiresApproval && (
               <div class="notice">
-                💡 このコースは<strong>承認制</strong>です。予約送信後、当社確認後に確定通知をお送りします。
+                {isEn
+                  ? (<>💡 This course requires <strong>approval</strong>. We'll confirm your booking after review.</>)
+                  : (<>💡 このコースは<strong>承認制</strong>です。予約送信後、当社確認後に確定通知をお送りします。</>)}
               </div>
             )}
 
             <div class="nav-btns">
-              <button type="button" class="btn btn-primary" data-goto="2">次へ →</button>
+              <button type="button" class="btn btn-primary" data-goto="2">
+                {isEn ? 'Next →' : '次へ →'}
+              </button>
             </div>
           </section>
 
           <section class="step" data-step="2" hidden>
-            <h2>2. 参加者情報</h2>
-            <p class="hint">走行される全員の情報をご入力ください。</p>
+            <h2>{isEn ? '2. Participant Info' : '2. 参加者情報'}</h2>
+            <p class="hint">
+              {isEn ? 'Please fill in details for everyone who will drive.' : '走行される全員の情報をご入力ください。'}
+            </p>
 
             <div id="participantsHost"></div>
 
             <template id="participantTpl">
               <div class="participant" data-p-index="">
-                <h3 class="p-hd">参加者 <span class="p-num"></span></h3>
+                <h3 class="p-hd">{isEn ? 'Participant ' : '参加者 '}<span class="p-num"></span></h3>
                 <div class="grid-2">
                   <div class="field">
-                    <label>お名前 *</label>
+                    <label>{isEn ? 'Name *' : 'お名前 *'}</label>
                     <input type="text" name="p_name" required maxlength="40" />
                   </div>
                   <div class="field">
-                    <label>フリガナ *</label>
-                    <input type="text" name="p_kana" required maxlength="40" placeholder="ヤマダタロウ" />
+                    <label>{isEn ? 'Name (phonetic) *' : 'フリガナ *'}</label>
+                    <input type="text" name="p_kana" required maxlength="40" placeholder={isEn ? 'e.g. YAMADA TARO' : 'ヤマダタロウ'} />
                   </div>
                   <div class="field">
-                    <label>生年月日 *</label>
+                    <label>{isEn ? 'Date of birth *' : '生年月日 *'}</label>
                     <input type="date" name="p_birth" required />
                   </div>
                   <div class="field">
-                    <label>性別 *</label>
+                    <label>{isEn ? 'Gender *' : '性別 *'}</label>
                     <select name="p_gender" required>
-                      <option value="">— 選択 —</option>
-                      <option value="male">男</option>
-                      <option value="female">女</option>
-                      <option value="other">その他</option>
+                      <option value="">{isEn ? '— Select —' : '— 選択 —'}</option>
+                      <option value="male">{isEn ? 'Male' : '男'}</option>
+                      <option value="female">{isEn ? 'Female' : '女'}</option>
+                      <option value="other">{isEn ? 'Other' : 'その他'}</option>
                     </select>
                   </div>
                   <div class="field">
-                    <label>身長 (cm) *</label>
+                    <label>{isEn ? 'Height (cm) *' : '身長 (cm) *'}</label>
                     <input type="number" name="p_height" required min="80" max="200" step="1" />
                   </div>
                 </div>
                 <div class="field">
-                  <label>カート経験（任意）</label>
-                  <input type="text" name="p_experience" maxlength="120" placeholder="例: 初めて／〇〇でN回" />
+                  <label>{isEn ? 'Kart experience (optional)' : 'カート経験（任意）'}</label>
+                  <input type="text" name="p_experience" maxlength="120" placeholder={isEn ? 'e.g. First time / Xx times at ...' : '例: 初めて／〇〇でN回'} />
                 </div>
                 <div class="field">
-                  <label>写真撮影同意 *</label>
+                  <label>{isEn ? 'Photo consent *' : '写真撮影同意 *'}</label>
                   <div class="radio-row">
                     <label class="cp-choice small">
                       <input type="radio" name="p_photo" value="allow" checked />
-                      <span>OK</span>
+                      <span>{isEn ? 'OK' : 'OK'}</span>
                     </label>
                     <label class="cp-choice small">
                       <input type="radio" name="p_photo" value="face_blur_only" />
-                      <span>顔ぼかしのみ OK</span>
+                      <span>{isEn ? 'Blur face only' : '顔ぼかしのみ OK'}</span>
                     </label>
                     <label class="cp-choice small">
                       <input type="radio" name="p_photo" value="deny" />
-                      <span>不可</span>
+                      <span>{isEn ? 'No photos' : '不可'}</span>
                     </label>
                   </div>
                 </div>
@@ -309,93 +376,117 @@ const termsHtml = terms
             </template>
 
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="1">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="3">次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="1">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="3">{isEn ? 'Next →' : '次へ →'}</button>
             </div>
           </section>
 
           <section class="step" data-step="3" hidden>
-            <h2>3. 保護者情報</h2>
+            <h2>{isEn ? '3. Guardian Info' : '3. 保護者情報'}</h2>
             <div class="grid-2">
               <div class="field">
-                <label>お名前 *</label>
+                <label>{isEn ? 'Name *' : 'お名前 *'}</label>
                 <input type="text" name="g_name" required maxlength="40" />
               </div>
               <div class="field">
-                <label>フリガナ *</label>
+                <label>{isEn ? 'Name (phonetic) *' : 'フリガナ *'}</label>
                 <input type="text" name="g_kana" required maxlength="40" />
               </div>
               <div class="field">
-                <label>電話番号 *</label>
-                <input type="tel" name="g_phone" required maxlength="20" placeholder="09012345678" />
+                <label>{isEn ? 'Phone number *' : '電話番号 *'}</label>
+                <input type="tel" name="g_phone" required maxlength="20" placeholder={isEn ? '+81 90-1234-5678' : '09012345678'} />
               </div>
               <div class="field">
-                <label>メールアドレス *</label>
+                <label>{isEn ? 'Email *' : 'メールアドレス *'}</label>
                 <input type="email" name="g_email" required maxlength="120" />
               </div>
               <div class="field">
-                <label>郵便番号</label>
+                <label>{isEn ? 'Postal code' : '郵便番号'}</label>
                 <input type="text" id="g_postal" name="g_postal" maxlength="10" placeholder="8110011"
                   inputmode="numeric" autocomplete="postal-code" />
-                <p class="hint zip-hint" id="zipHint">7桁入力で住所が自動入力されます</p>
+                <p class="hint zip-hint" id="zipHint">
+                  {isEn ? 'Enter 7 digits and address will auto-fill (Japan only)' : '7桁入力で住所が自動入力されます'}
+                </p>
               </div>
               <div class="field field-wide">
-                <label>住所</label>
-                <input type="text" id="g_address" name="g_address" maxlength="200" placeholder="福岡県福岡市…" autocomplete="street-address" />
+                <label>{isEn ? 'Address' : '住所'}</label>
+                <input type="text" id="g_address" name="g_address" maxlength="200"
+                  placeholder={isEn ? 'e.g. Fukuoka, Fukuoka-shi…' : '福岡県福岡市…'}
+                  autocomplete="street-address" />
               </div>
             </div>
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="2">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="4">次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="2">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="4">{isEn ? 'Next →' : '次へ →'}</button>
             </div>
           </section>
 
           <section class="step" data-step="4" hidden>
-            <h2>4. 緊急連絡先</h2>
-            <p class="hint">当日、保護者ご本人と連絡が取れない場合の連絡先です。</p>
+            <h2>{isEn ? '4. Emergency Contact' : '4. 緊急連絡先'}</h2>
+            <p class="hint">
+              {isEn
+                ? 'A contact reachable on the day if the guardian is unreachable.'
+                : '当日、保護者ご本人と連絡が取れない場合の連絡先です。'}
+            </p>
 
             <div class="same-as-guardian">
               <label>
                 <input type="checkbox" id="sameAsGuardian" checked />
-                <span>👤 <strong>保護者と同じ</strong>（保護者情報を緊急連絡先として使用）</span>
+                <span>
+                  {isEn
+                    ? (<>👤 <strong>Same as guardian</strong> (use guardian info as emergency contact)</>)
+                    : (<>👤 <strong>保護者と同じ</strong>（保護者情報を緊急連絡先として使用）</>)}
+                </span>
               </label>
             </div>
 
             <div id="emergencyFields" hidden>
               <div class="grid-2">
                 <div class="field">
-                  <label>お名前 *</label>
+                  <label>{isEn ? 'Name *' : 'お名前 *'}</label>
                   <input type="text" name="e_name" maxlength="40" />
                 </div>
                 <div class="field">
-                  <label>続柄 *</label>
-                  <input type="text" name="e_relation" maxlength="20" placeholder="祖父母／配偶者 など" />
+                  <label>{isEn ? 'Relationship *' : '続柄 *'}</label>
+                  <input type="text" name="e_relation" maxlength="20"
+                    placeholder={isEn ? 'e.g. Grandparent / Spouse' : '祖父母／配偶者 など'} />
                 </div>
                 <div class="field field-wide">
-                  <label>電話番号 *</label>
+                  <label>{isEn ? 'Phone number *' : '電話番号 *'}</label>
                   <input type="tel" name="e_phone" maxlength="20" />
                 </div>
               </div>
             </div>
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="3">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="5">次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="3">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="5">{isEn ? 'Next →' : '次へ →'}</button>
             </div>
           </section>
 
           <section class="step" data-step="5" hidden>
-            <h2>5. 利用規約 · キャンセルポリシー · 天候対応</h2>
+            <h2>{isEn ? '5. Terms of Service · Cancellation · Weather Policy' : '5. 利用規約 · キャンセルポリシー · 天候対応'}</h2>
+            {isEn && (
+              <div class="notice" style="margin-bottom:.8rem">
+                ℹ️ The full terms below are provided in Japanese. Please have a Japanese-speaking companion review, or contact us at info@kidskart.org if you need an English summary.
+              </div>
+            )}
             <div class="terms-scroll" id="termsScroll" tabindex="0" set:html={termsHtml}></div>
-            <p class="hint scroll-hint" id="scrollHint">📄 最後までスクロールして次へお進みください</p>
+            <p class="hint scroll-hint" id="scrollHint">
+              {isEn ? '📄 Please scroll to the bottom to continue' : '📄 最後までスクロールして次へお進みください'}
+            </p>
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="4">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="6" id="agreeBtn" disabled>同意して次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="4">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="6" id="agreeBtn" disabled>
+                {isEn ? 'Agree and continue →' : '同意して次へ →'}
+              </button>
             </div>
           </section>
 
           <section class="step" data-step="6" hidden>
-            <h2>6. 安全ルール確認</h2>
-            <p class="hint">全ての項目にご同意ください。</p>
+            <h2>{isEn ? '6. Safety Rules Confirmation' : '6. 安全ルール確認'}</h2>
+            <p class="hint">
+              {isEn ? 'Please check all items to acknowledge.' : '全ての項目にご同意ください。'}
+            </p>
             <ul class="safety-list">
               {safetyItems.map((it) => (
                 <li>
@@ -407,70 +498,83 @@ const termsHtml = terms
               ))}
             </ul>
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="5">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="7">次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="5">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="7">{isEn ? 'Next →' : '次へ →'}</button>
             </div>
           </section>
 
           <section class="step" data-step="7" hidden>
-            <h2>7. 電子署名</h2>
-            <p class="hint">下の枠内に保護者様のお名前を署名してください（PC・スマホ共に対応）。</p>
+            <h2>{isEn ? '7. Electronic Signature' : '7. 電子署名'}</h2>
+            <p class="hint">
+              {isEn
+                ? "Please sign the guardian's name in the box below (works on PC and mobile)."
+                : '下の枠内に保護者様のお名前を署名してください（PC・スマホ共に対応）。'}
+            </p>
 
             <div class="sig-mode">
               <label class="cp-choice small">
                 <input type="radio" name="sig_mode" value="drawn" checked />
-                <span>✍️ 手書き</span>
+                <span>{isEn ? '✍️ Draw' : '✍️ 手書き'}</span>
               </label>
               <label class="cp-choice small">
                 <input type="radio" name="sig_mode" value="typed" />
-                <span>⌨ タイプ入力</span>
+                <span>{isEn ? '⌨ Type' : '⌨ タイプ入力'}</span>
               </label>
             </div>
 
             <div class="sig-drawn" id="sigDrawn">
               <canvas id="sigCanvas"></canvas>
               <div class="sig-actions">
-                <button type="button" id="sigClear" class="btn btn-ghost">🗑 クリア</button>
+                <button type="button" id="sigClear" class="btn btn-ghost">
+                  {isEn ? '🗑 Clear' : '🗑 クリア'}
+                </button>
               </div>
             </div>
 
             <div class="sig-typed" id="sigTyped" hidden>
               <div class="field">
-                <label>お名前をタイプ *</label>
-                <input type="text" name="sig_typed_name" maxlength="40" placeholder="山田 太郎" />
+                <label>{isEn ? 'Type your name *' : 'お名前をタイプ *'}</label>
+                <input type="text" name="sig_typed_name" maxlength="40"
+                  placeholder={isEn ? 'e.g. Taro Yamada' : '山田 太郎'} />
               </div>
             </div>
 
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="6">← 戻る</button>
-              <button type="button" class="btn btn-primary" data-goto="8">次へ →</button>
+              <button type="button" class="btn btn-ghost" data-goto="6">{isEn ? '← Back' : '← 戻る'}</button>
+              <button type="button" class="btn btn-primary" data-goto="8">{isEn ? 'Next →' : '次へ →'}</button>
             </div>
           </section>
 
           <section class="step" data-step="8" hidden>
-            <h2>8. 内容確認 → 予約確定</h2>
+            <h2>{isEn ? '8. Review & Submit' : '8. 内容確認 → 予約確定'}</h2>
             <div id="reviewHost"></div>
 
             {turnstileEnabled && (
               <div class="turnstile-wrap">
-                <p class="hint">🤖 悪戯予約防止のため、下のチェックを完了してください</p>
+                <p class="hint">
+                  {isEn
+                    ? '🤖 Please complete the check below to prevent spam bookings'
+                    : '🤖 悪戯予約防止のため、下のチェックを完了してください'}
+                </p>
                 <div class="cf-turnstile"
                      data-sitekey={turnstileSiteKey}
                      data-callback="onTurnstileSuccess"
                      data-error-callback="onTurnstileError"
                      data-expired-callback="onTurnstileExpired"
                      data-theme="light"
-                     data-language="ja"></div>
+                     data-language={isEn ? 'en' : 'ja'}></div>
               </div>
             )}
 
             <div id="submitError" class="err" hidden></div>
 
             <div class="nav-btns">
-              <button type="button" class="btn btn-ghost" data-goto="7">← 戻る</button>
+              <button type="button" class="btn btn-ghost" data-goto="7">{isEn ? '← Back' : '← 戻る'}</button>
               <button type="button" class="btn btn-primary btn-big" id="submitBtn"
                       disabled={turnstileEnabled}>
-                {requiresApproval ? '📩 承認依頼を送信する' : '✅ 予約を確定する'}
+                {isEn
+                  ? (requiresApproval ? '📩 Submit approval request' : '✅ Confirm booking')
+                  : (requiresApproval ? '📩 承認依頼を送信する' : '✅ 予約を確定する')}
               </button>
             </div>
           </section>
@@ -483,7 +587,7 @@ const termsHtml = terms
         <div id="submitOverlay" hidden>
           <div class="overlay-card">
             <div class="spinner"></div>
-            <p>予約を送信しています…</p>
+            <p>{isEn ? 'Submitting your booking…' : '予約を送信しています…'}</p>
           </div>
         </div>
       </>
@@ -491,8 +595,9 @@ const termsHtml = terms
   </main>
 </Base>
 
-<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey }}>
+<script is:inline define:vars={{ supabaseUrl, supabaseAnonKey, isEn }}>
   window.__ASMS_AUTH_CFG = { supabaseUrl, supabaseAnonKey };
+  window.__ASMS_LOCALE = { isEn };
 </script>
 
 <script>
@@ -506,6 +611,9 @@ const termsHtml = terms
     const priceMember = parseInt(form.dataset.priceMember || '0', 10);
     const courseName = form.dataset.courseName || '';
     const slotLabel = form.dataset.slotLabel || '';
+    // ロケール (Base で window.__ASMS_LOCALE にセット済み)
+    const isEn = !!(window as any).__ASMS_LOCALE?.isEn;
+    const tr = (jp: string, en: string) => isEn ? en : jp;
 
     const steps = Array.from(form.querySelectorAll<HTMLElement>('section.step'));
     const progressItems = Array.from(document.querySelectorAll<HTMLElement>('.progress li'));
@@ -538,15 +646,16 @@ const termsHtml = terms
     });
 
     const totalPreviewEl = document.getElementById('totalPreview')!;
-    const memberConfirm = document.getElementById('memberConfirm')!;
-    const memberConfirmChk = document.getElementById('memberConfirmChk') as HTMLInputElement;
+    // 英語版では会員種別 UI 自体を出していないので null 許容にする
+    const memberConfirm = document.getElementById('memberConfirm') as HTMLElement | null;
+    const memberConfirmChk = document.getElementById('memberConfirmChk') as HTMLInputElement | null;
     const updateTotal = () => {
       const count = getRadioValue('participant_count') || '1';
       const tier = getRadioValue('price_tier') || 'regular';
       const per = tier === 'member' ? priceMember : priceRegular;
       totalPreviewEl.textContent = `¥${(per * parseInt(count, 10)).toLocaleString()}`;
-      memberConfirm.hidden = tier !== 'member';
-      if (tier !== 'member') memberConfirmChk.checked = false;
+      if (memberConfirm) memberConfirm.hidden = tier !== 'member';
+      if (memberConfirmChk && tier !== 'member') memberConfirmChk.checked = false;
     };
     form.querySelectorAll<HTMLInputElement>('input[name="participant_count"], input[name="price_tier"]')
       .forEach((el) => el.addEventListener('change', updateTotal));
@@ -605,7 +714,9 @@ const termsHtml = terms
     const agreeBtn = document.getElementById('agreeBtn') as HTMLButtonElement;
     const enableAgree = () => {
       agreeBtn.disabled = false;
-      scrollHint.textContent = '✅ ご確認ありがとうございました。同意して次へ進めます。';
+      scrollHint.textContent = isEn
+        ? '✅ Thanks for reviewing. You can now agree and continue.'
+        : '✅ ご確認ありがとうございました。同意して次へ進めます。';
       scrollHint.classList.add('ok');
     };
     scroll.addEventListener('scroll', () => {
@@ -788,7 +899,9 @@ const termsHtml = terms
           prefillSource = 'auth';
           const emailShort = session.user?.email ?? '';
           if (prefillHeading) prefillHeading.textContent = `🔑 サインイン中 (${emailShort}): 前回のご予約情報を呼び出せます`;
-          if (prefillHint) prefillHint.textContent = '※ サインイン済みアカウントの前回情報です。署名は毎回必要です。';
+          if (prefillHint) prefillHint.textContent = isEn
+            ? '* Loaded from your signed-in account. Signature is required each time.'
+            : '※ サインイン済みアカウントの前回情報です。署名は毎回必要です。';
           if (prefillPanel) prefillPanel.hidden = false;
           if (signinInvite) signinInvite.hidden = true;
         } else {
@@ -959,18 +1072,32 @@ const termsHtml = terms
     const renderReview = () => {
       const data = collect();
       const rows: string[] = [];
-      rows.push(`<div class="rv-block"><div class="rv-h">予約枠</div><div>${escapeHtml(slotLabel)}</div><div>${escapeHtml(courseName)}</div><div class="rv-price">合計: <strong>¥${data.totalAmount.toLocaleString()}</strong>（${data.priceTier === 'member' ? '会員' : '一般'} × ${data.participants.length}名）</div></div>`);
+      const tierLabel = data.priceTier === 'member'
+        ? tr('会員', 'Member')
+        : tr('一般', 'Regular');
+      const nameFmt = (n: string, k: string) => isEn ? escapeHtml(n) : `${escapeHtml(n)}（${escapeHtml(k)}）`;
+      rows.push(`<div class="rv-block"><div class="rv-h">${tr('予約枠', 'Booking')}</div><div>${escapeHtml(slotLabel)}</div><div>${escapeHtml(courseName)}</div><div class="rv-price">${tr('合計', 'Total')}: <strong>¥${data.totalAmount.toLocaleString()}</strong>${isEn ? ` (${data.participants.length} × ${tierLabel})` : `（${tierLabel} × ${data.participants.length}名）`}</div></div>`);
       data.participants.forEach((p: any, i: number) => {
-        rows.push(`<div class="rv-block"><div class="rv-h">参加者 ${i + 1}</div><div>${escapeHtml(p.name)}（${escapeHtml(p.kana)}）</div><div>${escapeHtml(p.birth_date)} · ${genderLabel(p.gender)} · ${p.height_cm}cm</div>${p.kart_experience_note ? `<div>経験: ${escapeHtml(p.kart_experience_note)}</div>` : ''}<div>写真同意: ${photoLabel(p.photo_consent)}</div></div>`);
+        rows.push(`<div class="rv-block"><div class="rv-h">${tr('参加者', 'Participant')} ${i + 1}</div><div>${nameFmt(p.name, p.kana)}</div><div>${escapeHtml(p.birth_date)} · ${genderLabel(p.gender)} · ${p.height_cm}cm</div>${p.kart_experience_note ? `<div>${tr('経験', 'Experience')}: ${escapeHtml(p.kart_experience_note)}</div>` : ''}<div>${tr('写真同意', 'Photo consent')}: ${photoLabel(p.photo_consent)}</div></div>`);
       });
-      rows.push(`<div class="rv-block"><div class="rv-h">保護者</div><div>${escapeHtml(data.guardian.name)}（${escapeHtml(data.guardian.kana)}）</div><div>📞 ${escapeHtml(data.guardian.phone)}</div><div>✉️ ${escapeHtml(data.guardian.email)}</div>${data.guardian.address ? `<div>${escapeHtml(data.guardian.postal_code || '')} ${escapeHtml(data.guardian.address)}</div>` : ''}</div>`);
-      rows.push(`<div class="rv-block"><div class="rv-h">緊急連絡先</div><div>${escapeHtml(data.emergency.name)}（${escapeHtml(data.emergency.relation)}）</div><div>📞 ${escapeHtml(data.emergency.phone)}</div></div>`);
-      rows.push(`<div class="rv-block"><div class="rv-h">署名</div><div>${data.signature.type === 'drawn' ? '✍️ 手書き署名済み' : '⌨ ' + escapeHtml(data.signature.typed_name || '')}</div></div>`);
+      rows.push(`<div class="rv-block"><div class="rv-h">${tr('保護者', 'Guardian')}</div><div>${nameFmt(data.guardian.name, data.guardian.kana)}</div><div>📞 ${escapeHtml(data.guardian.phone)}</div><div>✉️ ${escapeHtml(data.guardian.email)}</div>${data.guardian.address ? `<div>${escapeHtml(data.guardian.postal_code || '')} ${escapeHtml(data.guardian.address)}</div>` : ''}</div>`);
+      rows.push(`<div class="rv-block"><div class="rv-h">${tr('緊急連絡先', 'Emergency Contact')}</div><div>${escapeHtml(data.emergency.name)}${isEn ? '' : `（${escapeHtml(data.emergency.relation)}）`}${isEn && data.emergency.relation ? ` (${escapeHtml(data.emergency.relation)})` : ''}</div><div>📞 ${escapeHtml(data.emergency.phone)}</div></div>`);
+      rows.push(`<div class="rv-block"><div class="rv-h">${tr('署名', 'Signature')}</div><div>${data.signature.type === 'drawn' ? tr('✍️ 手書き署名済み', '✍️ Signed') : '⌨ ' + escapeHtml(data.signature.typed_name || '')}</div></div>`);
       reviewHost.innerHTML = rows.join('');
     };
 
-    function genderLabel(g: string) { return ({ male: '男', female: '女', other: 'その他' } as Record<string, string>)[g] ?? g; }
-    function photoLabel(p: string) { return ({ allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' } as Record<string, string>)[p] ?? p; }
+    function genderLabel(g: string) {
+      const dict = isEn
+        ? { male: 'Male', female: 'Female', other: 'Other' }
+        : { male: '男', female: '女', other: 'その他' };
+      return (dict as Record<string, string>)[g] ?? g;
+    }
+    function photoLabel(p: string) {
+      const dict = isEn
+        ? { allow: 'OK', face_blur_only: 'Blur face only', deny: 'No photos' }
+        : { allow: 'OK', face_blur_only: '顔ぼかしのみ', deny: '不可' };
+      return (dict as Record<string, string>)[p] ?? p;
+    }
     function escapeHtml(s: string) {
       return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' } as Record<string, string>)[c]);
     }
@@ -1031,8 +1158,10 @@ const termsHtml = terms
         } else if (!f.value.trim()) invalid.push(f);
       });
       if (step === 1) {
-        if (getRadioValue('price_tier') === 'member' && !memberConfirmChk.checked) {
-          alert('会員価格をご選択の場合、「トヨピー会員に登録済み」のチェックが必要です。');
+        // English 版では price_tier=member 選択 UI 自体が無いので memberConfirmChk も存在しない
+        if (!isEn && getRadioValue('price_tier') === 'member' && memberConfirmChk && !memberConfirmChk.checked) {
+          alert(tr('会員価格をご選択の場合、「トヨピー会員に登録済み」のチェックが必要です。',
+                   'To use member price, please check the "Registered Toyopet Member" box.'));
           memberConfirmChk.focus();
           return false;
         }
@@ -1040,19 +1169,26 @@ const termsHtml = terms
       if (step === 6) {
         const checked = stepEl.querySelectorAll('input[name="safety"]:checked');
         const all = stepEl.querySelectorAll('input[name="safety"]');
-        if (checked.length !== all.length) { alert('全ての安全ルールにチェックしてください。'); return false; }
+        if (checked.length !== all.length) {
+          alert(tr('全ての安全ルールにチェックしてください。', 'Please check all safety rules.'));
+          return false;
+        }
       }
       if (step === 7) {
         const mode = getRadioValue('sig_mode');
-        if (mode === 'drawn' && !sigDrawn) { alert('署名を入力してください。'); return false; }
+        if (mode === 'drawn' && !sigDrawn) {
+          alert(tr('署名を入力してください。', 'Please provide a signature.'));
+          return false;
+        }
         if (mode === 'typed' && !(form.elements.namedItem('sig_typed_name') as HTMLInputElement)?.value.trim()) {
-          alert('お名前を入力してください。'); return false;
+          alert(tr('お名前を入力してください。', 'Please enter your name.'));
+          return false;
         }
       }
       if (invalid.length) {
         invalid[0].focus();
         invalid[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        alert('未入力の項目があります。');
+        alert(tr('未入力の項目があります。', 'Some required fields are missing.'));
         return false;
       }
       return true;
