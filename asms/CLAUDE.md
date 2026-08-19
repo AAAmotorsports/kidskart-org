@@ -25,8 +25,10 @@
 ### Magic Link 有効化手順 (Supabase 側)
 
 1. Supabase Dashboard → **Authentication → URL Configuration**
-   - **Site URL**: `https://kidskart-asms.kidskart1177.workers.dev`（本番ドメイン移行後は差し替え）
-   - **Redirect URLs** に追加: `https://kidskart-asms.kidskart1177.workers.dev/auth/callback`
+   - **Site URL**: `https://kidskart-asms.kidskart1177.workers.dev` （切替段階については下記「URL 切替方針」参照）
+   - **Redirect URLs** に**両方**追加:
+     - `https://kidskart-asms.kidskart1177.workers.dev/auth/callback`
+     - `https://reserve.kidskart.org/auth/callback`
 2. Authentication → **Providers → Email**
    - Enable Email provider を ON、Confirm email を OFF（Magic Link は直接ログイン扱い）
 3. Authentication → **Email Templates → Magic Link**
@@ -112,6 +114,40 @@
 - **非機微なら**: wrangler.jsonc `vars` に追加 → env.d.ts の Env 型に追加 → PR → deploy
 - **機密なら**: env.d.ts の Env 型に追加（`?` 付き optional） → Dashboard に Secret 追加 → 現バージョン再展開 → コード側で使用開始
 
+### 本番 URL / ドメイン構成 (2026-08-19 DNS 移管以降)
+
+- **本番 URL**: `https://reserve.kidskart.org` （工事中、段階移行中）
+- **Cloudflare Worker 名**: `kidskart-asms`
+- **workers.dev URL**: `https://kidskart-asms.kidskart1177.workers.dev` （現行案内 URL、段階移行中）
+- **DNS 管理**: Cloudflare (ゾーン `kidskart.org`)
+  - 2026-08-19 に Xserver から移管
+  - ムームードメイン側の NS は `jacob.ns.cloudflare.com` / `tina.ns.cloudflare.com`
+  - Worker との接続は **Route 方式** (`reserve.kidskart.org/*` → `kidskart-asms`)
+    - Custom Domain ダイアログでゾーン認識ラグに引っかかったため Route を採用
+  - `reserve` A レコード: `192.0.2.1` (プロキシ ON、実質マーカー)
+- **kidskart.org 本体** (公式サイト・ランディング): GitHub Pages
+  - A レコード 4 個 (185.199.108-111.153) + CNAME `www → aaamotorsports.github.io`
+  - すべて DNS only (グレー雲) — GitHub Pages が独自 CDN/TLS を持つため
+- **メール受信** (@kidskart.org): Xserver
+  - MX `sv762.xserver.jp`
+- **メール送信通知** (Resend): `send.kidskart.org` サブドメイン
+  - MX `feedback-smtp.ap-northeast-1.amazonses.com` + SPF/DKIM
+
+### URL 切替方針 (workers.dev → reserve.kidskart.org)
+
+段階的移行中。オーナー承認済み (2026-08-20)。
+
+| 対象 | 現状 | 切替タイミング |
+|------|------|---------------|
+| Supabase Auth Redirect URLs | ✅ **両方追加済** (workers.dev + reserve.kidskart.org) | 完了 |
+| Supabase Auth Site URL | workers.dev のまま | 保護者告知切替と同時 |
+| GitHub Secrets `ASMS_API_BASE` (thankyou-mail cron) | workers.dev のまま | 保護者告知切替と同時 |
+| **kidskart.org の予約リンク** | Reserva の旧 URL | **9 月開催スケジュール入力後**、`https://reserve.kidskart.org/reserve/` に差替 |
+| 保護者への告知 | 未告知 | 同上のタイミング |
+
+**リンク先仕様**: 案内 URL は必ず `/reserve/` パス付きで案内する (landing の `/` ではなく、
+予約カレンダーに直行させる)。例: `https://reserve.kidskart.org/reserve/`
+
 ### Cloudflare 設定のバックアップ
 Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
 - Secret 値は 1Password 等の別レイヤに保管
@@ -120,7 +156,8 @@ Cloudflare Dashboard の Secret を誤って全削除するとメール送信・
 ### Turnstile (CAPTCHA) の有効化手順
 1. Cloudflare Dashboard → Turnstile → **Add site**
    - Site Name: `kidskart-asms`
-   - Hostname: `kidskart-asms.kidskart1177.workers.dev`（本番ドメイン移行後は差し替え）
+   - Hostname: **`reserve.kidskart.org`** と `kidskart-asms.kidskart1177.workers.dev` を両方追加
+     (段階移行中、両ドメインからのアクセスに対応)
    - Widget mode: Managed（推奨）
 2. 発行された **Site Key** を `wrangler.jsonc` の `PUBLIC_TURNSTILE_SITE_KEY` に貼付 → PR → deploy
 3. 発行された **Secret Key** を Cloudflare Dashboard → kidskart-asms → 設定 → 変数とシークレット に **シークレット型** で `TURNSTILE_SECRET_KEY` として登録
