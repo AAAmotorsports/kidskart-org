@@ -1,0 +1,124 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { categories } from '@lib/queries';
+import { todayJst, addDays } from '@lib/domain';
+
+export const prerender = false;
+
+// ナイター走行の申込 (仕様 6)。
+// 通常の自動予約とは分け、常に「確認中」で受け付けて A-ONE が折り返す。
+const env = envFrom(Astro.locals);
+const cats = await categories(env);
+const today = todayJst();
+const maxDate = addDays(today, 365);
+---
+<Base title="ナイター走行のご相談 | A-ONE サーキット">
+  <h1>ナイター走行のご相談</h1>
+  <p class="small muted">
+    ナイター走行は事前予約・要相談です。ご希望をお送りいただくと、A-ONE より
+    折り返しご連絡いたします (この時点では予約は確定しません)。
+  </p>
+
+  <form id="form" class="card" novalidate>
+    <div class="two">
+      <div class="field">
+        <label for="date">ご希望日</label>
+        <input type="date" id="date" min={today} max={maxDate} value={today} required />
+      </div>
+      <div class="field">
+        <label for="start">ご希望開始時間</label>
+        <input type="time" id="start" value="18:00" step="1800" required />
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="category">カテゴリー</label>
+      <select id="category">
+        {cats.map((c) => <option value={c.code}>{c.name}</option>)}
+      </select>
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label for="party">ご参加人数</label>
+        <input type="number" id="party" min="1" max="50" value="1" required />
+      </div>
+      <div class="field">
+        <label for="vehicles">台数</label>
+        <input type="number" id="vehicles" min="1" max="50" value="1" />
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>ご連絡先</legend>
+      <div class="two">
+        <div class="field">
+          <label for="name">お名前</label>
+          <input type="text" id="name" autocomplete="name" required />
+        </div>
+        <div class="field">
+          <label for="phone">お電話番号</label>
+          <input type="tel" id="phone" autocomplete="tel" required />
+        </div>
+      </div>
+      <div class="field">
+        <label for="email">メールアドレス</label>
+        <input type="email" id="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="note">ご要望・ご相談内容</label>
+        <textarea id="note" placeholder="何時ごろまで走りたい／照明の希望 など"></textarea>
+      </div>
+    </fieldset>
+
+    <div id="error" class="notice ng" hidden></div>
+    <button type="submit" class="btn primary" id="submit">この内容で相談する</button>
+  </form>
+</Base>
+
+<script is:inline>
+  const $ = (id) => document.getElementById(id);
+  window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'night' });
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('error');
+    err.hidden = true;
+    const btn = $('submit');
+    btn.disabled = true;
+    btn.textContent = '送信中…';
+    try {
+      const res = await fetch('/api/reserve/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'night',
+          date: $('date').value,
+          start_time: $('start').value,
+          category_code: $('category').value,
+          party_size: Number($('party').value || 1),
+          vehicle_count: Number($('vehicles').value || 1),
+          name: $('name').value,
+          phone: $('phone').value,
+          email: $('email').value,
+          request_note: $('note').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '送信できませんでした');
+      window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'night' });
+      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+    } catch (e2) {
+      err.hidden = false;
+      err.textContent = e2.message;
+      btn.disabled = false;
+      btn.textContent = 'この内容で相談する';
+    }
+  });
+</script>
+
+<style>
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+</style>

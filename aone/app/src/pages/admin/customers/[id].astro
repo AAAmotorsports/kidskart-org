@@ -1,0 +1,133 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { customerDetail } from '@lib/queries';
+import {
+  jaDateShort, timeRangeLabel, yen, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 顧客詳細 (仕様 16 / 17)。
+// スタッフメモとタグは顧客には一切表示されない。
+const env = envFrom(Astro.locals);
+const id = Astro.params.id!;
+const { stat, reservations } = await customerDetail(env, id);
+
+const SUGGESTED_TAGS = ['常連', '初心者', '初走行', '大型バイク', '要注意', '雨天でも来場', '紹介', '特別対応あり'];
+---
+<Base title={`${stat?.name ?? '顧客'} | A-ONE 管理`} admin wide>
+  {!stat ? (
+    <div class="card"><h1>顧客が見つかりません</h1><a class="btn" href="/admin/customers">一覧へ</a></div>
+  ) : (
+    <>
+      <div class="spread" style="margin-bottom:.6rem">
+        <h1 style="margin:0">{stat.name} 様</h1>
+        <a class="btn sm ghost" href="/admin/customers">← 一覧</a>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="n">{stat.rp_count}</div><div class="l">RP 利用</div></div>
+        <div class="kpi"><div class="n">{stat.sport_count}</div><div class="l">スポーツ走行</div></div>
+        <div class="kpi"><div class="n">{stat.charter_count}</div><div class="l">貸切</div></div>
+        <div class="kpi"><div class="n">{stat.cancel_count}</div><div class="l">キャンセル</div></div>
+        <div class="kpi"><div class="n">{stat.no_show_count}</div><div class="l">無断キャンセル</div></div>
+        <div class="kpi"><div class="n small">{stat.last_visit_date ? jaDateShort(stat.last_visit_date) : '—'}</div><div class="l">最終来場</div></div>
+      </div>
+
+      <div class="cols">
+        <div class="card">
+          <h2>連絡先</h2>
+          <table>
+            <tbody>
+              <tr><th>フリガナ</th><td>{stat.kana ?? '—'}</td></tr>
+              <tr><th>電話</th><td>{stat.phone ?? '—'}</td></tr>
+              <tr><th>メール</th><td>{stat.email ?? '—'}</td></tr>
+              <tr><th>登録日</th><td>{stat.created_at?.slice(0, 10)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>スタッフメモ・タグ <span class="badge">顧客非表示</span></h2>
+          <div class="field">
+            <label for="tags">タグ (カンマ区切り)</label>
+            <input type="text" id="tags" value={(stat.tags ?? []).join(', ')} />
+            <div class="hint">例: {SUGGESTED_TAGS.join(' / ')}</div>
+          </div>
+          <div class="field">
+            <label for="memo">メモ</label>
+            <textarea id="memo">{stat.staff_memo ?? ''}</textarea>
+          </div>
+          <div id="out" class="notice" hidden></div>
+          <button class="btn primary sm" id="save">保存</button>
+        </div>
+      </div>
+
+      <div class="card table-scroll">
+        <h2>予約履歴 ({reservations.length} 件)</h2>
+        <table>
+          <thead>
+            <tr><th>日付</th><th>種別</th><th>時間</th><th>人数</th><th>状態</th><th>経路</th><th>料金</th><th>メモ</th><th></th></tr>
+          </thead>
+          <tbody>
+            {reservations.map((r) => (
+              <tr class:list={[['cancelled', 'no_show'].includes(r.status) && 'dim']}>
+                <td>{jaDateShort(r.date)}</td>
+                <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
+                <td class="tiny">{timeRangeLabel(r)}</td>
+                <td>{r.party_size}</td>
+                <td>
+                  <span class:list={['badge', r.status === 'confirmed' ? 'ok' : (['cancelled', 'no_show'].includes(r.status) ? 'ng' : 'warn')]}>
+                    {STATUS_LABELS[r.status]}
+                  </span>
+                </td>
+                <td class="tiny">{SOURCE_LABELS[r.source] ?? r.source}</td>
+                <td class="tiny">{r.amount != null ? yen(r.amount) : '—'}{r.is_paid ? ' ✓' : ''}</td>
+                <td class="tiny">{r.staff_memo ?? ''}</td>
+                <td><a class="btn sm" href={`/admin/day/${r.date}`}>開く</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )}
+</Base>
+
+{stat && (
+  <script is:inline define:vars={{ id }}>
+    document.getElementById('save').addEventListener('click', async () => {
+      const out = document.getElementById('out');
+      out.hidden = true;
+      const tags = document.getElementById('tags').value
+        .split(',').map((s) => s.trim()).filter(Boolean);
+      try {
+        const res = await fetch('/api/admin/customer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, tags, staff_memo: document.getElementById('memo').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '保存できませんでした');
+        out.hidden = false; out.className = 'notice ok'; out.textContent = '保存しました';
+      } catch (e) {
+        out.hidden = false; out.className = 'notice ng'; out.textContent = e.message;
+      }
+    });
+  </script>
+)}
+
+<style>
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;margin-bottom:1rem}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem;text-align:center}
+  .kpi .n{font-size:1.5rem;font-weight:800;line-height:1.1}
+  .kpi .n.small{font-size:.95rem}
+  .kpi .l{font-size:.7rem;color:var(--ink-3);font-weight:700}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start}
+  tr.dim{opacity:.55}
+  @media (max-width:900px){
+    .kpis{grid-template-columns:repeat(3,1fr)}
+    .cols{grid-template-columns:1fr}
+  }
+</style>

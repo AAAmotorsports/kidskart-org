@@ -16,6 +16,17 @@
 
 新しいブログ記事を追加したくなったら、`stories/YYYY/your-slug.html` を作成し、`stories/index.html` のカードリストに追加してください。
 
+## 予約システム
+
+このリポジトリには、静的サイトに加えて 2 つの予約システムが同居しています。
+
+- `asms/` — 福岡キッズカートアカデミーの予約・安全管理システム (ASMS)
+- `aone/` — A-ONE サーキットの予約・営業管理システム
+  (スポーツ走行 / RP / 貸切 / ナイター / 天候対応 / 顧客フォロー)
+
+それぞれ独立した Supabase プロジェクトと Cloudflare Worker を持ちます。
+詳細は各ディレクトリの `README.md` / `CLAUDE.md` を参照してください。
+
 ## 関連リンク
 
 - 予約: https://reserva.be/kidskart/reserve

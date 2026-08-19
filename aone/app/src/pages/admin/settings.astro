@@ -1,0 +1,108 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { settings } from '@lib/queries';
+
+export const prerender = false;
+
+// 通常ルールの数値設定 (仕様 20)。
+// 「ルールを固定化しすぎない」ための逃げ道。ここを変えると受付判定が変わる。
+const env = envFrom(Astro.locals);
+const cfg = await settings(env);
+
+const NUM = [
+  ['max_classes_weekday_am', '平日 午前の最大クラス数'],
+  ['max_classes_weekday_pm', '平日 午後の最大クラス数'],
+  ['max_classes_holiday_am', '土日祝 午前の最大クラス数'],
+  ['max_classes_holiday_pm', '土日祝 午後の最大クラス数'],
+  ['rp_min_party', 'RP の最少人数'],
+  ['rp_slot_minutes', 'RP の開始時間の刻み (分)'],
+  ['rp_duration_minutes', 'RP 1 グループの占有時間 (分)'],
+  ['rp_max_groups_per_start', '同一開始時刻の最大グループ数'],
+  ['rp_groups_block_sport', 'スポーツ走行を止める RP 同時グループ数'],
+  ['rp_cancel_deadline_hours', 'キャンセル料 100% になる時間 (時間前)'],
+] as const;
+
+const TIME = [
+  ['course_open_time', 'コースオープン'],
+  ['am_start_time', '午前走行 開始'],
+  ['am_end_time', '午前走行 終了'],
+  ['pm_start_time', '午後走行 開始'],
+  ['pm_end_time', '午後走行 終了'],
+  ['course_close_time', 'コースクローズ'],
+  ['rp_first_start_time', 'RP 最初の開始時間'],
+  ['rp_last_start_time', 'RP 通常の最終受付'],
+  ['rp_late_limit_time', 'RP 受付可能な最終時刻 (これ以降は不可)'],
+  ['charter_first_start_time', '貸切 受付開始時刻'],
+  ['charter_last_end_time', '貸切 受付終了時刻'],
+] as const;
+---
+<Base title="設定 | A-ONE 管理" admin>
+  <h1>受付ルールの設定</h1>
+  <p class="small muted">
+    ここを変更すると、予約フォーム・「今日走れる？」・公開スケジュールの判定が
+    すべて変わります。通常ルールをここで決めておき、個別の例外は日別画面の
+    「強制受付」で対応してください。
+  </p>
+
+  {!cfg ? (
+    <div class="card"><p class="muted">設定を取得できませんでした。Supabase の接続をご確認ください。</p></div>
+  ) : (
+    <>
+      <div class="card">
+        <h2>受付枠</h2>
+        <div class="grid2">
+          {NUM.map(([key, label]) => (
+            <div class="field">
+              <label for={key}>{label}</label>
+              <input type="number" id={key} data-key={key} value={cfg[key]} min="0" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>時間</h2>
+        <div class="grid2">
+          {TIME.map(([key, label]) => (
+            <div class="field">
+              <label for={key}>{label}</label>
+              <input type="time" id={key} data-key={key} value={String(cfg[key]).slice(0, 5)} step="1800" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div id="out" class="notice" hidden></div>
+      <button class="btn primary" id="save">設定を保存</button>
+    </>
+  )}
+</Base>
+
+{cfg && (
+  <script is:inline>
+    document.getElementById('save').addEventListener('click', async () => {
+      const out = document.getElementById('out');
+      out.hidden = true;
+      const payload = {};
+      document.querySelectorAll('[data-key]').forEach((el) => { payload[el.dataset.key] = el.value; });
+      try {
+        const res = await fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '保存できませんでした');
+        out.hidden = false; out.className = 'notice ok'; out.textContent = '保存しました';
+      } catch (e) {
+        out.hidden = false; out.className = 'notice ng'; out.textContent = e.message;
+      }
+    });
+  </script>
+)}
+
+<style>
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  @media (max-width:560px){ .grid2{grid-template-columns:1fr} }
+</style>

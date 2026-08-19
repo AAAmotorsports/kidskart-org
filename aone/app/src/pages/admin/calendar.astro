@@ -1,0 +1,275 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { monthState, dayState, reservationsOfDay, categories } from '@lib/queries';
+import {
+  todayJst, addDays, jaDateShort, timeRangeLabel,
+  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 管理カレンダー (仕様 12)。
+// 月表示と週表示を切り替えられる。日表示は /admin/day/[date]。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const view = Astro.url.searchParams.get('view') === 'week' ? 'week' : 'month';
+const ym = Astro.url.searchParams.get('ym') ?? today.slice(0, 7);
+const weekStart = Astro.url.searchParams.get('start') ?? today;
+
+const [y, m] = ym.split('-').map(Number);
+const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
+const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
+
+const days = view === 'month' ? await monthState(env, year, month) : null;
+const weekDates = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
+const weekData = view === 'week'
+  ? await Promise.all(weekDates.map(async (d) => ({
+      date: d,
+      state: await dayState(env, d),
+      rows: (await reservationsOfDay(env, d)).filter((r) => !['cancelled', 'no_show'].includes(r.status)),
+    })))
+  : [];
+
+const cats = await categories(env);
+const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
+const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const isOpen = (v: string) => v === 'true';
+---
+<Base title="カレンダー | A-ONE 管理" admin wide>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">{view === 'month' ? `${year}年${month}月` : `${jaDateShort(weekDates[0])} 〜 ${jaDateShort(weekDates[6])}`}</h1>
+    <div class="row">
+      {view === 'month' ? (
+        <>
+          <a class="btn sm" href={`/admin/calendar?ym=${prev}`}>← 前月</a>
+          <a class="btn sm" href={`/admin/calendar?ym=${today.slice(0, 7)}`}>今月</a>
+          <a class="btn sm" href={`/admin/calendar?ym=${next}`}>翌月 →</a>
+          <a class="btn sm ghost" href={`/admin/calendar?view=week&start=${today}`}>週表示</a>
+        </>
+      ) : (
+        <>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, -7)}`}>← 前週</a>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${today}`}>今週</a>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, 7)}`}>翌週 →</a>
+          <a class="btn sm ghost" href={`/admin/calendar?ym=${today.slice(0, 7)}`}>月表示</a>
+        </>
+      )}
+    </div>
+  </div>
+
+  {view === 'month' && (
+    !days ? <div class="card"><p class="muted">取得できませんでした。</p></div> : (
+      <div class="cal">
+        {WD.map((w, i) => <div class:list={['cal-head', i === 0 && 'sun', i === 6 && 'sat']}>{w}</div>)}
+        {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
+        {days.map((d) => (
+          <a class:list={[
+            'cal-cell', d.date === today && 'today',
+            d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
+            d.weather === 'cancelled' && 'closed',
+          ]} href={`/admin/day/${d.date}`}>
+            <div class="cal-day">{Number(d.date.slice(8, 10))}</div>
+            {d.weather !== 'normal' && <div class="tiny wx">{WEATHER_LABELS[d.weather]}</div>}
+            {(d.blocks ?? []).map((b) => (
+              <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.title}</div>
+            ))}
+            {(d.counts.sport > 0 || d.counts.rp > 0 || d.counts.charter > 0) && (
+              <div class="tiny cnt">
+                {d.counts.sport > 0 && <span>走行{d.counts.sport}</span>}
+                {d.counts.rp > 0 && <span>RP{d.counts.rp}</span>}
+                {d.counts.charter > 0 && <span>貸切{d.counts.charter}</span>}
+                {d.counts.people > 0 && <span class="muted">{d.counts.people}名</span>}
+              </div>
+            )}
+            <div class="tiny sl">
+              <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前{isOpen(d.sport_am) ? '○' : '✕'}</span>
+              <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>後{isOpen(d.sport_pm) ? '○' : '✕'}</span>
+              <span class="muted">RP{d.rp_free}</span>
+            </div>
+          </a>
+        ))}
+      </div>
+    )
+  )}
+
+  {view === 'week' && (
+    <div class="wk">
+      {weekData.map((d) => (
+        <div class:list={['wk-col', d.date === today && 'today']}>
+          <a class="wk-head" href={`/admin/day/${d.date}`}>{jaDateShort(d.date)}</a>
+          {d.state && d.state.weather.status !== 'normal' && (
+            <div class="tiny wx">{WEATHER_LABELS[d.state.weather.status]}</div>
+          )}
+          {(d.state?.blocks ?? []).map((b) => <div class="tiny ev">{b.title}</div>)}
+          {d.rows.length === 0 && <div class="tiny muted">予約なし</div>}
+          {d.rows.map((r) => (
+            <div class="tiny res">
+              <strong>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</strong>{' '}
+              {r.kind === 'sport' ? (r.session === 'am' ? '午前' : '午後') : timeRangeLabel(r)}<br />
+              {r.contact_name} 様 ({r.party_size}名)
+              {r.status !== 'confirmed' && <span class="badge warn">{STATUS_LABELS[r.status]}</span>}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )}
+
+  <!-- ============ まとめて予定登録 ============ -->
+  <div class="card" style="margin-top:1rem">
+    <h2>予定をまとめて登録</h2>
+    <p class="tiny muted">
+      レース・イベント・メンテナンス・臨時休業などを、期間と曜日を指定して一度に登録できます。
+      ここで登録した予定は、予約可否判定・「今日走れる？」・公開スケジュールのすべてに反映されます。
+    </p>
+    <div class="four">
+      <div class="field">
+        <label for="f-from">開始日</label>
+        <input type="date" id="f-from" value={today} />
+      </div>
+      <div class="field">
+        <label for="f-to">終了日</label>
+        <input type="date" id="f-to" value={today} />
+      </div>
+      <div class="field">
+        <label for="f-kind">種類</label>
+        <select id="f-kind">
+          {Object.entries(BLOCK_KIND_LABELS).map(([c, l]) => <option value={c}>{l}</option>)}
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-scope">停止範囲</label>
+        <select id="f-scope">
+          {Object.entries(BLOCK_SCOPE_LABELS).map(([c, l]) => <option value={c}>{l}</option>)}
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>対象曜日 (未選択なら全日)</label>
+      <div class="choice">
+        {WD.map((w, i) => (
+          <label><input type="checkbox" class="dow" value={String(i)} /> {w}</label>
+        ))}
+      </div>
+    </div>
+    <div class="four">
+      <div class="field">
+        <label for="f-title">予定名</label>
+        <input type="text" id="f-title" placeholder="A-ONE シリーズ第 3 戦" />
+      </div>
+      <div class="field">
+        <label for="f-start">開始時刻 (任意)</label>
+        <input type="time" id="f-start" step="1800" />
+      </div>
+      <div class="field">
+        <label for="f-end">終了時刻 (任意)</label>
+        <input type="time" id="f-end" step="1800" />
+      </div>
+      <div class="field">
+        <label for="f-category">対象カテゴリー</label>
+        <select id="f-category">
+          <option value="">—</option>
+          {cats.map((c) => <option value={c.code}>{c.name}</option>)}
+        </select>
+      </div>
+    </div>
+    <label class="tiny"><input type="checkbox" id="f-public" checked /> 公開スケジュールに掲載する</label>
+    <div id="f-out" class="notice" hidden style="margin-top:.5rem"></div>
+    <div style="margin-top:.5rem"><button class="btn primary sm" id="f-save">登録する</button></div>
+  </div>
+</Base>
+
+<script is:inline>
+  const $ = (id) => document.getElementById(id);
+
+  $('f-save').addEventListener('click', async () => {
+    const out = $('f-out');
+    out.hidden = true;
+    const from = $('f-from').value;
+    const to = $('f-to').value || from;
+    if (!from || !$('f-title').value) {
+      out.hidden = false; out.className = 'notice ng';
+      out.textContent = '開始日と予定名は必須です';
+      return;
+    }
+    const dows = Array.from(document.querySelectorAll('.dow:checked')).map((el) => Number(el.value));
+
+    // 期間 + 曜日フィルタで対象日を組み立てる
+    const dates = [];
+    let cur = from;
+    let guard = 0;
+    while (cur <= to && guard++ < 400) {
+      const [yy, mm, dd] = cur.split('-').map(Number);
+      const dow = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay();
+      if (dows.length === 0 || dows.includes(dow)) dates.push(cur);
+      const nx = new Date(Date.UTC(yy, mm - 1, dd + 1));
+      cur = nx.toISOString().slice(0, 10);
+    }
+    if (dates.length === 0) {
+      out.hidden = false; out.className = 'notice ng';
+      out.textContent = '対象日がありません';
+      return;
+    }
+    if (!confirm(dates.length + ' 日ぶんの予定を登録します。よろしいですか？')) return;
+
+    try {
+      const res = await fetch('/api/admin/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          dates,
+          title: $('f-title').value,
+          kind: $('f-kind').value,
+          scope: $('f-scope').value,
+          start_time: $('f-start').value,
+          end_time: $('f-end').value,
+          category_code: $('f-category').value,
+          is_public: $('f-public').checked,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '登録できませんでした');
+      out.hidden = false; out.className = 'notice ok';
+      out.textContent = data.created + ' 件登録しました';
+      setTimeout(() => location.reload(), 800);
+    } catch (e) {
+      out.hidden = false; out.className = 'notice ng';
+      out.textContent = e.message;
+    }
+  });
+</script>
+
+<style>
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cal-head{background:var(--ink);color:#fff;text-align:center;font-size:.76rem;font-weight:800;padding:.3rem 0}
+  .cal-head.sun{color:#ffb3bd} .cal-head.sat{color:#b7d8ff}
+  .cal-cell{background:#fff;min-height:104px;padding:.3rem;display:flex;flex-direction:column;gap:.12rem;
+    text-decoration:none;color:inherit}
+  .cal-cell.empty{background:var(--bg-2)}
+  .cal-cell:hover{background:var(--bg-2)}
+  .cal-cell.today{outline:2px solid var(--red);outline-offset:-2px}
+  .cal-cell.closed{background:#fdeef0}
+  .cal-day{font-weight:800;font-size:.86rem}
+  .cal-cell.sun .cal-day,.cal-cell.holiday .cal-day{color:var(--red)}
+  .cal-cell.sat .cal-day{color:var(--blue)}
+  .wx{color:#8a5a06;font-weight:700}
+  .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cnt{display:flex;gap:.3rem;flex-wrap:wrap;font-weight:700;color:var(--ink-2)}
+  .sl{display:flex;gap:.3rem;margin-top:auto}
+  .sl .ok{color:#14724a} .sl .ng{color:var(--ink-4)}
+  .wk{display:grid;grid-template-columns:repeat(7,1fr);gap:.4rem}
+  .wk-col{background:#fff;border:1px solid var(--line);border-radius:9px;padding:.4rem;min-height:160px}
+  .wk-col.today{border-color:var(--red)}
+  .wk-head{display:block;font-weight:800;font-size:.82rem;margin-bottom:.3rem;text-decoration:none;color:inherit}
+  .wk .res{border-top:1px dashed var(--line);padding:.25rem 0}
+  .four{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem}
+  @media (max-width:900px){
+    .four{grid-template-columns:1fr 1fr}
+    .wk{grid-template-columns:repeat(2,1fr)}
+  }
+</style>

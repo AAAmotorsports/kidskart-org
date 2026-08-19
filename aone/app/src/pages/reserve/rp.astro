@@ -1,0 +1,215 @@
+---
+import Base from '@layouts/Base.astro';
+import { todayJst, addDays } from '@lib/domain';
+
+export const prerender = false;
+
+// レースパック (RP) の予約フォーム (仕様 3)。
+// 同一開始時刻は 2 グループまで、17:00 以降は要相談 — 判定は DB 側。
+const today = todayJst();
+const maxDate = addDays(today, 180);
+const initialDate = Astro.url.searchParams.get('date') ?? today;
+---
+<Base title="レースパックのご予約 | A-ONE サーキット">
+  <h1>レースパック (RP) のご予約</h1>
+  <p class="small muted">
+    3 名以上のグループでお楽しみいただけるレースパックです。代表者 1 名がご予約ください。
+    開始時間は 10:00〜17:00 の 30 分刻み。17:00 以降のご希望は要相談として承ります。
+  </p>
+
+  <form id="form" class="card" novalidate>
+    <div class="field">
+      <label for="date">ご希望日</label>
+      <input type="date" id="date" name="date" value={initialDate} min={today} max={maxDate} required />
+    </div>
+
+    <div id="day-info" class="notice info small" style="margin-bottom:1rem">空き状況を確認しています…</div>
+
+    <div class="field">
+      <label>開始時間</label>
+      <div id="slots" class="slots"></div>
+      <div class="hint" id="slot-hint">△ = 残り 1 グループ ／ ✕ = 満枠</div>
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label for="party">ご参加人数</label>
+        <input type="number" id="party" name="party_size" min="3" max="40" value="3" required />
+        <div class="hint">3 名以上で承ります。人数は後から専用ページで変更できます。</div>
+      </div>
+      <div class="field">
+        <label for="tel-note">ご希望の連絡方法</label>
+        <select id="contact-method" name="preferred_contact">
+          <option value="email">メール</option>
+          <option value="phone">電話</option>
+        </select>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>代表者様のご連絡先</legend>
+      <div class="two">
+        <div class="field">
+          <label for="name">お名前</label>
+          <input type="text" id="name" name="name" autocomplete="name" required />
+        </div>
+        <div class="field">
+          <label for="kana">フリガナ</label>
+          <input type="text" id="kana" name="kana" />
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="phone">お電話番号</label>
+          <input type="tel" id="phone" name="phone" autocomplete="tel" required />
+        </div>
+        <div class="field">
+          <label for="email">メールアドレス</label>
+          <input type="email" id="email" name="email" autocomplete="email" required />
+          <div class="hint">予約完了メールに、変更・キャンセル用の専用 URL をお送りします。</div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="note">ご要望・備考 (任意)</label>
+        <textarea id="note" name="request_note" placeholder="初めてのメンバーが多いです／表彰式の希望 など"></textarea>
+      </div>
+    </fieldset>
+
+    <div class="notice warn small" style="margin-bottom:1rem">
+      <strong>キャンセル規定</strong><br />
+      ご利用開始 24 時間前以降のキャンセルは、料金 100% を申し受けます。<br />
+      日時・人数の変更は、予約完了メールの専用 URL からいつでも可能です。
+    </div>
+
+    <div class="field">
+      <label class="agree">
+        <input type="checkbox" id="agree" required />
+        キャンセル規定に同意します
+      </label>
+    </div>
+
+    <div id="error" class="notice ng" hidden></div>
+
+    <button type="submit" class="btn primary" id="submit">この内容で予約する</button>
+  </form>
+</Base>
+
+<script is:inline>
+  const $ = (id) => document.getElementById(id);
+  let state = null;
+  let picked = null;
+
+  async function loadDay() {
+    const date = $('date').value;
+    if (!date) return;
+    $('slots').innerHTML = '<span class="muted small">読み込み中…</span>';
+    try {
+      const res = await fetch('/api/availability?date=' + encodeURIComponent(date));
+      state = await res.json();
+      if (!res.ok) throw new Error(state.error || '取得に失敗しました');
+    } catch (e) {
+      $('day-info').className = 'notice ng small';
+      $('day-info').textContent = '空き状況を取得できませんでした。時間をおいて再度お試しください。';
+      $('slots').innerHTML = '';
+      return;
+    }
+    picked = null;
+    render();
+  }
+
+  function render() {
+    const info = $('day-info');
+    const wx = state.weather && state.weather.status;
+    if (wx === 'cancelled') {
+      info.className = 'notice ng small';
+      info.textContent = 'この日は中止となっています。' + (state.weather.message || '');
+    } else {
+      const blocks = (state.blocks || []).filter((b) => b.is_public).map((b) => b.public_label);
+      info.className = blocks.length ? 'notice warn small' : 'notice info small';
+      info.textContent = blocks.length
+        ? '当日の予定: ' + blocks.join(' / ')
+        : 'この日は通常営業の予定です。';
+    }
+
+    const wrap = $('slots');
+    wrap.innerHTML = '';
+    (state.rp.slots || []).forEach((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'slot ' + (s.accepting ? (s.groups >= s.max_groups - 1 ? 'limited' : 'free') : 'full');
+      b.disabled = !s.accepting;
+      b.title = s.message || '';
+      b.innerHTML = s.time + '<span class="tiny">' +
+        (s.accepting ? (s.status === 'checking' ? '要相談' : (s.groups >= s.max_groups - 1 ? '△' : '○')) : '✕') +
+        '</span>';
+      b.addEventListener('click', () => {
+        picked = s.time;
+        wrap.querySelectorAll('.slot').forEach((x) => x.classList.remove('picked'));
+        b.classList.add('picked');
+        $('slot-hint').textContent = s.message || '';
+      });
+      wrap.appendChild(b);
+    });
+    $('party').min = String(state.rp.min_party || 3);
+  }
+
+  $('date').addEventListener('change', loadDay);
+  loadDay();
+  window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'rp' });
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('error');
+    err.hidden = true;
+    if (!picked) { err.hidden = false; err.textContent = '開始時間を選択してください'; return; }
+    if (!$('agree').checked) { err.hidden = false; err.textContent = 'キャンセル規定へのご同意が必要です'; return; }
+
+    const btn = $('submit');
+    btn.disabled = true;
+    btn.textContent = '送信中…';
+
+    try {
+      const res = await fetch('/api/reserve/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'rp',
+          date: $('date').value,
+          start_time: picked,
+          party_size: Number($('party').value || 3),
+          preferred_contact: $('contact-method').value,
+          name: $('name').value,
+          kana: $('kana').value,
+          phone: $('phone').value,
+          email: $('email').value,
+          request_note: $('note').value,
+          terms_agreed: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '予約できませんでした');
+      window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'rp' });
+      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+    } catch (e2) {
+      err.hidden = false;
+      err.textContent = e2.message;
+      btn.disabled = false;
+      btn.textContent = 'この内容で予約する';
+      loadDay();
+    }
+  });
+</script>
+
+<style>
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:.4rem}
+  .slot{display:flex;flex-direction:column;align-items:center;gap:.1rem;padding:.45rem .2rem;
+    border:1px solid var(--line-2);border-radius:9px;background:#fff;font-weight:700;font-size:.86rem;
+    font-family:var(--jp);color:var(--ink);cursor:pointer}
+  .slot.free{border-color:#b9e3cf;background:var(--green-soft);color:#14724a}
+  .slot.limited{border-color:#f2d69b;background:#fff5e2;color:#8a5a06}
+  .slot.full{background:var(--bg-3);color:var(--ink-4);cursor:not-allowed;text-decoration:line-through}
+  .slot.picked{outline:3px solid var(--red);outline-offset:1px}
+  .agree{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}
+  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+</style>

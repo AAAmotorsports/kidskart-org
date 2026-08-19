@@ -1,0 +1,99 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { searchReservations } from '@lib/queries';
+import {
+  todayJst, addDays, jaDateShort, timeRangeLabel, yen,
+  KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 予約台帳 (Web / 電話 / 店頭を統合 — 仕様 13)。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const p = Astro.url.searchParams;
+const from = p.get('from') ?? today;
+const to = p.get('to') ?? addDays(today, 60);
+const kind = p.get('kind') ?? '';
+const status = p.get('status') ?? '';
+const q = p.get('q') ?? '';
+
+const rows = await searchReservations(env, { from, to, kind, status, q, limit: 300 });
+const people = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status))
+                   .reduce((a, r) => a + (r.party_size ?? 0), 0);
+---
+<Base title="予約一覧 | A-ONE 管理" admin wide>
+  <h1>予約一覧</h1>
+
+  <form class="card filters" method="get">
+    <div class="field"><label for="from">開始日</label><input type="date" id="from" name="from" value={from} /></div>
+    <div class="field"><label for="to">終了日</label><input type="date" id="to" name="to" value={to} /></div>
+    <div class="field">
+      <label for="kind">種別</label>
+      <select id="kind" name="kind">
+        <option value="">すべて</option>
+        {Object.entries(KIND_LABELS).map(([c, l]) => <option value={c} selected={kind === c}>{l}</option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label for="status">状態</label>
+      <select id="status" name="status">
+        <option value="">すべて</option>
+        {Object.entries(STATUS_LABELS).map(([c, l]) => <option value={c} selected={status === c}>{l}</option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label for="q">検索</label>
+      <input type="text" id="q" name="q" value={q} placeholder="お名前・電話・予約番号" />
+    </div>
+    <div class="field"><label>&nbsp;</label><button class="btn primary" type="submit">絞り込む</button></div>
+  </form>
+
+  <p class="small muted">{rows.length} 件 (キャンセル除く {people} 名)</p>
+
+  <div class="card table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>日付</th><th>種別</th><th>時間</th><th>お名前</th><th>人数</th>
+          <th>状態</th><th>経路</th><th>料金</th><th>メモ</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class:list={[['cancelled', 'no_show'].includes(r.status) && 'dim']}>
+            <td><a href={`/admin/day/${r.date}`}>{jaDateShort(r.date)}</a></td>
+            <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
+            <td class="tiny">{timeRangeLabel(r)}</td>
+            <td>
+              {r.customer_id
+                ? <a href={`/admin/customers/${r.customer_id}`}>{r.contact_name} 様</a>
+                : `${r.contact_name} 様`}
+              <div class="tiny muted">{r.contact_phone ?? ''} {r.reservation_number}</div>
+            </td>
+            <td>{r.party_size}</td>
+            <td>
+              <span class:list={['badge', r.status === 'confirmed' ? 'ok' : (['cancelled', 'no_show'].includes(r.status) ? 'ng' : 'warn')]}>
+                {STATUS_LABELS[r.status]}
+              </span>
+              {r.forced && <span class="badge ng">強制</span>}
+            </td>
+            <td class="tiny">{SOURCE_LABELS[r.source] ?? r.source}</td>
+            <td class="tiny">{r.amount != null ? yen(r.amount) : '—'}{r.is_paid ? ' ✓' : ''}</td>
+            <td class="tiny">{r.staff_memo ?? ''}</td>
+            <td><a class="btn sm" href={`/admin/day/${r.date}`}>開く</a></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {rows.length === 0 && <p class="muted small">該当する予約はありません。</p>}
+  </div>
+</Base>
+
+<style>
+  .filters{display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;align-items:end}
+  .filters .field{margin:0}
+  tr.dim{opacity:.5}
+  @media (max-width:900px){ .filters{grid-template-columns:1fr 1fr} }
+</style>

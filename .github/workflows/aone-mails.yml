@@ -1,0 +1,86 @@
+# ==============================================================================
+# A-ONE 予約システム 自動メール (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# /api/cron/mails を叩き、下記 3 種のメールを送る (仕様 11):
+#   reminder … 翌日のご予約へのリマインド
+#   thanks   … 当日ご利用の方へのお礼
+#   followup … 2 週間前にご利用の方への再来場案内
+#
+# 朝の回 (23:00 UTC = 08:00 JST) : reminder + followup
+# 夕の回 (09:00 UTC = 18:00 JST) : thanks
+#
+# 二重送信は API 側 (aone_reservations.*_mail_sent_at) で担保。
+#
+# 必要な GitHub Actions Secrets:
+#   AONE_API_BASE     - 例: https://aone-booking.<subdomain>.workers.dev
+#   AONE_CRON_SECRET  - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから種類と日付を指定して再送できる。
+# ==============================================================================
+
+name: A-ONE Auto Mails
+
+on:
+  schedule:
+    - cron: '0 23 * * *'   # 08:00 JST — リマインド + 2 週間後フォロー
+    - cron: '0 9 * * *'    # 18:00 JST — 当日のお礼
+  workflow_dispatch:
+    inputs:
+      type:
+        description: '送信種別 (all / reminder / thanks / followup)'
+        required: false
+        default: 'all'
+      date:
+        description: '基準日 (YYYY-MM-DD, 空欄なら今日 JST)'
+        required: false
+        default: ''
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/cron/mails
+        env:
+          AONE_API_BASE: ${{ secrets.AONE_API_BASE }}
+          AONE_CRON_SECRET: ${{ secrets.AONE_CRON_SECRET }}
+          INPUT_TYPE: ${{ github.event.inputs.type }}
+          INPUT_DATE: ${{ github.event.inputs.date }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AONE_API_BASE:-}" ] || [ -z "${AONE_CRON_SECRET:-}" ]; then
+            echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+
+          # 朝の回はリマインド + フォロー、夕の回はお礼。手動実行は入力を優先。
+          if [ -n "${INPUT_TYPE:-}" ]; then
+            TYPES="$INPUT_TYPE"
+          elif [ "${SCHEDULE:-}" = "0 9 * * *" ]; then
+            TYPES="thanks"
+          else
+            TYPES="reminder followup"
+          fi
+
+          FAILED=0
+          for T in $TYPES; do
+            URL="${AONE_API_BASE%/}/api/cron/mails?type=${T}"
+            if [ -n "${INPUT_DATE:-}" ]; then
+              URL="${URL}&date=${INPUT_DATE}"
+            fi
+            echo "POST $URL"
+            HTTP_CODE=$(curl -sS -X POST "$URL" \
+              -H "x-cron-secret: $AONE_CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -o response.json \
+              -w "%{http_code}")
+            echo "HTTP $HTTP_CODE"
+            cat response.json
+            echo
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::${T} メールの送信が HTTP $HTTP_CODE で失敗しました" >&2
+              FAILED=1
+            fi
+          done
+          exit $FAILED

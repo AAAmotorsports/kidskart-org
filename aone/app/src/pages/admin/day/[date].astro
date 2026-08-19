@@ -1,0 +1,543 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { dayState, reservationsOfDay, categories, settings } from '@lib/queries';
+import { fetchTodayForecast } from '@lib/weather';
+import {
+  jaDate, todayJst, addDays, hhmm, timeRangeLabel,
+  KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
+  WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 日別の運営画面 (仕様 12 / 13 / 15)。
+// スタッフはこの 1 画面で「天候設定 → 一括連絡 → 予約確認 → 代理入力 →
+// 強制受付 → 会計・無断キャンセル記録」まで完結できる。
+const env = envFrom(Astro.locals);
+const date = Astro.params.date!;
+const today = todayJst();
+
+if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  return Astro.redirect(`/admin/day/${today}`);
+}
+
+const [state, rows, cats, cfg] = await Promise.all([
+  dayState(env, date),
+  reservationsOfDay(env, date),
+  categories(env),
+  settings(env),
+]);
+
+// 天気予報は当日ぶんのみ気象庁から取得 (参考情報 — 自動中止はしない)
+const forecast = date === today ? await fetchTodayForecast(env.JMA_AREA_CODE || '400000') : null;
+
+const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
+const dead = rows.filter((r) => ['cancelled', 'no_show'].includes(r.status));
+const needsAction = live.filter((r) => ['contact_wait', 'checking'].includes(r.status));
+const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
+const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+---
+<Base title={`${date} の運営 | A-ONE 管理`} admin wide>
+  <div class="spread" style="margin-bottom:.6rem">
+    <h1 style="margin:0">{jaDate(date)}</h1>
+    <div class="row">
+      <a class="btn sm" href={`/admin/day/${addDays(date, -1)}`}>← 前日</a>
+      <a class="btn sm" href={`/admin/day/${today}`}>今日</a>
+      <a class="btn sm" href={`/admin/day/${addDays(date, 1)}`}>翌日 →</a>
+      <a class="btn sm ghost" href={`/admin/calendar?ym=${date.slice(0, 7)}`}>カレンダー</a>
+    </div>
+  </div>
+
+  {needsAction.length > 0 && (
+    <div class="notice warn" style="margin-bottom:1rem">
+      <strong>要対応 {needsAction.length} 件</strong> —
+      {needsAction.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]})`).join(' /')}
+    </div>
+  )}
+
+  <div class="cols">
+    <div>
+      <!-- ============ 営業状態 (天候) ============ -->
+      <div class="card">
+        <h2>営業状態</h2>
+        <div class="choice" id="wx-choice">
+          {Object.entries(WEATHER_LABELS).map(([code, label]) => (
+            <label>
+              <input type="radio" name="wx" value={code} checked={(state?.weather.status ?? 'normal') === code} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div class="field" style="margin-top:.6rem">
+          <label for="wx-msg">公開メッセージ (「今日走れる？」に表示)</label>
+          <input type="text" id="wx-msg" value={state?.weather.message ?? ''}
+                 placeholder="11 時に再判断します など" />
+        </div>
+        <div class="field">
+          <label for="wx-note">スタッフメモ (非公開)</label>
+          <input type="text" id="wx-note" value={state?.weather.staff_note ?? ''} />
+        </div>
+        <button class="btn primary sm" id="wx-save">営業状態を保存</button>
+        <span id="wx-msg-out" class="small"></span>
+
+        {forecast && (
+          <div class="forecast">
+            <div class="tiny muted">
+              参考: {forecast.publishingOffice} / {forecast.areaName} の予報
+            </div>
+            <div><strong>{forecast.weather}</strong></div>
+            <div class="row tiny">
+              {forecast.pops.map((p) => <span class="badge">{p.label} {p.pop}%</span>)}
+              {forecast.tempMin && <span class="badge">最低 {forecast.tempMin}℃</span>}
+              {forecast.tempMax && <span class="badge">最高 {forecast.tempMax}℃</span>}
+            </div>
+            <div class="tiny muted">天気予報だけでは自動中止にしません。最終判断は A-ONE 側で行ってください。</div>
+          </div>
+        )}
+      </div>
+
+      <!-- ============ 一括連絡 ============ -->
+      <div class="card">
+        <h2>この日の予約者へ一括連絡</h2>
+        <p class="tiny muted">メールアドレスのある {mailTargets} 件に送信します (キャンセル済みを除く)。</p>
+        <div class="field">
+          <label for="bc-subject">件名</label>
+          <input type="text" id="bc-subject" value={`【A-ONE】${date.slice(5).replace('-', '/')} の営業について`} />
+        </div>
+        <div class="field">
+          <label for="bc-body">本文</label>
+          <textarea id="bc-body" placeholder="本日は雨天のため走行を中止いたします。&#10;振替をご希望の方はお電話ください。"></textarea>
+        </div>
+        <button class="btn sm" id="bc-send" disabled={mailTargets === 0}>一括送信する</button>
+        <span id="bc-out" class="small"></span>
+      </div>
+
+      <!-- ============ 予約一覧 ============ -->
+      <div class="card">
+        <h2>予約 ({live.length} 件 / {live.reduce((a, r) => a + (r.party_size ?? 0), 0)} 名)</h2>
+        {live.length === 0 && <p class="muted small">この日の予約はまだありません。</p>}
+        {live.map((r) => (
+          <div class="res" data-id={r.id}>
+            <div class="spread">
+              <div>
+                <span class="badge info">{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</span>
+                <strong> {r.contact_name} 様</strong>
+                <span class="small muted"> {timeRangeLabel(r)} / {r.party_size}名
+                  {r.vehicle_count ? ` / ${r.vehicle_count}台` : ''}
+                  {r.category_code ? ` / ${cats.find((c) => c.code === r.category_code)?.name ?? r.category_code}` : ''}
+                </span>
+              </div>
+              <div class="row">
+                <span class:list={['badge', r.status === 'confirmed' ? 'ok' : 'warn']}>{STATUS_LABELS[r.status]}</span>
+                <span class="badge">{SOURCE_LABELS[r.source] ?? r.source}</span>
+                {r.forced && <span class="badge ng">強制</span>}
+                {r.is_paid && <span class="badge ok">会計済</span>}
+              </div>
+            </div>
+            <div class="tiny muted">
+              {r.reservation_number} ／ {r.contact_phone ?? '電話なし'} ／ {r.contact_email ?? 'メールなし'}
+              {r.preferred_contact && ` ／ 希望連絡: ${r.preferred_contact === 'phone' ? '電話' : 'メール'}`}
+            </div>
+            {r.request_note && <div class="tiny note">要望: {r.request_note}</div>}
+            {r.staff_memo && <div class="tiny memo">メモ: {r.staff_memo}</div>}
+            <div class="row acts">
+              <select class="st" data-id={r.id}>
+                {['confirmed', 'contact_wait', 'checking', 'completed'].map((s) => (
+                  <option value={s} selected={r.status === s}>{STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+              <button class="btn sm act-status" data-id={r.id}>状態を保存</button>
+              <button class="btn sm act-paid" data-id={r.id} data-paid={String(!r.is_paid)}>
+                {r.is_paid ? '会計を取消' : '会計済にする'}
+              </button>
+              <button class="btn sm act-memo" data-id={r.id}>メモ</button>
+              <button class="btn sm act-cancel" data-id={r.id}>キャンセル</button>
+              <button class="btn sm act-noshow" data-id={r.id}>無断キャンセル</button>
+              <a class="btn sm ghost" href={`/r/${r.access_token}`} target="_blank">予約者ページ</a>
+            </div>
+          </div>
+        ))}
+
+        {dead.length > 0 && (
+          <details style="margin-top:.8rem">
+            <summary class="small muted">キャンセル済み {dead.length} 件</summary>
+            {dead.map((r) => (
+              <div class="tiny muted" style="padding:.2rem 0">
+                {STATUS_LABELS[r.status]} — {r.contact_name} 様 / {KIND_SHORT[r.kind as keyof typeof KIND_SHORT]} /
+                {timeRangeLabel(r)} {r.cancel_reason ? `(${r.cancel_reason})` : ''}
+              </div>
+            ))}
+          </details>
+        )}
+      </div>
+    </div>
+
+    <div>
+      <!-- ============ 受付状況 ============ -->
+      <div class="card">
+        <h2>受付状況</h2>
+        {state ? (
+          <>
+            {sessions.map(([key, label]) => (
+              <div class="sess">
+                <div class="spread">
+                  <strong>{label}</strong>
+                  <span class="tiny muted">{state.sport[key].used_classes} / {state.sport[key].max_classes} クラス
+                    {state.sport[key].rp_groups > 0 && ` ・RP ${state.sport[key].rp_groups} 組`}</span>
+                </div>
+                <div class="row">
+                  {state.sport[key].categories.map((c) => (
+                    <span class="tiny">{c.short_name}
+                      <span class:list={['mark', c.status]} style="font-size:.95rem">{STATUS_MARK[c.status]}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div class="tiny muted" style="margin-top:.5rem">RP 空き開始時間</div>
+            <div class="row">
+              {state.rp.slots.map((s) => (
+                <span class:list={['badge', s.accepting ? 'ok' : 'ng']}>{s.time}
+                  {s.groups > 0 && ` (${s.groups})`}</span>
+              ))}
+            </div>
+          </>
+        ) : <p class="muted small">状況を取得できませんでした。</p>}
+      </div>
+
+      <!-- ============ 代理入力 ============ -->
+      <div class="card">
+        <h2>電話・店頭予約の入力</h2>
+        <p class="tiny muted">Web 予約と同じ台帳に入ります。入力した瞬間に Web 側の空きへ反映されます。</p>
+        <div class="field">
+          <label for="n-kind">種別</label>
+          <select id="n-kind">
+            {Object.entries(KIND_LABELS).map(([code, label]) => <option value={code}>{label}</option>)}
+          </select>
+        </div>
+        <div class="field" id="wrap-session">
+          <label for="n-session">時間帯</label>
+          <select id="n-session"><option value="am">午前</option><option value="pm">午後</option></select>
+        </div>
+        <div class="field" id="wrap-category">
+          <label for="n-category">カテゴリー</label>
+          <select id="n-category">{cats.map((c) => <option value={c.code}>{c.name}</option>)}</select>
+        </div>
+        <div class="two" id="wrap-times">
+          <div class="field">
+            <label for="n-start">開始</label>
+            <input type="time" id="n-start" step="1800" value="14:00" />
+          </div>
+          <div class="field">
+            <label for="n-end">終了 (貸切)</label>
+            <input type="time" id="n-end" step="1800" />
+          </div>
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="n-party">人数</label>
+            <input type="number" id="n-party" min="1" value="1" />
+          </div>
+          <div class="field">
+            <label for="n-vehicles">台数</label>
+            <input type="number" id="n-vehicles" min="1" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="n-name">お名前</label>
+          <input type="text" id="n-name" placeholder="○○ 様" />
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="n-phone">電話</label>
+            <input type="tel" id="n-phone" />
+          </div>
+          <div class="field">
+            <label for="n-email">メール (任意)</label>
+            <input type="email" id="n-email" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="n-memo">スタッフメモ</label>
+          <input type="text" id="n-memo" placeholder="初走行 / 常連 / 支払済 など" />
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="n-source">入力経路</label>
+            <select id="n-source">
+              <option value="phone">電話</option>
+              <option value="counter">店頭</option>
+              <option value="admin">管理</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="n-amount">料金 (任意)</label>
+            <input type="number" id="n-amount" min="0" step="100" />
+          </div>
+        </div>
+        <label class="tiny"><input type="checkbox" id="n-mail" /> 予約控えメールを送る</label><br />
+        <label class="tiny"><input type="checkbox" id="n-forced" /> 受付上限を無視して強制受付する</label>
+        <div class="field" style="margin-top:.4rem">
+          <input type="text" id="n-forced-reason" placeholder="強制受付の理由 (記録に残ります)" />
+        </div>
+        <div id="n-out" class="notice" hidden></div>
+        <button class="btn primary sm" id="n-save">この内容で登録</button>
+      </div>
+
+      <!-- ============ ブロック予定 ============ -->
+      <div class="card">
+        <h2>この日の予定・受付停止</h2>
+        {(state?.blocks ?? []).map((b) => (
+          <div class="spread blk">
+            <div>
+              <span class="badge">{BLOCK_KIND_LABELS[b.kind] ?? b.kind}</span> {b.title}
+              <div class="tiny muted">{BLOCK_SCOPE_LABELS[b.scope] ?? b.scope}
+                {b.start_time && ` ${b.start_time}〜${b.end_time ?? ''}`}
+                {b.category_code && ` / ${b.category_code}`}
+                {!b.is_public && ' / 非公開'}</div>
+            </div>
+            <button class="btn sm blk-del" data-id={b.id}>削除</button>
+          </div>
+        ))}
+        {(state?.blocks ?? []).length === 0 && <p class="muted small">登録された予定はありません。</p>}
+
+        <details style="margin-top:.6rem">
+          <summary class="small">予定を追加する</summary>
+          <div class="field" style="margin-top:.5rem">
+            <label for="b-title">予定名</label>
+            <input type="text" id="b-title" placeholder="A-ONE シリーズ第 3 戦" />
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="b-kind">種類</label>
+              <select id="b-kind">
+                {Object.entries(BLOCK_KIND_LABELS).map(([c, l]) => <option value={c}>{l}</option>)}
+              </select>
+            </div>
+            <div class="field">
+              <label for="b-scope">停止範囲</label>
+              <select id="b-scope">
+                {Object.entries(BLOCK_SCOPE_LABELS).map(([c, l]) => <option value={c}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="b-start">開始 (時間指定のとき)</label>
+              <input type="time" id="b-start" step="1800" />
+            </div>
+            <div class="field">
+              <label for="b-end">終了</label>
+              <input type="time" id="b-end" step="1800" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="b-category">対象カテゴリー (カテゴリー停止のとき)</label>
+            <select id="b-category">
+              <option value="">—</option>
+              {cats.map((c) => <option value={c.code}>{c.name}</option>)}
+            </select>
+          </div>
+          <label class="tiny"><input type="checkbox" id="b-public" checked /> 公開スケジュールに掲載する</label>
+          <div class="field" style="margin-top:.4rem">
+            <input type="text" id="b-memo" placeholder="スタッフメモ (任意)" />
+          </div>
+          <div id="b-out" class="notice" hidden></div>
+          <button class="btn sm" id="b-save">予定を追加</button>
+        </details>
+      </div>
+    </div>
+  </div>
+</Base>
+
+<script is:inline define:vars={{ date }}>
+  const $ = (id) => document.getElementById(id);
+
+  async function post(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '失敗しました');
+    return data;
+  }
+
+  // ---- 営業状態 ----
+  $('wx-save').addEventListener('click', async () => {
+    const out = $('wx-msg-out');
+    const wx = document.querySelector('input[name=wx]:checked');
+    try {
+      await post('/api/admin/day', {
+        date,
+        weather_status: wx ? wx.value : 'normal',
+        status_message: $('wx-msg').value,
+        staff_note: $('wx-note').value,
+      });
+      out.textContent = ' 保存しました';
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { out.textContent = ' ' + e.message; }
+  });
+
+  // ---- 一括連絡 ----
+  const bc = $('bc-send');
+  if (bc) bc.addEventListener('click', async () => {
+    if (!confirm('この日の予約者全員にメールを送信します。よろしいですか？')) return;
+    bc.disabled = true;
+    try {
+      const r = await post('/api/admin/broadcast', {
+        date, subject: $('bc-subject').value, body: $('bc-body').value,
+      });
+      $('bc-out').textContent = ` ${r.recipients} 件に送信しました`;
+    } catch (e) {
+      $('bc-out').textContent = ' ' + e.message;
+    }
+    bc.disabled = false;
+  });
+
+  // ---- 予約の操作 ----
+  document.querySelectorAll('.act-status').forEach((b) => b.addEventListener('click', async () => {
+    const id = b.dataset.id;
+    const sel = document.querySelector('select.st[data-id="' + id + '"]');
+    try {
+      await post('/api/admin/reservation', { action: 'status', id, status: sel.value });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.act-paid').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await post('/api/admin/reservation', {
+        action: 'memo', id: b.dataset.id, is_paid: b.dataset.paid === 'true',
+      });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.act-memo').forEach((b) => b.addEventListener('click', async () => {
+    const memo = prompt('スタッフメモ (顧客には表示されません)');
+    if (memo === null) return;
+    try {
+      await post('/api/admin/reservation', { action: 'memo', id: b.dataset.id, staff_memo: memo });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.act-cancel').forEach((b) => b.addEventListener('click', async () => {
+    const reason = prompt('キャンセル理由 (任意)');
+    if (reason === null) return;
+    const mail = confirm('お客様にキャンセル通知メールを送りますか？');
+    try {
+      await post('/api/admin/reservation', {
+        action: 'cancel', id: b.dataset.id, reason, send_mail: mail,
+      });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.act-noshow').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('無断キャンセルとして記録します。よろしいですか？')) return;
+    try {
+      await post('/api/admin/reservation', {
+        action: 'cancel', id: b.dataset.id, no_show: true, reason: '無断キャンセル',
+      });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  // ---- 代理入力 ----
+  function syncKindFields() {
+    const kind = $('n-kind').value;
+    $('wrap-session').hidden = kind !== 'sport';
+    $('wrap-category').hidden = !(kind === 'sport' || kind === 'night');
+    $('wrap-times').hidden = kind === 'sport';
+  }
+  $('n-kind').addEventListener('change', syncKindFields);
+  syncKindFields();
+
+  $('n-save').addEventListener('click', async () => {
+    const out = $('n-out');
+    out.hidden = true;
+    const kind = $('n-kind').value;
+    try {
+      const r = await post('/api/admin/reservation', {
+        action: 'create',
+        kind,
+        date,
+        session: kind === 'sport' ? $('n-session').value : undefined,
+        category_code: (kind === 'sport' || kind === 'night') ? $('n-category').value : undefined,
+        start_time: kind === 'sport' ? undefined : $('n-start').value,
+        end_time: kind === 'charter' ? $('n-end').value : undefined,
+        party_size: Number($('n-party').value || 1),
+        vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
+        name: $('n-name').value,
+        phone: $('n-phone').value,
+        email: $('n-email').value,
+        staff_memo: $('n-memo').value,
+        source: $('n-source').value,
+        amount: $('n-amount').value ? Number($('n-amount').value) : undefined,
+        forced: $('n-forced').checked,
+        forced_reason: $('n-forced-reason').value,
+        send_mail: $('n-mail').checked,
+      });
+      out.hidden = false;
+      out.className = 'notice ok';
+      out.textContent = '登録しました: ' + r.reservation_number;
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {
+      out.hidden = false;
+      out.className = 'notice ng';
+      out.textContent = e.message + '（強制受付にチェックすると上限を無視して登録できます）';
+    }
+  });
+
+  // ---- ブロック予定 ----
+  $('b-save').addEventListener('click', async () => {
+    const out = $('b-out');
+    out.hidden = true;
+    try {
+      await post('/api/admin/block', {
+        action: 'create',
+        date,
+        title: $('b-title').value,
+        kind: $('b-kind').value,
+        scope: $('b-scope').value,
+        start_time: $('b-start').value,
+        end_time: $('b-end').value,
+        category_code: $('b-category').value,
+        is_public: $('b-public').checked,
+        memo: $('b-memo').value,
+      });
+      location.reload();
+    } catch (e) {
+      out.hidden = false;
+      out.className = 'notice ng';
+      out.textContent = e.message;
+    }
+  });
+
+  document.querySelectorAll('.blk-del').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('この予定を削除します。よろしいですか？')) return;
+    try {
+      await post('/api/admin/block', { action: 'delete', id: b.dataset.id });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+</script>
+
+<style>
+  .cols{display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;align-items:start}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  .res{border:1px solid var(--line);border-radius:10px;padding:.6rem;margin-bottom:.6rem;background:var(--bg-2)}
+  .res .acts{margin-top:.4rem}
+  .res .note{color:var(--ink-2)}
+  .res .memo{color:#8a5a06}
+  .res select.st{width:auto;padding:.25rem .5rem;font-size:.8rem}
+  .sess+.sess{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}
+  .blk{padding:.3rem 0;border-bottom:1px dashed var(--line)}
+  .forecast{margin-top:.8rem;padding:.6rem;border:1px dashed var(--line-2);border-radius:9px;background:var(--bg-2)}
+  .forecast .row{margin:.3rem 0}
+  @media (max-width:900px){ .cols{grid-template-columns:1fr} }
+</style>
