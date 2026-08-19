@@ -46,20 +46,16 @@ function fmtDate(iso: string): string {
 const dateLabel = slot.date ? fmtDate(slot.date) : '';
 const timeLabel = slot.start_time ? `${slot.start_time.slice(0, 5)}${slot.end_time ? '–' + slot.end_time.slice(0, 5) : ''}` : '';
 
-// Cancellation-fee guidance based on how close the slot is
-function feeGuidance(dateIso: string, startTime: string): { level: 'free' | 'half' | 'full' | 'past'; text: string } {
+// Cancellation-fee guidance based on how close the slot is.
+// 2026-08-20 (v1.0.3): 中間段階 (50%) を廃止。開始 2 時間前まで無料 / 以降 100%。
+function feeGuidance(dateIso: string, startTime: string): { level: 'free' | 'full' | 'past'; text: string } {
   if (!dateIso || !startTime) return { level: 'free', text: '' };
   const slotDt = new Date(`${dateIso}T${startTime}`);
   const now = new Date();
   const hoursUntil = (slotDt.getTime() - now.getTime()) / 36e5;
   if (hoursUntil < 0) return { level: 'past', text: isEn ? 'The session date has already passed.' : '既に開催日時を過ぎています' };
   if (hoursUntil < 2) return { level: 'full', text: isEn ? 'Within 2 hours of start — 100% cancellation fee may apply.' : '開始 2 時間前以降のためキャンセル料 100% が発生する場合があります' };
-  // Check "previous day 20:00" cutoff
-  const cutoff = new Date(slotDt);
-  cutoff.setDate(cutoff.getDate() - 1);
-  cutoff.setHours(20, 0, 0, 0);
-  if (now > cutoff) return { level: 'half', text: isEn ? 'After 8:00 PM the day before — 50% cancellation fee may apply.' : '前日 20:00 を過ぎているためキャンセル料 50% が発生する場合があります' };
-  return { level: 'free', text: isEn ? 'Before 8:00 PM the day before — no cancellation fee.' : '前日 20:00 前のためキャンセル料はかかりません' };
+  return { level: 'free', text: isEn ? 'More than 2 hours until start — no cancellation fee.' : '開始 2 時間前より前のためキャンセル料はかかりません' };
 }
 const fee = res && slot.date ? feeGuidance(slot.date, slot.start_time) : { level: 'free' as const, text: '' };
 
