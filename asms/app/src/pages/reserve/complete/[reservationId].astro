@@ -165,14 +165,14 @@ const isTaiken = course.code === 'taiken';
           )}
         </p>
         <div class="upsell-cta">
-          <a class="btn btn-primary" href="/reserve/?course=repeat_60#dates">
+          <a class="btn btn-primary" href="/reserve/?course=repeat_60#dates" data-repeat-cta="repeat_60">
             {isEn ? (
               <>Book Repeat Practice <strong>50 min</strong><span class="btn-sub">¥6,500</span></>
             ) : (
               <>リピート練習 <strong>50 分</strong> を予約する<span class="btn-sub">¥6,500 / 会員 ¥4,500</span></>
             )}
           </a>
-          <a class="btn btn-secondary" href="/reserve/?course=repeat_30#dates">
+          <a class="btn btn-secondary" href="/reserve/?course=repeat_30#dates" data-repeat-cta="repeat_30">
             {isEn ? (
               <>Book Repeat Practice <strong>25 min</strong><span class="btn-sub">¥3,500</span></>
             ) : (
@@ -192,6 +192,37 @@ const isTaiken = course.code === 'taiken';
       </a>
     </div>
   </main>
+
+  <script is:inline define:vars={{
+    courseCode: course.code || '',
+    priceTier: res.price_tier,
+    total: res.total_amount,
+    participants: participants.length,
+    isPending,
+  }}>
+    // GA4: 予約完了 (最重要 CV)。GA 側で Key Event としてマークする。
+    // 承認待ちのケース (isPending=true) はまだ確定していないので送らない。
+    if (!isPending && typeof window.asmsTrack === 'function') {
+      window.asmsTrack('booking_complete', {
+        course: courseCode,
+        price_tier: priceTier,
+        participants: participants,
+        value: total,
+        currency: 'JPY',
+      });
+    }
+    // リピート追加予約 CTA クリック計測。href が別ページなので、
+    // GA が飛ぶ前に beacon で送るために sendBeacon 経由ではなく
+    // gtag デフォルトの transport で十分 (fetch keepalive)。
+    document.querySelectorAll('[data-repeat-cta]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const which = el.getAttribute('data-repeat-cta') || '';
+        if (typeof window.asmsTrack === 'function') {
+          window.asmsTrack('repeat_book_click', { target_course: which });
+        }
+      });
+    });
+  </script>
 </Base>
 
 <style>

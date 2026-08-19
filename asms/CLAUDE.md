@@ -150,6 +150,43 @@
 **リンク先仕様**: 案内 URL は必ず `/reserve/` パス付きで案内する (landing の `/` ではなく、
 予約カレンダーに直行させる)。例: `https://reserve.kidskart.org/reserve/`
 
+### GA4 (Google Analytics 4)
+
+**目的**: 集客 → 予約完了 の単一ファネルを測る。事業判断の最重要 CV は
+「予約完了 (`booking_complete`)」。kidskart.org (静的サイト) と
+reserve.kidskart.org (ASMS) を **同一データストリーム** で計測する
+(オーナー承認済み・2026-08-20 判断: サブドメイン分けは分析を煩雑にするだけ、
+同じ顧客・同じファネルなので統合する)。
+
+**測定 ID**: `G-W3HB0DT0Y3` (プロパティ名「kidskart.org - GA4」)
+- `wrangler.jsonc` の `PUBLIC_GA4_MEASUREMENT_ID` に格納
+- `Base.astro` が読み、gtag タグを全ページに埋め込む
+- 空文字なら計測タグは一切吐かない (dev / preview 用)
+
+**カスタムイベント** (`window.asmsTrack(name, params)` で発火):
+
+| イベント | 発火箇所 | 意図 |
+|---------|---------|------|
+| `page_view` | GA 自動 | 全ページ流入 |
+| `wizard_start` | `/reserve/[slotId]` 初期化 | 予約ウィザード到達 |
+| `wizard_step` | ステップ前進時 (params.step = 2〜8) | 各段階の離脱率 |
+| `booking_submit` | 送信ボタン押下 | 送信意思 (成否問わず) |
+| `booking_complete` | `/reserve/complete/*` ロード | **★ 最重要 CV** |
+| `repeat_book_click` | 完了ページのリピート CTA | Upsell 効果 |
+
+**cross-subdomain**: `cookie_domain: 'kidskart.org'` を config に指定。
+これで client_id / session_id が kidskart.org と reserve.kidskart.org 間で
+継続する。加えて **GA 側で必ず設定**:
+1. データストリーム → タグ設定 → クロスドメインの構成:
+   `kidskart.org`, `reserve.kidskart.org` を両方登録
+2. データストリーム → タグ設定 → 除外する参照のリスト:
+   `reserve.kidskart.org` を追加 (self referral の除外)
+3. `booking_complete` を「キーイベント」としてマーク
+
+**プライバシー**: PII は params に載せない。GA には slot_id / course_code /
+price_tier / participants 人数 / total_amount (¥) のみ送る。保護者名・
+メール・電話は絶対送らない。
+
 ### Cloudflare 設定のバックアップ
 Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
 - Secret 値は 1Password 等の別レイヤに保管

@@ -620,6 +620,7 @@ const termsHtml = terms
     let currentStep = 1;
 
     const showStep = (n: number) => {
+      const prev = currentStep;
       currentStep = n;
       steps.forEach((s) => {
         const st = parseInt(s.dataset.step || '0', 10);
@@ -632,6 +633,10 @@ const termsHtml = terms
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       history.replaceState({ step: n }, '', `#step-${n}`);
+      // GA4 funnel: 前進した時だけ発火 (戻る時は数えない)
+      if (n > prev) {
+        (window as any).asmsTrack?.('wizard_step', { step: n });
+      }
     };
 
     form.addEventListener('click', (e) => {
@@ -1220,6 +1225,12 @@ const termsHtml = terms
       submitError.hidden = true;
       submitOverlay.hidden = false;
       submitBtn.disabled = true;
+      // GA4: 送信ボタン押下 (成功/失敗は問わない)。CV は complete ページ側で計測。
+      (window as any).asmsTrack?.('booking_submit', {
+        slot_id: slotId,
+        course: courseName,
+        participants: parseInt(getRadioValue('participant_count') || '1', 10),
+      });
       try {
         const payload = collect();
         if (turnstileToken) (payload as any).turnstile_token = turnstileToken;
@@ -1271,6 +1282,12 @@ const termsHtml = terms
     renderParticipants();
     updateTotal();
     showStep(1);
+    // GA4: ウィザードに到達した瞬間 (=予約意欲があった訪問)。
+    // showStep(1) は prev=1 で発火しないので、ここで明示的に打つ。
+    (window as any).asmsTrack?.('wizard_start', {
+      slot_id: slotId,
+      course: courseName,
+    });
   }
 </script>
 

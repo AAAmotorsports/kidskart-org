@@ -68,7 +68,11 @@
     // 予約当日サンキューメール内の「ご感想アンケート」リンク先
     // (Google Form)。空文字ならメール本文からアンケートセクションを
     // 省略する。差し替え時はここを編集 → PR → deploy。
-    "PUBLIC_SURVEY_URL": "https://forms.gle/xvV4x1XrjQ3mrp6VA"
+    "PUBLIC_SURVEY_URL": "https://forms.gle/xvV4x1XrjQ3mrp6VA",
+    // GA4 測定 ID。kidskart.org (静的サイト) と同一のデータストリームで
+    // 計測し、集客 → 予約完了までの単一ファネルとして測る。空文字なら
+    // タグを一切吐かない (dev / preview 用)。
+    "PUBLIC_GA4_MEASUREMENT_ID": "G-W3HB0DT0Y3"
   }
   //
   // Secrets (stay in Cloudflare Dashboard, encrypted):
