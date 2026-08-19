@@ -105,6 +105,45 @@ if (Astro.request.method === 'POST') {
     return error ? finalize('', fmtErr(error)) : finalize('スロットを削除しました', '');
   }
 
+  if (op === 'bulk_delete_slots') {
+    // 複数スロットを一括削除。checkbox で選択された slot_id 群を受け取り、
+    // 各スロットについて予約 (キャンセル履歴含む) が無いことを確認してから
+    // まとめて削除する。予約ありは自動でスキップ、削除件数とスキップ件数を
+    // まとめて報告。
+    const raw = form.getAll('slot_ids') as string[];
+    const slotIds = raw.map((s) => s.trim()).filter(Boolean);
+    if (slotIds.length === 0) {
+      return finalize('', '削除するスロットが選択されていません');
+    }
+    if (slotIds.length > 200) {
+      return finalize('', `一度に削除できるのは 200 枠まで (現在 ${slotIds.length} 件)`);
+    }
+
+    // 予約がある slot_id をまとめて特定 (キャンセル履歴含む)
+    const { data: usedRows, error: usedErr } = await supabase
+      .from('reservations')
+      .select('slot_id')
+      .in('slot_id', slotIds);
+    if (usedErr) return finalize('', fmtErr(usedErr));
+    const lockedSet = new Set<string>((usedRows ?? []).map((r: any) => r.slot_id));
+    const deletable = slotIds.filter((id) => !lockedSet.has(id));
+
+    if (deletable.length === 0) {
+      return finalize(
+        '',
+        `選択された ${slotIds.length} 枠すべてに予約履歴があるため削除できませんでした (履歴保護)`,
+      );
+    }
+
+    const { error: delErr } = await supabase.from('slots').delete().in('id', deletable);
+    if (delErr) return finalize('', fmtErr(delErr));
+
+    const parts = [`✅ ${deletable.length} 枠を削除しました`];
+    const skipped = slotIds.length - deletable.length;
+    if (skipped > 0) parts.push(`(予約履歴あり ${skipped} 枠はスキップ)`);
+    return finalize(parts.join(' '), '');
+  }
+
   if (op === 'add_closure_range') {
     const fromDate = (form.get('from_date') as string) || '';
     const toDate = (form.get('to_date') as string) || '';
@@ -827,51 +866,74 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
         <h2>📆 {year}年{month}月の生成済みスロット</h2>
         <span class="ms-count">{monthSlots?.length ?? 0} 枠</span>
       </div>
-      <p class="ms-hint">生成後に間違えたスロットや不要になった枠を個別に削除できます。<strong>予約が 1 件でも紐付いていると削除できません</strong>（履歴保護のため）。予約がある枠を削除したい場合は、先に <a href="/admin/reservations">予約一覧</a> → スロット詳細でキャンセル操作を行ってから、それでも枠自体を捨てる必要があれば ここに戻ってください。</p>
+      <p class="ms-hint">生成後に間違えたスロットや不要になった枠を削除できます。<strong>予約が 1 件でも紐付いていると削除できません</strong>（履歴保護のため）。予約がある枠を削除したい場合は、先に <a href="/admin/reservations">予約一覧</a> → スロット詳細でキャンセル操作を行ってから、それでも枠自体を捨てる必要があれば ここに戻ってください。</p>
       {(!monthSlots || monthSlots.length === 0) ? (
         <p class="ms-empty">この月にはまだスロットが生成されていません。上の「プレビュー → 生成」で作成してください。</p>
       ) : (
-        <ul class="ms-list">
-          {monthSlots.map((s: any) => {
-            const rc = resCountBySlot.get(s.id) ?? { active: 0, total: 0 };
-            const canDelete = rc.total === 0;
-            const timeLabel = `${s.start_time?.slice(0, 5)}${s.end_time ? '–' + s.end_time.slice(0, 5) : ''}`;
-            return (
-              <li class={`ms-item ${canDelete ? '' : 'ms-locked'}`}>
-                <div class="ms-body">
-                  <div class="ms-line-1">
-                    <span class="ms-date mono">{s.date}</span>
-                    <span class="ms-time mono">{timeLabel}</span>
-                    <span class="ms-course">{s.courses?.name}</span>
+        <form method="post" id="msBulkForm" class="ms-bulk-form">
+          <input type="hidden" name="op" value="bulk_delete_slots" />
+          <input type="hidden" name="year" value={year} />
+          <input type="hidden" name="month" value={month} />
+
+          <div class="ms-bulk-bar">
+            <label class="ms-bulk-selall">
+              <input type="checkbox" id="msSelAll" />
+              <span>削除可能な枠を全て選択</span>
+            </label>
+            <div class="ms-bulk-actions">
+              <span class="ms-bulk-count" id="msBulkCount">未選択</span>
+              <button type="submit" class="ms-bulk-del" id="msBulkDel" disabled>
+                🗑 選択した枠をまとめて削除
+              </button>
+            </div>
+          </div>
+
+          <ul class="ms-list">
+            {monthSlots.map((s: any) => {
+              const rc = resCountBySlot.get(s.id) ?? { active: 0, total: 0 };
+              const canDelete = rc.total === 0;
+              const timeLabel = `${s.start_time?.slice(0, 5)}${s.end_time ? '–' + s.end_time.slice(0, 5) : ''}`;
+              return (
+                <li class={`ms-item ${canDelete ? '' : 'ms-locked'}`}>
+                  <label class="ms-check">
+                    {canDelete ? (
+                      <input type="checkbox" name="slot_ids" value={s.id} class="ms-check-input" />
+                    ) : (
+                      <input type="checkbox" disabled title="予約履歴あり" />
+                    )}
+                  </label>
+                  <div class="ms-body">
+                    <div class="ms-line-1">
+                      <span class="ms-date mono">{s.date}</span>
+                      <span class="ms-time mono">{timeLabel}</span>
+                      <span class="ms-course">{s.courses?.name}</span>
+                    </div>
+                    <div class="ms-line-2">
+                      <span class="ms-status ms-st-{s.status}">
+                        {s.status === 'open' ? '🟢 受付中' : s.status === 'closed' ? '🟡 停止' : '🔴 中止'}
+                      </span>
+                      <span class="ms-cap">定員 {s.capacity}</span>
+                      {rc.active > 0 && <span class="ms-res">予約 {rc.active} 件</span>}
+                      {rc.total > rc.active && <span class="ms-res-cancel">キャンセル履歴 {rc.total - rc.active} 件</span>}
+                    </div>
                   </div>
-                  <div class="ms-line-2">
-                    <span class="ms-status ms-st-{s.status}">
-                      {s.status === 'open' ? '🟢 受付中' : s.status === 'closed' ? '🟡 停止' : '🔴 中止'}
-                    </span>
-                    <span class="ms-cap">定員 {s.capacity}</span>
-                    {rc.active > 0 && <span class="ms-res">予約 {rc.active} 件</span>}
-                    {rc.total > rc.active && <span class="ms-res-cancel">キャンセル履歴 {rc.total - rc.active} 件</span>}
+                  <div class="ms-actions">
+                    <a class="ms-view" href={`/admin/slots/${s.id}`}>詳細 →</a>
+                    {canDelete ? (
+                      <button type="button" class="ms-del"
+                              data-slot-id={s.id}
+                              data-slot-label={`${s.date} ${timeLabel} ${s.courses?.name}`}>
+                        🗑 削除
+                      </button>
+                    ) : (
+                      <span class="ms-locked-badge" title="予約履歴あり">🔒 削除不可</span>
+                    )}
                   </div>
-                </div>
-                <div class="ms-actions">
-                  <a class="ms-view" href={`/admin/slots/${s.id}`}>詳細 →</a>
-                  {canDelete ? (
-                    <form method="post" class="ms-del-form"
-                          onsubmit={`return confirm('${s.date} ${timeLabel} ${s.courses?.name} を削除します。よろしいですか？');`}>
-                      <input type="hidden" name="op" value="delete_slot" />
-                      <input type="hidden" name="slot_id" value={s.id} />
-                      <input type="hidden" name="year" value={year} />
-                      <input type="hidden" name="month" value={month} />
-                      <button type="submit" class="ms-del">🗑 削除</button>
-                    </form>
-                  ) : (
-                    <span class="ms-locked-badge" title="予約履歴あり">🔒 削除不可</span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+        </form>
       )}
     </section>
 
@@ -1038,6 +1100,86 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
     });
 
     update();
+  }
+
+  // -----------------------------------------------------------------
+  // 月次スロット一覧: 個別「🗑 削除」ボタンと一括削除フォーム
+  // - 個別ボタン: click で hidden form を組み立てて POST (op=delete_slot)
+  // - 一括: checkbox を選択 → 「まとめて削除」ボタン (op=bulk_delete_slots)
+  // - 「全て選択」チェックで削除可能スロットのみをまとめてオン/オフ
+  // -----------------------------------------------------------------
+  const msBulkForm = document.getElementById('msBulkForm') as HTMLFormElement | null;
+  if (msBulkForm) {
+    const selAll = document.getElementById('msSelAll') as HTMLInputElement | null;
+    const bulkCount = document.getElementById('msBulkCount') as HTMLElement | null;
+    const bulkDel = document.getElementById('msBulkDel') as HTMLButtonElement | null;
+    const checks = msBulkForm.querySelectorAll<HTMLInputElement>('.ms-check-input');
+
+    const updateBulk = () => {
+      const selected = Array.from(checks).filter((c) => c.checked).length;
+      const total = checks.length;
+      if (bulkCount) {
+        bulkCount.textContent = selected > 0 ? `${selected} 枠選択中` : '未選択';
+      }
+      if (bulkDel) {
+        bulkDel.disabled = selected === 0;
+      }
+      if (selAll) {
+        selAll.checked = total > 0 && selected === total;
+        selAll.indeterminate = selected > 0 && selected < total;
+      }
+    };
+
+    checks.forEach((c) => c.addEventListener('change', updateBulk));
+    if (selAll) {
+      selAll.addEventListener('change', () => {
+        const target = selAll.checked;
+        checks.forEach((c) => { c.checked = target; });
+        updateBulk();
+      });
+    }
+
+    msBulkForm.addEventListener('submit', (e) => {
+      const selected = Array.from(checks).filter((c) => c.checked).length;
+      if (selected === 0) {
+        e.preventDefault();
+        return;
+      }
+      const ok = confirm(`選択した ${selected} 枠を削除します。よろしいですか？\n\n※ 予約履歴のある枠は自動でスキップされます。`);
+      if (!ok) e.preventDefault();
+    });
+
+    // 個別「🗑 削除」ボタン (checkbox とは独立、単発 delete_slot POST)
+    msBulkForm.querySelectorAll<HTMLButtonElement>('.ms-del').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const slotId = btn.dataset.slotId;
+        const label = btn.dataset.slotLabel || 'このスロット';
+        if (!slotId) return;
+        if (!confirm(`${label} を削除します。よろしいですか？`)) return;
+        // Build a dedicated form and submit
+        const yearInput = msBulkForm.querySelector<HTMLInputElement>('input[name="year"]');
+        const monthInput = msBulkForm.querySelector<HTMLInputElement>('input[name="month"]');
+        const soloForm = document.createElement('form');
+        soloForm.method = 'post';
+        soloForm.style.display = 'none';
+        const mk = (name: string, value: string) => {
+          const i = document.createElement('input');
+          i.type = 'hidden';
+          i.name = name;
+          i.value = value;
+          soloForm.appendChild(i);
+        };
+        mk('op', 'delete_slot');
+        mk('slot_id', slotId);
+        if (yearInput) mk('year', yearInput.value);
+        if (monthInput) mk('month', monthInput.value);
+        document.body.appendChild(soloForm);
+        soloForm.submit();
+      });
+    });
+
+    updateBulk();
   }
 </script>
 
@@ -1356,6 +1498,58 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
     padding: .3rem .7rem; font-size: .68rem; font-weight: 700;
     color: var(--ink-3); background: var(--bg-3);
     border-radius: 100px;
+  }
+
+  /* --- 一括削除用チェックボックスとバー ----------------------------- */
+  .ms-bulk-form { display: flex; flex-direction: column; gap: .5rem; }
+  .ms-bulk-bar {
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    padding: .6rem .8rem;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px;
+    position: sticky; top: 0; z-index: 5;
+  }
+  .ms-bulk-selall {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .78rem; font-weight: 700; color: var(--ink-2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .ms-bulk-selall input[type="checkbox"] {
+    width: 1.05rem; height: 1.05rem; cursor: pointer;
+  }
+  .ms-bulk-actions {
+    display: flex; align-items: center; gap: .6rem;
+    margin-left: auto;
+  }
+  .ms-bulk-count {
+    font-size: .72rem; font-weight: 700; color: var(--ink-3);
+    font-family: var(--mono);
+    padding: .2rem .55rem; background: var(--bg); border-radius: 100px;
+  }
+  .ms-bulk-del {
+    padding: .5rem 1rem; font-size: .82rem; font-weight: 800;
+    background: linear-gradient(135deg, #e5556f, var(--rose-deep));
+    color: #fff; border: none; border-radius: 8px;
+    cursor: pointer; font-family: var(--jp);
+    box-shadow: 0 3px 8px rgba(229,85,111,.25);
+    transition: transform .05s, opacity .15s;
+  }
+  .ms-bulk-del:hover:not(:disabled) { transform: translateY(-1px); }
+  .ms-bulk-del:active:not(:disabled) { transform: translateY(0); }
+  .ms-bulk-del:disabled {
+    background: var(--bg-3); color: var(--ink-3);
+    cursor: not-allowed; box-shadow: none; opacity: .7;
+  }
+  .ms-check {
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; padding: 0 .1rem;
+  }
+  .ms-check input[type="checkbox"] {
+    width: 1.15rem; height: 1.15rem; cursor: pointer;
+  }
+  .ms-check input[type="checkbox"]:disabled {
+    cursor: not-allowed; opacity: .35;
   }
 
   /* --- まとめて追加枠 -------------------------------------------------- */
