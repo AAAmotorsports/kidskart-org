@@ -122,9 +122,11 @@
 - **DNS 管理**: Cloudflare (ゾーン `kidskart.org`)
   - 2026-08-19 に Xserver から移管
   - ムームードメイン側の NS は `jacob.ns.cloudflare.com` / `tina.ns.cloudflare.com`
-  - Worker との接続は **Route 方式** (`reserve.kidskart.org/*` → `kidskart-asms`)
-    - Custom Domain ダイアログでゾーン認識ラグに引っかかったため Route を採用
-  - `reserve` A レコード: `192.0.2.1` (プロキシ ON、実質マーカー)
+  - Worker との接続は **Custom Domain 方式** (`reserve.kidskart.org` → `kidskart-asms`)
+    - 移管直後は zone 認識ラグで Route 方式で仮運用したが、2026-08-20 に
+      Custom Domain へ切替 (Chrome の断続 `NET::ERR_CERT_COMMON_NAME_INVALID`
+      根治のため、hostname 専用の Let's Encrypt 証明書を明示発行させる)
+    - DNS レコードは Cloudflare が Custom Domain 追加時に自動生成 (手動追加不要)
 - **kidskart.org 本体** (公式サイト・ランディング): GitHub Pages
   - A レコード 4 個 (185.199.108-111.153) + CNAME `www → aaamotorsports.github.io`
   - すべて DNS only (グレー雲) — GitHub Pages が独自 CDN/TLS を持つため
