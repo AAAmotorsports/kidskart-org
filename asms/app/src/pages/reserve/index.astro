@@ -1,10 +1,13 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabase, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, t, type Locale } from '@lib/i18n';
 
 const env = envFrom(Astro.locals);
 const supabase = getSupabase(env);
 const admin = getSupabaseAdmin(env);
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
 
 // Always load the course menu — customers should see what we offer
 // even when no dates are on the calendar yet.
@@ -147,22 +150,32 @@ const day = now.getDate();
 const thisMonth = now.getMonth() + 1;
 const nextMonthNum = thisMonth === 12 ? 1 : thisMonth + 1;
 const monthAfterNext = nextMonthNum === 12 ? 1 : nextMonthNum + 1;
+const scheduleNoticeMonth = day < 25 ? nextMonthNum : monthAfterNext;
+const scheduleNoticeReleaseMonth = day < 25 ? thisMonth : nextMonthNum;
 const scheduleNotice = day < 25
   ? `${nextMonthNum}月分のスケジュールは ${thisMonth}/25 頃に公開予定です。`
   : `${monthAfterNext}月分のスケジュールは ${nextMonthNum}/25 頃に公開予定です。`;
+const scheduleNoticeEn = `The schedule for ${new Date(2000, scheduleNoticeMonth - 1).toLocaleString('en-US', { month: 'long' })} will be released around the 25th of ${new Date(2000, scheduleNoticeReleaseMonth - 1).toLocaleString('en-US', { month: 'long' })}.`;
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
+  if (isEn) {
+    const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${monthsEn[d.getMonth()]} ${d.getDate()} (${weekdayEn[d.getDay()]})`;
+  }
   return `${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
 }
+// 英語版ではトヨピー会員価格を非表示 (外国人観光客はメンバー対象外)。
 function priceLabel(regular: number, member: number): string {
+  if (isEn) return `¥${regular.toLocaleString()}`;
   if (regular === member) return `¥${regular.toLocaleString()}`;
   return `¥${regular.toLocaleString()} / 会員 ¥${member.toLocaleString()}`;
 }
 function vehicleLabel(v: string): string {
   switch (v) {
-    case 'toyopet_kart': return 'トヨピーカート';
+    case 'toyopet_kart': return isEn ? 'Toyopet Kart' : 'トヨピーカート';
     case 'rotax_micro': return 'Rotax Micro';
     default: return '';
   }
@@ -174,16 +187,23 @@ const visSortedDates = Array.from(visByDate.keys()).sort();
 const supabaseUrl = env.PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
 ---
-<Base title="予約 — 福岡キッズカートアカデミー">
+<Base
+  title={isEn ? 'Book Now — Fukuoka Kids Kart Academy' : '予約 — 福岡キッズカートアカデミー'}
+  lang={locale}
+  showLocaleSwitch={true}
+>
   <main>
     <header class="hd">
-      <a class="back" href="/">← ホーム</a>
-      <h1>予約 <span class="beta">β</span></h1>
-      <p class="sub">福岡キッズカートアカデミー · エーワンサーキット</p>
+      <a class="back" href="/">← {isEn ? 'Home' : 'ホーム'}</a>
+      <h1>{t(locale, 'landing.title')} <span class="beta">β</span></h1>
+      <p class="sub">{t(locale, 'landing.subtitle')}</p>
       <div id="signedInBadge" class="signedin-badge" hidden>
         <span class="sb-icon">🔑</span>
-        <span class="sb-text">サインイン中: <span id="signedInEmail" class="sb-email"></span></span>
-        <button type="button" id="signOutBtn" class="sb-signout">サインアウト</button>
+        <span class="sb-text">
+          {isEn ? 'Signed in as: ' : 'サインイン中: '}
+          <span id="signedInEmail" class="sb-email"></span>
+        </span>
+        <button type="button" id="signOutBtn" class="sb-signout">{isEn ? 'Sign out' : 'サインアウト'}</button>
       </div>
     </header>
 
@@ -191,51 +211,95 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
       <details>
         <summary>
           <span class="ic-icon">📖</span>
-          <span class="ic-title">初めての方へ <small>（対象年齢・持ち物・服装・キャンセル規定）</small></span>
+          {isEn ? (
+            <span class="ic-title">First time here? <small>(Age, what to bring, dress code, cancellation policy)</small></span>
+          ) : (
+            <span class="ic-title">初めての方へ <small>（対象年齢・持ち物・服装・キャンセル規定）</small></span>
+          )}
           <span class="ic-chev">▼</span>
         </summary>
-        <div class="ic-body">
-          <div class="ic-item">
-            <div class="ic-h">👶 対象年齢</div>
-            <div>4 歳以上（コースにより体格・経験条件あり）</div>
+        {isEn ? (
+          <div class="ic-body">
+            <div class="ic-item">
+              <div class="ic-h">👶 Age Requirement</div>
+              <div>Ages 4 and up (course-specific size and experience requirements may apply).</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">👟 What to Bring</div>
+              <div><strong>Sneakers only</strong> — jumpsuit and helmet provided free. Gloves gifted on first visit, please bring your own from the 2nd visit onward.</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">👨‍👩‍👧 Guardian Attendance</div>
+              <div>A guardian must accompany the child. Non-participants may not enter designated driving areas.</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">🌦 Rainy Weather</div>
+              <div>Light rain: we operate under sheltered sections. Thunder, typhoon, or strong wind: we notify you of cancellation by the morning of the event.</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">💰 Cancellation Policy</div>
+              <ul>
+                <li><strong>Until 8:00 PM the day before</strong>: no cancellation fee</li>
+                <li><strong>8:00 PM the day before ~ 2 hours before start</strong>: 50% cancellation fee</li>
+                <li><strong>Within 2 hours of start / no-show</strong>: 100% cancellation fee</li>
+                <li>No fee if we cancel for operational/weather reasons</li>
+              </ul>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">💰 Payment</div>
+              <div><strong>Cash or PayPay</strong> accepted. Please pay on-site on the day of your booking.</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">🏥 Health Conditions / Allergies</div>
+              <div>Please tell us in advance for safety. There's a field on the booking form for participant health notes.</div>
+            </div>
           </div>
-          <div class="ic-item">
-            <div class="ic-h">👟 持ち物・服装</div>
-            <div><strong>運動靴のみ必須</strong>。つなぎ・ヘルメットは無料貸出。軍手は初回プレゼント、2 回目以降ご持参。</div>
+        ) : (
+          <div class="ic-body">
+            <div class="ic-item">
+              <div class="ic-h">👶 対象年齢</div>
+              <div>4 歳以上（コースにより体格・経験条件あり）</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">👟 持ち物・服装</div>
+              <div><strong>運動靴のみ必須</strong>。つなぎ・ヘルメットは無料貸出。軍手は初回プレゼント、2 回目以降ご持参。</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">👨‍👩‍👧 保護者の同伴</div>
+              <div>原則、保護者の同伴が必要です。走行中は指定エリア外への立ち入り不可。</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">🌦 雨天時</div>
+              <div>小雨なら屋根のあるコース区画で実施。雷・台風・強風など安全に走行できないと判断した場合は当日朝までにキャンセル連絡します。</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">💰 キャンセル規定</div>
+              <ul>
+                <li><strong>前日 20:00 まで</strong>: キャンセル料なし</li>
+                <li><strong>前日 20:00 〜 開始 2 時間前</strong>: キャンセル料 50%</li>
+                <li><strong>開始 2 時間前以降・無連絡不参加</strong>: キャンセル料 100%</li>
+                <li>運営都合による中止の場合、キャンセル料なし</li>
+              </ul>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">💰 お支払い</div>
+              <div><strong>現金・PayPay</strong> でのお支払いを承ります。当日現地でお支払いください。</div>
+            </div>
+            <div class="ic-item">
+              <div class="ic-h">🏥 持病・アレルギー・配慮事項</div>
+              <div>安全のため事前にお知らせください。予約フォームの参加者情報欄にご記入いただけます。</div>
+            </div>
           </div>
-          <div class="ic-item">
-            <div class="ic-h">👨‍👩‍👧 保護者の同伴</div>
-            <div>原則、保護者の同伴が必要です。走行中は指定エリア外への立ち入り不可。</div>
-          </div>
-          <div class="ic-item">
-            <div class="ic-h">🌦 雨天時</div>
-            <div>小雨なら屋根のあるコース区画で実施。雷・台風・強風など安全に走行できないと判断した場合は当日朝までにキャンセル連絡します。</div>
-          </div>
-          <div class="ic-item">
-            <div class="ic-h">💰 キャンセル規定</div>
-            <ul>
-              <li><strong>前日 20:00 まで</strong>: キャンセル料なし</li>
-              <li><strong>前日 20:00 〜 開始 2 時間前</strong>: キャンセル料 50%</li>
-              <li><strong>開始 2 時間前以降・無連絡不参加</strong>: キャンセル料 100%</li>
-              <li>運営都合による中止の場合、キャンセル料なし</li>
-            </ul>
-          </div>
-          <div class="ic-item">
-            <div class="ic-h">💰 お支払い</div>
-            <div><strong>現金・PayPay</strong> でのお支払いを承ります。当日現地でお支払いください。</div>
-          </div>
-          <div class="ic-item">
-            <div class="ic-h">🏥 持病・アレルギー・配慮事項</div>
-            <div>安全のため事前にお知らせください。予約フォームの参加者情報欄にご記入いただけます。</div>
-          </div>
-        </div>
+        )}
       </details>
     </section>
 
     <section class="courses">
       <div class="section-h">
-        <h2>コース一覧</h2>
-        <p>「このコースで予約する」で開催カレンダーが絞り込まれます</p>
+        <h2>{isEn ? 'Course List' : 'コース一覧'}</h2>
+        <p>{isEn
+          ? 'Tap "Book this course" to filter the calendar to just this course.'
+          : '「このコースで予約する」で開催カレンダーが絞り込まれます'}</p>
       </div>
       <div class="course-grid">
         {courses?.map((c) => (
@@ -243,18 +307,24 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
             <div class="course-head">
               <div class="course-name">
                 <span class="course-name-text">{c.name}</span>
-                {c.code === 'taiken' && <span class="course-star">⭐️ 初めての方はこちら</span>}
+                {c.code === 'taiken' && (
+                  <span class="course-star">
+                    {isEn ? '⭐️ Recommended for first-timers' : '⭐️ 初めての方はこちら'}
+                  </span>
+                )}
                 {c.vehicle !== 'mini_default' && (
                   <span class="course-veh">{vehicleLabel(c.vehicle)}</span>
                 )}
-                {activeCourse?.code === c.code && <span class="course-active">✓ 表示中</span>}
+                {activeCourse?.code === c.code && (
+                  <span class="course-active">{isEn ? '✓ Now viewing' : '✓ 表示中'}</span>
+                )}
               </div>
               <div class="course-meta">
-                <span class="course-dur">{c.duration_min}分</span>
+                <span class="course-dur">{c.duration_min}{isEn ? ' min' : '分'}</span>
                 <span class="course-price">{priceLabel(c.price_regular, c.price_member)}</span>
               </div>
             </div>
-            {c.description && (
+            {c.description && !isEn && (
               <details class="course-details">
                 <summary>📖 コース内容を見る</summary>
                 <div class="course-desc-body">
@@ -265,49 +335,67 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
               </details>
             )}
             <a class="course-cta" href={courseHref(c.code)}>
-              {activeCourse?.code === c.code ? '✓ このコースで表示中' : 'このコースで予約する →'}
+              {activeCourse?.code === c.code
+                ? (isEn ? '✓ Currently showing this course' : '✓ このコースで表示中')
+                : (isEn ? 'Book this course →' : 'このコースで予約する →')}
             </a>
           </div>
         ))}
       </div>
-      <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。<br>
-        <a class="toyopet-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
-        <a class="toyopet-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
-      </p>
+      {!isEn && (
+        <p class="member-note">💡 <strong>トヨピー会員価格</strong>は当日受付での会員登録でも適用可能。LINE 友達とは別プログラムです。<br>
+          <a class="toyopet-link" href="https://family-fukuoka-toyopet.com/pre-regist.html" target="_blank" rel="noopener">🚗 事前登録はこちら</a>
+          <a class="toyopet-link" href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" target="_blank" rel="noopener">ℹ️ トヨピー会員について</a>
+        </p>
+      )}
     </section>
 
     {hasSlots ? (
       <section class="dates" id="dates">
         <div class="section-h">
-          <h2>開催予定日を選ぶ</h2>
+          <h2>{isEn ? 'Choose a Date' : '開催予定日を選ぶ'}</h2>
           {activeCourse ? (
             <div class="filter-chip">
-              <span>🔍 <strong>{activeCourse.name}</strong> で絞り込み中</span>
-              <a href="/reserve/" class="clear-filter">✕ 全て表示</a>
+              <span>🔍 <strong>{activeCourse.name}</strong> {isEn ? 'filter active' : 'で絞り込み中'}</span>
+              <a href="/reserve/" class="clear-filter">{isEn ? '✕ Show all' : '✕ 全て表示'}</a>
             </div>
           ) : (
-            <p>カレンダーの緑の日をタップして時間帯を選んでください</p>
+            <p>{isEn
+              ? 'Tap a highlighted day on the calendar to see available time slots.'
+              : 'カレンダーの緑の日をタップして時間帯を選んでください'}</p>
           )}
         </div>
 
         <div class="cal-wrap">
           <div class="cal-hd">
             {hasPrev ? (
-              <a class="cal-nav" href={makeUrl({ month: monthKey(prevM.y, prevM.m) })}>← {prevM.m}月</a>
+              <a class="cal-nav" href={makeUrl({ month: monthKey(prevM.y, prevM.m) })}>
+                {isEn ? '← Prev' : `← ${prevM.m}月`}
+              </a>
             ) : (
-              <span class="cal-nav disabled">← {prevM.m}月</span>
+              <span class="cal-nav disabled">{isEn ? '← Prev' : `← ${prevM.m}月`}</span>
             )}
-            <div class="cal-title">{visYear}年 {visMonth}月</div>
+            <div class="cal-title">
+              {isEn
+                ? new Date(visYear, visMonth - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+                : `${visYear}年 ${visMonth}月`}
+            </div>
             {hasNext ? (
-              <a class="cal-nav" href={makeUrl({ month: monthKey(nextM.y, nextM.m) })}>{nextM.m}月 →</a>
+              <a class="cal-nav" href={makeUrl({ month: monthKey(nextM.y, nextM.m) })}>
+                {isEn ? 'Next →' : `${nextM.m}月 →`}
+              </a>
             ) : (
-              <span class="cal-nav disabled">{nextM.m}月 →</span>
+              <span class="cal-nav disabled">{isEn ? 'Next →' : `${nextM.m}月 →`}</span>
             )}
           </div>
 
-          <p class="cal-legend">緑の日をタップ → 下に時間帯一覧が表示されます</p>
+          <p class="cal-legend">
+            {isEn
+              ? 'Tap a green day → time slots will appear below'
+              : '緑の日をタップ → 下に時間帯一覧が表示されます'}
+          </p>
           <div class="cal-grid">
-            {weekdayJa.map((w, i) => (
+            {(isEn ? weekdayEn : weekdayJa).map((w, i) => (
               <div class={`cal-dow ${i === 0 ? 'sun' : ''} ${i === 6 ? 'sat' : ''}`}>{w}</div>
             ))}
             {cells.map((cell) => (
@@ -318,7 +406,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                       <a class={`cal-cell has ${cell.dow === 0 ? 'sun' : ''} ${cell.dow === 6 ? 'sat' : ''}`}
                          href={`#day-${cell.date}`}>
                         <span class="cal-day">{cell.dayNum}</span>
-                        <span class="cal-count">{cell.count}枠</span>
+                        <span class="cal-count">{cell.count}{isEn ? '' : '枠'}</span>
                       </a>
                     )
                     : (
@@ -333,10 +421,16 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
 
         {visSortedDates.length === 0 ? (
           <p class="no-in-month">
-            {activeCourse
-              ? `${activeCourse.name} の ${visYear}年${visMonth}月 開催予定はありません。`
-              : `${visYear}年${visMonth}月は開催予定がありません。`}
-            {(hasPrev || hasNext) && '前月/翌月をお試しください。'}
+            {isEn ? (
+              activeCourse
+                ? `No ${activeCourse.name} sessions scheduled for this month.`
+                : 'No sessions scheduled for this month.'
+            ) : (
+              activeCourse
+                ? `${activeCourse.name} の ${visYear}年${visMonth}月 開催予定はありません。`
+                : `${visYear}年${visMonth}月は開催予定がありません。`
+            )}
+            {(hasPrev || hasNext) && (isEn ? ' Please try previous / next month.' : '前月/翌月をお試しください。')}
           </p>
         ) : (
           <div class="day-list">
@@ -353,7 +447,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                           <div class="slot-link">
                             <span class="slot-time">{s.start_time.slice(0, 5)}</span>
                             <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
-                            <span class="slot-cap slot-cap-full">満席</span>
+                            <span class="slot-cap slot-cap-full">{isEn ? 'Full' : '満席'}</span>
                             <span class="slot-arrow" aria-hidden="true">×</span>
                           </div>
                         ) : (
@@ -361,7 +455,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                             <span class="slot-time">{s.start_time.slice(0, 5)}</span>
                             <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
                             {remaining <= 3 && (
-                              <span class="slot-cap slot-cap-low">残りわずか</span>
+                              <span class="slot-cap slot-cap-low">{isEn ? 'Few left' : '残りわずか'}</span>
                             )}
                             <span class="slot-arrow">→</span>
                           </a>
@@ -381,15 +475,29 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           <div class="empty-icon">📅</div>
           {activeCourse ? (
             <>
-              <h2>{activeCourse.name} の開催予定はありません</h2>
-              <p class="notice">現時点で予定登録がありません。次回開催をお待ちください。</p>
-              <p class="policy"><a href="/reserve/">← 全てのコースの開催予定を見る</a></p>
+              <h2>
+                {isEn
+                  ? `No sessions of ${activeCourse.name} scheduled`
+                  : `${activeCourse.name} の開催予定はありません`}
+              </h2>
+              <p class="notice">
+                {isEn
+                  ? 'No dates are currently registered. Please check back later.'
+                  : '現時点で予定登録がありません。次回開催をお待ちください。'}
+              </p>
+              <p class="policy">
+                <a href="/reserve/">{isEn ? '← See all course schedules' : '← 全てのコースの開催予定を見る'}</a>
+              </p>
             </>
           ) : (
             <>
-              <h2>現在、公開中の開催予定はありません</h2>
-              <p class="notice">{scheduleNotice}</p>
-              <p class="policy">スケジュール更新は原則毎月 <strong>25 日頃</strong>です。</p>
+              <h2>{isEn ? 'No upcoming sessions available' : '現在、公開中の開催予定はありません'}</h2>
+              <p class="notice">{isEn ? scheduleNoticeEn : scheduleNotice}</p>
+              <p class="policy">
+                {isEn
+                  ? 'Schedules are typically updated around the 25th of each month.'
+                  : (<>スケジュール更新は原則毎月 <strong>25 日頃</strong>です。</>)}
+              </p>
             </>
           )}
         </div>
