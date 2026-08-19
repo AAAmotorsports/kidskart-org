@@ -1,15 +1,24 @@
 ---
+import { getLocaleFromRequest, LOCALE_COOKIE, type Locale } from '@lib/i18n';
+
 interface Props {
   title: string;
   description?: string;
-  lang?: 'ja' | 'en';
+  lang?: Locale; // 明示指定用。省略時は request から判定。
+  /** ロケール切替ボタンを表示するか (予約フロー等、顧客向けページで true) */
+  showLocaleSwitch?: boolean;
 }
 
+const detectedLocale = getLocaleFromRequest(Astro.request);
 const {
   title,
   description = '福岡キッズカートアカデミー 予約・安全管理システム',
-  lang = 'ja',
+  lang = detectedLocale,
+  showLocaleSwitch = false,
 } = Astro.props;
+
+const otherLocale: Locale = lang === 'ja' ? 'en' : 'ja';
+const otherLabel = otherLocale === 'ja' ? '🇯🇵 日本語' : '🇬🇧 English';
 ---
 <!doctype html>
 <html lang={lang}>
@@ -47,9 +56,51 @@ const {
       font-feature-settings:"palt";
     }
     a{color:var(--sky-deep)}
+
+    /* -- 言語切替ボタン (予約フロー等の顧客向けページで表示) -- */
+    .locale-switch {
+      position: fixed; top: .6rem; right: .6rem;
+      z-index: 50;
+      display: inline-flex; align-items: center; gap: .3rem;
+      padding: .4rem .75rem; font-size: .78rem; font-weight: 700;
+      background: rgba(255,255,255,.92); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 100px;
+      cursor: pointer; text-decoration: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,.06);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      transition: transform .05s, box-shadow .15s;
+      font-family: var(--jp);
+    }
+    .locale-switch:hover {
+      box-shadow: 0 4px 10px rgba(0,0,0,.1);
+    }
+    .locale-switch:active { transform: scale(.96); }
   </style>
 </head>
 <body>
+  {showLocaleSwitch && (
+    <button type="button" class="locale-switch" data-locale-switch={otherLocale} aria-label={`Switch to ${otherLabel}`}>
+      {otherLabel}
+    </button>
+  )}
   <slot />
+  {showLocaleSwitch && (
+    <script is:inline define:vars={{ cookieName: LOCALE_COOKIE }}>
+      // ロケール切替: Cookie を書き換えてリロードするだけ。
+      // サーバ側で getLocaleFromRequest が Cookie を優先読みするので、
+      // リロード後は選択したロケールで再描画される。
+      document.querySelectorAll('[data-locale-switch]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          const target = el.getAttribute('data-locale-switch');
+          if (!target) return;
+          const oneYear = 60 * 60 * 24 * 365;
+          document.cookie = cookieName + '=' + target + '; path=/; max-age=' + oneYear + '; SameSite=Lax';
+          location.reload();
+        });
+      });
+    </script>
+  )}
 </body>
 </html>

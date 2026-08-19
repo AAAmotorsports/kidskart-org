@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 
 export const prerender = false;
 
@@ -157,6 +158,9 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   // Wrapped in ctx.waitUntil so Cloudflare Workers keeps the async fetch
   // alive after we return the response.
   const apiUrl = new URL(request.url);
+  // 顧客側メールはリクエスト時のロケールで送信 (英語で予約した外国人には英語メール)。
+  // 管理者宛て通知は常に日本語 (スタッフ向け)。
+  const locale: Locale = getLocaleFromRequest(request);
   const emailPromise = sendConfirmationEmail(env, {
     to: guardianEmail,
     guardianName: guardian.name,
@@ -172,6 +176,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     origin: `${apiUrl.protocol}//${apiUrl.host}`,
     reservationId: result.reservation_id,
     cancelToken: result.cancel_token,
+    locale,
   }).catch((e) => console.warn('[reserve/create] email send failed:', e));
 
   const adminEmailPromise = sendAdminNotification(env, {
@@ -224,7 +229,10 @@ async function sendConfirmationEmail(env: Env, args: {
   origin: string;
   reservationId: string;
   cancelToken?: string;
+  locale?: Locale;
 }) {
+  const isEn = args.locale === 'en';
+  const tr = (jp: string, en: string) => isEn ? en : jp;
   const apiKey = env.RESEND_API_KEY;
   const envKeys = Object.keys(env).sort();
   if (!apiKey) {
@@ -242,22 +250,61 @@ async function sendConfirmationEmail(env: Env, args: {
 
   const isPending = args.status === 'pending_approval';
   const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const d = new Date(args.dateIso + 'T00:00:00');
-  const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+  const dateLabel = isEn
+    ? `${monthsEn[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} (${weekdayEn[d.getDay()]})`
+    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
   const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
 
   const [h, m] = args.startTime.split(':').map(Number);
   const totalMin = Math.max(0, h * 60 + m - 15);
   const checkIn = `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
 
-  const subject = isPending
-    ? `【承認待ち】ご予約を受付けました — ${args.reservationNumber}`
-    : `【予約確定】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`;
+  const subject = isEn
+    ? (isPending
+        ? `[Pending Approval] Booking received — ${args.reservationNumber}`
+        : `[Confirmed] ${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`)
+    : (isPending
+        ? `【承認待ち】ご予約を受付けました — ${args.reservationNumber}`
+        : `【予約確定】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`);
 
   const detailUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
   const cancelUrl = args.cancelToken ? `${args.origin}/reserve/cancel/${args.cancelToken}` : '';
 
-  const text = [
+  const text = isEn ? [
+    `Dear ${args.guardianName},`,
+    '',
+    isPending
+      ? 'Your booking request has been received.'
+      : 'Your booking is confirmed. We look forward to seeing you.',
+    '',
+    `▼ Booking Details`,
+    `Booking number: ${args.reservationNumber}`,
+    `Status: ${isPending ? 'Awaiting approval' : 'Confirmed'}`,
+    `Course: ${args.courseName}`,
+    `Date: ${dateLabel}`,
+    `Time: ${timeLabel}`,
+    `Check-in from: ${checkIn} (15 min before start)`,
+    `Participants: ${args.participants.join(', ')} (${args.participants.length})`,
+    `Total: ¥${args.totalAmount.toLocaleString()}`,
+    '',
+    `▼ Booking details page`,
+    detailUrl,
+    '',
+    ...(cancelUrl ? [`▼ Cancel booking`, cancelUrl, ''] : []),
+    isPending
+      ? "We'll review and send a confirmation shortly."
+      : 'Please wear sneakers on the day. Jumpsuit and helmet are provided free. Gloves gifted on first visit, please bring your own from 2nd visit.',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    'Fukuoka Kids Kart Academy / A-One Circuit',
+    '✉️ info@kidskart.org',
+    '📞 +81-92-927-1177',
+    '🌐 https://kidskart.org/',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n') : [
     `${args.guardianName} 様`,
     '',
     isPending
@@ -295,41 +342,53 @@ async function sendConfirmationEmail(env: Env, args: {
   ].join('\n');
 
   const html = `<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
+<html lang="${isEn ? 'en' : 'ja'}"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
 <body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
     <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">${isPending ? '⏳' : '✅'}</div>
-    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.2rem">${isPending ? 'ご予約を受付けました' : 'ご予約が確定しました'}</h2>
-    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.9rem">${escapeHtml(args.guardianName)} 様</p>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.2rem">${
+      tr(
+        isPending ? 'ご予約を受付けました' : 'ご予約が確定しました',
+        isPending ? 'Booking received' : 'Booking confirmed',
+      )
+    }</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.9rem">${
+      isEn ? `Dear ${escapeHtml(args.guardianName)},` : `${escapeHtml(args.guardianName)} 様`
+    }</p>
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;margin-bottom:1rem">
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;color:#1a7fb8;font-weight:800">${escapeHtml(args.reservationNumber)}</td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">状態</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${isPending ? '<span style="background:rgba(255,201,67,.2);color:#e5631a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">承認待ち</span>' : '<span style="background:rgba(164,214,94,.2);color:#7eb13a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">確定</span>'}</td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.courseName)}</td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">日付</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(dateLabel)}</td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">時間</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(timeLabel)}</td></tr>
-      <tr style="background:rgba(255,201,67,.1)"><td style="padding:.5rem .5rem;color:#7d8fa0;font-size:.74rem;font-weight:700">受付開始</td><td style="padding:.5rem .5rem;text-align:right;font-family:monospace;color:#e5631a;font-weight:800">${escapeHtml(checkIn)} <span style="font-size:.68rem;color:#7d8fa0;font-weight:400;font-family:sans-serif">（開始15分前）</span></td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">参加者</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.participants.join('・'))} (${args.participants.length}名)</td></tr>
-      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">料金</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">¥${args.totalAmount.toLocaleString()}（${args.priceTier === 'member' ? '会員' : '一般'}）</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700">${tr('予約番号', 'Booking #')}</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;color:#1a7fb8;font-weight:800">${escapeHtml(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('状態', 'Status')}</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${isPending
+        ? `<span style="background:rgba(255,201,67,.2);color:#e5631a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">${tr('承認待ち', 'Awaiting approval')}</span>`
+        : `<span style="background:rgba(164,214,94,.2);color:#7eb13a;padding:2px 8px;border-radius:100px;font-weight:800;font-size:.74rem">${tr('確定', 'Confirmed')}</span>`}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('コース', 'Course')}</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.courseName)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('日付', 'Date')}</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(dateLabel)}</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('時間', 'Time')}</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">${escapeHtml(timeLabel)}</td></tr>
+      <tr style="background:rgba(255,201,67,.1)"><td style="padding:.5rem .5rem;color:#7d8fa0;font-size:.74rem;font-weight:700">${tr('受付開始', 'Check-in')}</td><td style="padding:.5rem .5rem;text-align:right;font-family:monospace;color:#e5631a;font-weight:800">${escapeHtml(checkIn)} <span style="font-size:.68rem;color:#7d8fa0;font-weight:400;font-family:sans-serif">${tr('（開始15分前）', '(15 min before start)')}</span></td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('参加者', 'Participants')}</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${escapeHtml(args.participants.join(isEn ? ', ' : '・'))} (${args.participants.length}${isEn ? '' : '名'})</td></tr>
+      <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.74rem;font-weight:700;border-top:1px dashed #d8e6f0">${tr('料金', 'Total')}</td><td style="padding:.4rem 0;text-align:right;font-family:monospace;border-top:1px dashed #d8e6f0">¥${args.totalAmount.toLocaleString()}${isEn ? '' : `（${args.priceTier === 'member' ? '会員' : '一般'}）`}</td></tr>
     </table>
     <p style="text-align:center;margin:1rem 0">
-      <a href="${detailUrl}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">予約詳細を開く</a>
+      <a href="${detailUrl}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">${tr('予約詳細を開く', 'Open booking details')}</a>
     </p>
-    ${cancelUrl ? `<p style="text-align:center;margin:.5rem 0 1rem;font-size:.78rem"><a href="${cancelUrl}" style="color:#c73854;text-decoration:none;font-weight:700">🚫 予約をキャンセルする</a></p>` : ''}
+    ${cancelUrl ? `<p style="text-align:center;margin:.5rem 0 1rem;font-size:.78rem"><a href="${cancelUrl}" style="color:#c73854;text-decoration:none;font-weight:700">${tr('🚫 予約をキャンセルする', '🚫 Cancel this booking')}</a></p>` : ''}
     ${isPending
-      ? '<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">当社にて内容を確認のうえ、あらためて確定通知をお送りします。</p>'
-      : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>(ご持参ください)</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>(長袖長ズボン不要)</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>'}
+      ? `<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">${tr('当社にて内容を確認のうえ、あらためて確定通知をお送りします。', "We'll review your booking and send a confirmation shortly.")}</p>`
+      : (isEn
+          ? '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">What to Bring</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>Sneakers</strong> (please bring your own)</li><li>Jumpsuit & helmet: <strong>provided free</strong></li><li>Gloves: <strong>gifted on first visit</strong>, please bring your own from 2nd visit</li></ul></div>'
+          : '<div style="font-size:.82rem;color:#3d556f;background:rgba(58,169,232,.08);padding:.8rem;border-radius:8px;border:1px solid #cae7f7;margin:0 0 1rem;line-height:1.7"><strong style="color:#1a7fb8">当日の装備について</strong><ul style="margin:.5rem 0 0;padding-left:1.2rem"><li><strong>運動靴</strong>(ご持参ください)</li><li>つなぎ・ヘルメット: 当社で<strong>無料貸出</strong>(長袖長ズボン不要)</li><li>軍手: <strong>初回のみプレゼント</strong>、2 回目以降はご持参ください</li></ul></div>')
+    }
 
-    <div style="background:linear-gradient(135deg,rgba(6,199,85,.06),rgba(6,199,85,.02));border:1px solid #06c755;border-radius:10px;padding:.9rem;margin:1rem 0;text-align:center">
+    ${isEn ? '' : `<div style="background:linear-gradient(135deg,rgba(6,199,85,.06),rgba(6,199,85,.02));border:1px solid #06c755;border-radius:10px;padding:.9rem;margin:1rem 0;text-align:center">
       <div style="font-weight:800;color:#06c755;font-size:.9rem;margin-bottom:.4rem">🔔 開催のお知らせを受け取る</div>
       <p style="font-size:.76rem;color:#3d556f;margin:0 0 .7rem">新しいスケジュールが公開されたら通知を受け取れます</p>
       <p style="margin:0">
         <a href="https://line.me/R/ti/p/@kidskart" style="display:inline-block;padding:.55rem 1.1rem;background:#06c755;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">💬 LINE 友達追加</a>
       </p>
-    </div>
+    </div>`}
 
     <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
-      福岡キッズカートアカデミー / エーワンサーキット<br>
-      ✉️ <a href="mailto:info@kidskart.org" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> / 📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a><br>
+      ${tr('福岡キッズカートアカデミー / エーワンサーキット', 'Fukuoka Kids Kart Academy / A-One Circuit')}<br>
+      ✉️ <a href="mailto:info@kidskart.org" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> / 📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">${isEn ? '+81-92-927-1177' : '092-927-1177'}</a><br>
       🌐 <a href="https://kidskart.org/" style="color:#1a7fb8;text-decoration:none">kidskart.org</a>
     </p>
   </div>
