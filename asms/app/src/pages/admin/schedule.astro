@@ -101,8 +101,40 @@ if (Astro.request.method === 'POST') {
     if ((allResCount ?? 0) > 0) {
       return finalize('', `過去にキャンセル履歴を含む予約 ${allResCount} 件がある枠は削除できません (履歴保護)。`);
     }
+    // 削除する前に slot の (date, start_time, course_id) を退避。
+    // 削除後に suppress 例外を挿入して再生成を防ぐ (schedule_rules や
+    // 既存の extra_slot 例外があると、次回 generate_slots で復活する)。
+    const { data: slotInfo } = await supabase
+      .from('slots')
+      .select('date, start_time, course_id')
+      .eq('id', slotId)
+      .maybeSingle();
+
     const { error } = await supabase.from('slots').delete().eq('id', slotId);
-    return error ? finalize('', fmtErr(error)) : finalize('スロットを削除しました', '');
+    if (error) return finalize('', fmtErr(error));
+
+    // Insert suppress を idempotent に (既に同じキーで suppress 済みなら
+    // 何もしない)。schedule_exceptions には (type, date, start_time,
+    // course_id) の複合ユニークは無いので、事前に SELECT する。
+    if (slotInfo) {
+      const { data: existingSup } = await supabase
+        .from('schedule_exceptions')
+        .select('id')
+        .eq('type', 'suppress')
+        .eq('date', slotInfo.date)
+        .eq('start_time', slotInfo.start_time)
+        .eq('course_id', slotInfo.course_id)
+        .limit(1);
+      if ((existingSup ?? []).length === 0) {
+        await supabase.from('schedule_exceptions').insert({
+          type: 'suppress',
+          date: slotInfo.date,
+          start_time: slotInfo.start_time,
+          course_id: slotInfo.course_id,
+        });
+      }
+    }
+    return finalize('スロットを削除し、再生成を抑止しました', '');
   }
 
   if (op === 'bulk_delete_slots') {
@@ -135,10 +167,50 @@ if (Astro.request.method === 'POST') {
       );
     }
 
+    // 削除前に (date, start_time, course_id) を退避 → 削除後に suppress
+    // 例外を一括挿入して再生成を防ぐ。
+    const { data: slotInfoRows } = await supabase
+      .from('slots')
+      .select('id, date, start_time, course_id')
+      .in('id', deletable);
+    const slotKeys = (slotInfoRows ?? []) as Array<{ date: string; start_time: string; course_id: string }>;
+
     const { error: delErr } = await supabase.from('slots').delete().in('id', deletable);
     if (delErr) return finalize('', fmtErr(delErr));
 
-    const parts = [`✅ ${deletable.length} 枠を削除しました`];
+    // suppress 例外を idempotent に一括挿入
+    if (slotKeys.length > 0) {
+      const supKey = (k: { date: string; start_time: string; course_id: string }) =>
+        `${k.date}|${(k.start_time ?? '').slice(0, 5)}|${k.course_id}`;
+      const wantedKeys = new Set(slotKeys.map(supKey));
+
+      // 既存 suppress を検索して除外
+      const { data: existingSup } = await supabase
+        .from('schedule_exceptions')
+        .select('date, start_time, course_id')
+        .eq('type', 'suppress')
+        .in('date', slotKeys.map((k) => k.date));
+      const existingKeys = new Set(
+        (existingSup ?? []).map((r: any) =>
+          `${r.date}|${(r.start_time ?? '').slice(0, 5)}|${r.course_id}`,
+        ),
+      );
+
+      const rowsToInsert = slotKeys
+        .filter((k) => !existingKeys.has(supKey(k)))
+        .map((k) => ({
+          type: 'suppress',
+          date: k.date,
+          start_time: k.start_time,
+          course_id: k.course_id,
+        }));
+
+      if (rowsToInsert.length > 0) {
+        await supabase.from('schedule_exceptions').insert(rowsToInsert);
+      }
+    }
+
+    const parts = [`✅ ${deletable.length} 枠を削除し、再生成を抑止しました`];
     const skipped = slotIds.length - deletable.length;
     if (skipped > 0) parts.push(`(予約履歴あり ${skipped} 枠はスキップ)`);
     return finalize(parts.join(' '), '');
@@ -866,7 +938,7 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
         <h2>📆 {year}年{month}月の生成済みスロット</h2>
         <span class="ms-count">{monthSlots?.length ?? 0} 枠</span>
       </div>
-      <p class="ms-hint">生成後に間違えたスロットや不要になった枠を削除できます。<strong>予約が 1 件でも紐付いていると削除できません</strong>（履歴保護のため）。予約がある枠を削除したい場合は、先に <a href="/admin/reservations">予約一覧</a> → スロット詳細でキャンセル操作を行ってから、それでも枠自体を捨てる必要があれば ここに戻ってください。</p>
+      <p class="ms-hint">生成後に間違えたスロットや不要になった枠を削除できます。<strong>予約が 1 件でも紐付いていると削除できません</strong>（履歴保護のため）。予約がある枠を削除したい場合は、先に <a href="/admin/reservations">予約一覧</a> → スロット詳細でキャンセル操作を行ってから、それでも枠自体を捨てる必要があれば ここに戻ってください。<br><strong>削除したスロットは再生成されません</strong>（削除時に自動で「その日その時刻のその枠は生成しない」設定が追加されます）。</p>
       {(!monthSlots || monthSlots.length === 0) ? (
         <p class="ms-empty">この月にはまだスロットが生成されていません。上の「プレビュー → 生成」で作成してください。</p>
       ) : (
