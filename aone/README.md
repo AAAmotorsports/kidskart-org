@@ -126,6 +126,11 @@ printf 'あたらしいパスワード' | sha256sum
 `.github/workflows/aone-mails.yml` が 1 日 2 回 `/api/cron/mails` を叩きます。
 GitHub Secrets に `AONE_API_BASE` と `AONE_CRON_SECRET` を設定してください。
 
+## 本番導入前の通しテスト
+
+`TESTING.md` に、予約 → 変更 → キャンセル → 電話予約 → 天候変更 → メールまでを
+一通り触るためのチェックリストがある。運用開始前に 1 回通す。
+
 ## ルールエンジンのテスト
 
 ローカルの Postgres があれば、そのまま流せます (本番では実行しないこと)。
