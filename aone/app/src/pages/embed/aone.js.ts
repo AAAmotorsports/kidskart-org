@@ -82,8 +82,8 @@ const WIDGET_JS = String.raw`
     '.aone-cal td.closed{background:#fdeef0}',
     '.aone-cal td.past{background:#f7fafc}',
     '.aone-cal td.past .aone-d{color:#a8b8c5}',
-    '.aone-book{display:block;margin-top:auto;font-weight:800;color:var(--aone-red);',
-    '  font-size:.92em;text-decoration:none}',
+    '.aone-cell{display:block;height:100%;text-decoration:none;color:inherit}',
+    '.aone-cal td.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--aone-red)}',
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
     '.aone-cal td.sat .aone-d{color:#2f6fb5}',
@@ -243,7 +243,15 @@ const WIDGET_JS = String.raw`
       if (day.weather === 'cancelled') cls.push('closed');
       if (day.date < d.today) cls.push('past');
 
-      html += '<td class="' + cls.join(' ') + '"><div class="aone-d">' + day.day + '</div>';
+      var linkable = day.date >= d.today && day.weather !== 'cancelled';
+      html += '<td class="' + cls.join(' ') + (linkable ? ' linkable' : '') + '">';
+      if (linkable) {
+        html += '<a class="aone-cell" href="' + d.links.reserve + '?date=' + day.date +
+          '" title="この日のご予約へ">';
+      } else {
+        html += '<div class="aone-cell">';
+      }
+      html += '<div class="aone-d">' + day.day + '</div>';
       if (day.weather_label) html += '<div class="aone-wxs">' + esc(day.weather_label) + '</div>';
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
@@ -260,17 +268,15 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-ss">'
           + sessionLine('前', day.am_categories, day.am_open)
           + sessionLine('後', day.pm_categories, day.pm_open)
-          + '</div>'
-          + '<a class="aone-book" href="' + d.links.reserve + '?date=' + day.date + '">'
-          + (hasBookings(day) ? 'ご予約はこちら' : 'ご予約受付中') + '</a>';
+          + '</div>';
       }
-      html += '</td>';
+      html += linkable ? '</a></td>' : '</div></td>';
       col++;
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
-    html += '<p class="aone-note">セルに出ているのはすでにご予約が入っている枠です。'
-      + '何も出ていない日はどなたでもご予約いただけます。'
+    html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
+      + 'セルに出ているのはすでにご予約が入っている枠です。'
       + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;
