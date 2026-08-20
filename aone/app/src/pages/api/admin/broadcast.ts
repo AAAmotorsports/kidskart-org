@@ -59,7 +59,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         '',
         '━━━━━━━━━━━━━━━━━━━━',
         env.PUBLIC_SITE_NAME || 'A-ONE サーキット',
-        `📞 ${env.PUBLIC_SITE_TEL || '092-927-1177'}`,
+        `📞 ${env.PUBLIC_SITE_TEL || '092-919-7186'}`,
         '━━━━━━━━━━━━━━━━━━━━',
       ].join('\n');
 
