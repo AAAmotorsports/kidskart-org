@@ -71,6 +71,26 @@ const TIME = [
       </div>
 
       <div class="card">
+        <h2>予約者名の公開</h2>
+        <p class="tiny muted">
+          レースパックの予約画面に「この日のご予約」として、すでに入っている予約の
+          時間と名前を出します。管理画面には設定に関わらずフルネームが出ます。
+        </p>
+        <div class="field" style="max-width:22rem">
+          <label for="public_name_display">公開する名前</label>
+          <select id="public_name_display" data-key="public_name_display">
+            <option value="family" selected={cfg.public_name_display === 'family'}>姓のみ (山田 様)</option>
+            <option value="full" selected={cfg.public_name_display === 'full'}>入力されたお名前 (山田 太郎 様)</option>
+            <option value="hidden" selected={cfg.public_name_display === 'hidden'}>名前は出さない (時間のみ)</option>
+          </select>
+          <div class="hint">
+            姓のみは「山田 太郎」→「山田 様」、空白が無い場合は先頭 2 文字を姓とみなします。
+            3 文字姓 (佐々木 等) を正確に出したい場合は「入力されたお名前」を選んでください。
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>料金</h2>
         <p class="tiny muted">
           予約時に自動計算して予約に記録します（レースパック = 人数 × 単価、
@@ -106,14 +126,19 @@ const TIME = [
           「今日走れる？」には予約が入っている日だけ表示されます。✔が無ければ
           「走れます」（予約なしの飛び込みOK）と常時表示されます。<br />
           <strong>管理のみ</strong>: ✔があると顧客向けの予約フォームに出しません
-          （電話で相談を受けてスタッフが代理入力する運用）。管理画面の代理入力には出ます。
+          （電話で相談を受けてスタッフが代理入力する運用）。管理画面の代理入力には出ます。<br />
+          <strong>色</strong>: 管理カレンダーでの色分けに使います。
         </p>
         <table>
-          <thead><tr><th>カテゴリー</th><th>要予約</th><th>管理のみ</th><th>受付する</th></tr></thead>
+          <thead><tr><th>カテゴリー</th><th>色</th><th>要予約</th><th>管理のみ</th><th>受付する</th></tr></thead>
           <tbody>
             {cats.map((c) => (
               <tr>
                 <td>{c.name}</td>
+                <td>
+                  <input type="color" class="cat-color" data-code={c.code} value={c.color}
+                         style="width:3rem;height:1.8rem;padding:0" />
+                </td>
                 <td>
                   <input type="checkbox" class="cat-req" data-code={c.code} checked={c.requires_reservation} />
                 </td>
@@ -147,6 +172,10 @@ const TIME = [
       document.querySelectorAll('.cat-req').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
         byCode[el.dataset.code].requires_reservation = el.checked;
+      });
+      document.querySelectorAll('.cat-color').forEach((el) => {
+        byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
+        byCode[el.dataset.code].color = el.value;
       });
       document.querySelectorAll('.cat-admin').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };

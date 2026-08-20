@@ -100,6 +100,8 @@ export interface Category {
   requires_reservation: boolean;
   /** true = 顧客向け予約フォームに出さない (管理画面からの代理入力のみ) */
   admin_only: boolean;
+  /** 管理カレンダーでの表示色 */
+  color: string;
 }
 
 export async function categories(env: Env): Promise<Category[]> {

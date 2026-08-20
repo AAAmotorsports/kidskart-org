@@ -38,6 +38,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     <div class="field">
       <label>開始時間</label>
       <div id="slots" class="slots"></div>
+      <div id="rp-booked" class="booked" hidden></div>
       <div class="hint">
         <span id="picked-label" class="picked-label">開始時間を選んでください</span>
         <span id="slot-hint"> ／ △ = 残り 1 グループ ／ ✕ = 満枠</span>
@@ -113,9 +114,28 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
   let state = null;
   let picked = null;
 
+  async function loadBooked(date) {
+    const box = $('rp-booked');
+    try {
+      const res = await fetch('/api/rp/bookings?date=' + encodeURIComponent(date));
+      const data = await res.json();
+      const list = (data.bookings || []);
+      if (list.length === 0) { box.hidden = true; box.innerHTML = ''; return; }
+      box.hidden = false;
+      box.innerHTML = '<b>この日のご予約</b>' + list.map(function (b) {
+        return '<span class="booked-item">' + b.time +
+          (b.name ? ' ' + b.name : '') +
+          ' <span class="tiny">' + b.party_size + '名</span></span>';
+      }).join('');
+    } catch (e) {
+      box.hidden = true;
+    }
+  }
+
   async function loadDay() {
     const date = $('date').value;
     if (!date) return;
+    loadBooked(date);
     $('slots').innerHTML = '<span class="muted small">読み込み中…</span>';
     try {
       const res = await fetch('/api/availability?date=' + encodeURIComponent(date));
@@ -233,4 +253,11 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
   .price-box{margin-top:.4rem;padding:.5rem .7rem;background:var(--bg-3);border-radius:8px;
     font-size:.9rem;font-weight:700}
   .price-box b{color:var(--red-deep);font-size:1.05rem}
+  /* すでに入っている予約 (旧スケジュールページの「RP ○○様」に相当) */
+  .booked{margin-top:.5rem;padding:.5rem .7rem;background:var(--bg-2);border:1px dashed var(--line-2);
+    border-radius:8px;font-size:.85rem}
+  .booked b{display:block;font-size:.78rem;color:var(--ink-3);margin-bottom:.2rem}
+  .booked-item{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:6px;
+    padding:.1rem .5rem;margin:.15rem .3rem .15rem 0;font-weight:700}
+  .booked-item .tiny{font-weight:400;color:var(--ink-3)}
 </style>

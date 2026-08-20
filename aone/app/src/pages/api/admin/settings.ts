@@ -16,6 +16,10 @@ const NUMERIC_FIELDS = [
   'rp_price_per_person', 'charter_base_price', 'charter_price_per_kart',
   'charter_min_karts', 'rental_heat_price', 'rental_heat_minutes',
 ];
+const TEXT_FIELDS = ['sport_price_note'];
+const ENUM_FIELDS: Record<string, string[]> = {
+  public_name_display: ['full', 'family', 'hidden'],
+};
 const TIME_FIELDS = [
   'course_open_time', 'am_start_time', 'am_end_time',
   'pm_start_time', 'pm_end_time', 'course_close_time',
@@ -56,6 +60,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const supabase = getSupabaseAdmin(env);
+  for (const f of TEXT_FIELDS) {
+    if (body?.[f] !== undefined) patch[f] = str(body[f]) ?? null;
+  }
+  for (const [f, allowed] of Object.entries(ENUM_FIELDS)) {
+    const v = str(body?.[f]);
+    if (v) {
+      if (!allowed.includes(v)) return json({ error: `${f} の値が不正です` }, 400);
+      patch[f] = v;
+    }
+  }
+
   const { error } = await supabase.from('aone_settings').update(patch).eq('id', 1);
   if (error) return mapRpcError(error);
 
@@ -68,6 +83,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       const cpatch: Record<string, unknown> = {};
       if (typeof c?.requires_reservation === 'boolean') cpatch.requires_reservation = c.requires_reservation;
       if (typeof c?.admin_only === 'boolean') cpatch.admin_only = c.admin_only;
+      const color = str(c?.color);
+      if (color && /^#[0-9a-fA-F]{6}$/.test(color)) cpatch.color = color;
       if (typeof c?.is_active === 'boolean') cpatch.is_active = c.is_active;
       if (Object.keys(cpatch).length === 0) continue;
       const { error: cerr } = await supabase.from('aone_categories').update(cpatch).eq('code', code);
