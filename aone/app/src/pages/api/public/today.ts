@@ -48,7 +48,11 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       used_classes: s.used_classes,
       max_classes: s.max_classes,
       accepting: s.accepting,
-      categories: s.categories.map((c) => ({
+      // カート・ミニバイクは常に表示。キッズ・その他は事前予約制なので、
+      // 予約が入っている日だけ出す (index.astro と同じルール)。
+      categories: s.categories
+        .filter((c) => !c.requires_reservation || c.running)
+        .map((c) => ({
         code: c.code,
         name: c.name,
         short_name: c.short_name,
@@ -57,7 +61,13 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
         text: categoryText(c),
         walk_in_ok: c.walk_in_ok,
         requires_reservation: c.requires_reservation,
+        running: c.running,
       })),
+      // 予約が入っていないため非表示にしたカテゴリー (WordPress 側で
+      // 「キッズは要予約です」と案内したいとき用)
+      hidden_categories: s.categories
+        .filter((c) => c.requires_reservation && !c.running)
+        .map((c) => ({ code: c.code, name: c.name, short_name: c.short_name })),
     };
   });
 
