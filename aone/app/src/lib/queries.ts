@@ -102,6 +102,37 @@ export async function monthState(env: Env, year: number, month: number): Promise
   }
 }
 
+export interface RentalBooking {
+  kind: 'rp' | 'charter';
+  time: string;
+  end_time: string | null;
+  party_size: number;
+  /** 公開用の表示名。設定が hidden のときは null */
+  name: string | null;
+}
+
+/**
+ * 公開カレンダー用の RP・貸切の予約 (時間・人数・表示名のみ)。
+ * 日付をキーにしたオブジェクトで返る。名前の粒度は /admin/settings の設定次第。
+ */
+export async function rentalBookings(
+  env: Env, from: string, to: string,
+): Promise<Record<string, RentalBooking[]>> {
+  try {
+    const { data, error } = await getSupabase(env).rpc('aone_rental_bookings', {
+      p_from: from, p_to: to,
+    });
+    if (error) {
+      console.warn('[queries] aone_rental_bookings 失敗', error.message);
+      return {};
+    }
+    return (data ?? {}) as Record<string, RentalBooking[]>;
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return {};
+  }
+}
+
 export interface Category {
   code: string;
   name: string;

@@ -86,6 +86,9 @@ const WIDGET_JS = String.raw`
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
     '  font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
+    '.aone-bk{font-size:.92em;font-weight:700;line-height:1.3;border-left:3px solid var(--aone-red);',
+    '  padding-left:3px;color:#a81a2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
     '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px;line-height:1.35}',
     '.aone-ss .y{color:#14724a}.aone-ss .n{color:#a8b8c5}',
     '.aone-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}',
@@ -230,6 +233,14 @@ const WIDGET_JS = String.raw`
       if (day.weather_label) html += '<div class="aone-wxs">' + esc(day.weather_label) + '</div>';
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
+      });
+      // すでに入っている RP・貸切 (旧スケジュールページの「RP ○○様」に相当)
+      (day.bookings || []).forEach(function (b) {
+        var label = b.kind === 'rp'
+          ? b.time + ' RP'
+          : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
+        if (b.name) label += ' ' + b.name;
+        html += '<div class="aone-bk ' + b.kind + '" title="' + esc(label) + '">' + esc(label) + '</div>';
       });
       if (day.weather !== 'cancelled') {
         html += '<div class="aone-ss">'

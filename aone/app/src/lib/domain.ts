@@ -116,6 +116,21 @@ export function categoryText(c: {
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
+/**
+ * 「クオ様」「田中さん」のように敬称込みで登録された名前から敬称を落とす。
+ * 表示時に「様」を足すので、そのままだと「クオ様 様」になってしまう。
+ * (DB 側にも同じ処理の aone_strip_honorific がある — 公開名の生成用)
+ */
+export function stripHonorific(name: string | null | undefined): string {
+  return (name ?? '').trim().replace(/(様|さま|サマ|さん|サン|御中)\s*$/, '').trim();
+}
+
+/** 表示用の「○○ 様」。敬称が二重にならないようにする */
+export function nameWithHonorific(name: string | null | undefined): string {
+  const base = stripHonorific(name);
+  return base ? `${base} 様` : '';
+}
+
 export function jaDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return `${y}年${m}月${d}日 (${WD[dowOf(iso)]})`;
