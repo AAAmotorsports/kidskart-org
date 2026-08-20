@@ -89,8 +89,9 @@ const weekData = view === 'week'
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
-const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-const WD = ['日', '月', '火', '水', '木', '金', '土'];
+// 月曜はじまり。getUTCDay() は 日=0 なので月曜起点に直す
+const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+const WD = ['月', '火', '水', '木', '金', '土', '日'];
 const isOpen = (v: string) => v === 'true';
 ---
 <Base title="カレンダー | A-ONE 管理" admin wide>
@@ -127,7 +128,7 @@ const isOpen = (v: string) => v === 'true';
   {view === 'month' && (
     !days ? <div class="card"><p class="muted">取得できませんでした。</p></div> : (
       <div class="cal">
-        {WD.map((w, i) => <div class:list={['cal-head', i === 0 && 'sun', i === 6 && 'sat']}>{w}</div>)}
+        {WD.map((w, i) => <div class:list={['cal-head', i === 6 && 'sun', i === 5 && 'sat']}>{w}</div>)}
         {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
         {days.map((d) => (
           <a class:list={[

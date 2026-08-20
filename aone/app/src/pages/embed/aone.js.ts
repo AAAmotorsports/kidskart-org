@@ -183,7 +183,8 @@ const WIDGET_JS = String.raw`
 
   // ---- 月間スケジュール ---------------------------------------------------
   function renderMonth(el, d) {
-    var WD = ['日', '月', '火', '水', '木', '金', '土'];
+    // 月曜はじまり (公開スケジュール・管理カレンダーと揃える)
+    var WD = ['月', '火', '水', '木', '金', '土', '日'];
     var html = '<div class="aone-nav">'
       + '<button type="button" data-mv="prev">← 前の月</button>'
       + '<b>' + d.year + '年' + d.month + '月</b>'
@@ -191,11 +192,11 @@ const WIDGET_JS = String.raw`
 
     html += '<table class="aone-cal"><thead><tr>';
     WD.forEach(function (w, i) {
-      html += '<th class="' + (i === 0 ? 'sun' : (i === 6 ? 'sat' : '')) + '">' + w + '</th>';
+      html += '<th class="' + (i === 6 ? 'sun' : (i === 5 ? 'sat' : '')) + '">' + w + '</th>';
     });
     html += '</tr></thead><tbody><tr>';
 
-    var pad = d.days.length ? d.days[0].dow : 0;
+    var pad = d.days.length ? (d.days[0].dow + 6) % 7 : 0;
     for (var i = 0; i < pad; i++) html += '<td class="pad"></td>';
     var col = pad;
 
