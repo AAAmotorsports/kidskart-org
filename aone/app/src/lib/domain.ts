@@ -98,6 +98,9 @@ export const STATUS_TEXT: Record<CategoryStatus, string> = {
  * キッズカートとその他 (大型バイク等) は事前予約が必要 (仕様外の実運用ルール)。
  * 「走れます」と出したせいでキッズの子が来て走れない、という事故を防ぐため、
  * 予約が要るカテゴリーは必ず「要予約」と出す。
+ *
+ * なお 'limited' (△ 残りわずか) はスポーツ走行では使わない (2026-08 オーナー指示)。
+ * DB 側 (0007) が open / closed / off しか返さないので、この分岐は保険。
  */
 export function categoryText(c: {
   status: CategoryStatus;

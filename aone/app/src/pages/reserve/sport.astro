@@ -188,7 +188,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     });
     const anyOpen = s.categories.some((c) => c.status === 'open' || c.status === 'limited');
     $('cat-hint').textContent = anyOpen
-      ? '○ 受付可 ／ △ 残りわずか ／ ✕ 受付停止 ／ — 対象外'
+      ? '○ 受付可 ／ ✕ 受付停止 ／ — 対象外'
       : 'この時間帯は受付を停止しています。別の日・時間帯をお選びください。';
   }
 

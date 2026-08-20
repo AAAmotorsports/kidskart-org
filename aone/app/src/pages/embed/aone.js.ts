@@ -175,7 +175,7 @@ const WIDGET_JS = String.raw`
       + '<a class="aone-btn" href="' + d.links.charter + '">貸切を申し込む</a>'
       + '<a class="aone-btn" href="' + d.links.night + '">ナイターを相談</a></div>';
     html += '<p class="aone-note">○ 走れます（ご予約なしでもお越しいただけます） ／ '
-      + '△ 残りわずか ／ ✕ 受付停止</p>';
+      + '✕ 受付停止</p>';
     html += '</div>';
 
     el.innerHTML = html;
