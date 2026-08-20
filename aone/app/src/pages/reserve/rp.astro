@@ -16,6 +16,7 @@ const maxDate = addDays(today, 180);
 const initialDate = Astro.url.searchParams.get('date') ?? today;
 ---
 <Base title="レースパックのご予約 | A-ONE サーキット">
+  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
   <h1>レースパック (RP) のご予約</h1>
   <p class="small muted">
     3 名以上のグループでお楽しみいただけるレースパックです。代表者 1 名がご予約ください。

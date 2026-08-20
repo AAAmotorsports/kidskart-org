@@ -180,6 +180,8 @@ export interface Reservation {
   start_time: string | null;
   end_time: string | null;
   category_code: string | null;
+  /** ナイターの内訳 (rp / charter)。ナイター以外は null */
+  night_kind: string | null;
   party_size: number;
   vehicle_count: number | null;
   customer_id: string | null;
@@ -204,7 +206,7 @@ export interface Reservation {
 
 export const RESERVATION_COLUMNS =
   'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
-  'party_size,vehicle_count,customer_id,contact_name,contact_kana,contact_phone,contact_email,' +
+  'night_kind,party_size,vehicle_count,customer_id,contact_name,contact_kana,contact_phone,contact_email,' +
   'preferred_contact,source,request_note,staff_memo,tags,amount,is_paid,forced,forced_reason,' +
   'access_token,cancelled_at,cancel_reason,created_at';
 

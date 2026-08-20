@@ -184,7 +184,7 @@ export function timeRangeLabel(r: {
   end_time?: string | null;
 }): string {
   if (r.kind === 'sport') {
-    return r.session === 'am' ? '午前 (9:00〜12:00)' : '午後 (13:00〜16:30)';
+    return r.session === 'am' ? 'AM (9:00〜12:00)' : 'PM (13:00〜16:30)';
   }
   const s = hhmm(r.start_time);
   const e = hhmm(r.end_time);

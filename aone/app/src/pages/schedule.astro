@@ -136,7 +136,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
 
                   {!closed && showSport && (
                     <div class="tiny sport-lines">
-                      {([['前', d.am_categories], ['後', d.pm_categories]] as const).map(([label, cats]) => {
+                      {([['AM', d.am_categories], ['PM', d.pm_categories]] as const).map(([label, cats]) => {
                         const names = bookedClasses(cats as any);
                         if (names.length > 0) {
                           return <div class="ok"><b>{label}</b> {names.join('・')}</div>;
@@ -160,7 +160,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
       <p class="tiny muted" style="margin-top:.6rem">
         <strong>日付をクリックするとご予約に進めます。</strong>
         セルに出ているのは<strong>すでにご予約が入っている枠</strong>です
-        （{showSport && '前 / 後 = 午前 / 午後'}{showSport && showRental && '、'}
+        （{showSport && 'AM / PM = 午前 / 午後'}{showSport && showRental && '、'}
         {showRental && 'RP・貸切は時間と代表者名'}）。
         何も出ていない日はどなたでもご予約いただけます。
         受付停止はレース・イベント・貸切・満枠などによるものです。

@@ -1,26 +1,57 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { categories } from '@lib/queries';
+import { settings } from '@lib/queries';
 import { todayJst, addDays } from '@lib/domain';
 
 export const prerender = false;
 
-// ナイター走行の申込 (仕様 6)。
-// 通常の自動予約とは分け、常に「確認中」で受け付けて A-ONE が折り返す。
+// ナイター走行の申込 (仕様 6 + 2026-08 オーナー指示)。
+//
+// ナイターは **レンタルカートの商品としてのみ** 提供する。
+// つまり レースパック か 貸切 のどちらかで、持ち込み (スポーツ走行) の
+// ナイターは受け付けない。
+//
+// 通常営業時間外なので自動判定はせず、常に「確認中」で受けて A-ONE が折り返す。
 const env = envFrom(Astro.locals);
-const cats = await categories(env);
+const cfg = await settings(env);
+const rpPrice: number = cfg?.rp_price_per_person ?? 6600;
+const charterBase: number = cfg?.charter_base_price ?? 10000;
+const charterPerKart: number = cfg?.charter_price_per_kart ?? 10000;
+const charterMinKarts: number = cfg?.charter_min_karts ?? 5;
+const rpMinParty: number = cfg?.rp_min_party ?? 3;
+
 const today = todayJst();
 const maxDate = addDays(today, 365);
+const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
 ---
 <Base title="ナイター走行のご相談 | A-ONE サーキット">
+  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
   <h1>ナイター走行のご相談</h1>
   <p class="small muted">
     ナイター走行は事前予約・要相談です。ご希望をお送りいただくと、A-ONE より
     折り返しご連絡いたします (この時点では予約は確定しません)。
   </p>
+  <div class="notice info small" style="margin-bottom:1rem">
+    ナイターは<strong>レースパック</strong>または<strong>貸切</strong>でのご利用となります。
+    お持ち込み車両でのナイター走行は承っておりません。
+  </div>
 
   <form id="form" class="card" novalidate>
+    <div class="field">
+      <label>ご希望の内容</label>
+      <div class="choice" id="night-kind">
+        <label>
+          <input type="radio" name="nk" value="rp" checked />
+          レースパック（{yen(rpPrice)} / 人）
+        </label>
+        <label>
+          <input type="radio" name="nk" value="charter" />
+          貸切（{yen(charterBase)} ＋ {yen(charterPerKart)} × 台数）
+        </label>
+      </div>
+    </div>
+
     <div class="two">
       <div class="field">
         <label for="date">ご希望日</label>
@@ -32,29 +63,33 @@ const maxDate = addDays(today, 365);
       </div>
     </div>
 
-    <div class="field">
-      <label for="category">カテゴリー</label>
-      <select id="category">
-        {cats.map((c) => <option value={c.code}>{c.name}</option>)}
-      </select>
+    <div class="field" id="wrap-end" hidden>
+      <label for="end">ご希望終了時間</label>
+      <input type="time" id="end" value="21:00" step="1800" />
     </div>
 
     <div class="two">
       <div class="field">
         <label for="party">ご参加人数</label>
-        <input type="number" id="party" min="1" max="50" value="1" required />
+        <input type="number" id="party" min={rpMinParty} max="50" value={rpMinParty} required />
+        <div class="hint" id="party-hint">レースパックは {rpMinParty} 名以上で承ります。</div>
       </div>
-      <div class="field">
-        <label for="vehicles">台数</label>
-        <input type="number" id="vehicles" min="1" max="50" value="1" />
+      <div class="field" id="wrap-karts" hidden>
+        <label for="karts">カート台数</label>
+        <input type="number" id="karts" min={charterMinKarts} max="30" value={charterMinKarts} />
+        <div class="hint">最小 {charterMinKarts} 台から承ります。</div>
       </div>
+    </div>
+
+    <div class="price-box">お支払い予定額 <b id="price">—</b>
+      <span class="tiny muted">（ご相談のうえ確定します）</span>
     </div>
 
     <fieldset>
       <legend>ご連絡先</legend>
       <div class="two">
         <div class="field">
-          <label for="name">お名前</label>
+          <label for="name">お名前 / 団体名</label>
           <input type="text" id="name" autocomplete="name" required />
         </div>
         <div class="field">
@@ -68,7 +103,7 @@ const maxDate = addDays(today, 365);
       </div>
       <div class="field">
         <label for="note">ご要望・ご相談内容</label>
-        <textarea id="note" placeholder="何時ごろまで走りたい／照明の希望 など"></textarea>
+        <textarea id="note" placeholder="何時ごろまで走りたい／人数が増えるかもしれない など"></textarea>
       </div>
     </fieldset>
 
@@ -77,14 +112,58 @@ const maxDate = addDays(today, 365);
   </form>
 </Base>
 
-<script is:inline>
+<script is:inline define:vars={{ RP_PRICE: rpPrice, BASE: charterBase, PER_KART: charterPerKart, MIN_KARTS: charterMinKarts, MIN_PARTY: rpMinParty }}>
   const $ = (id) => document.getElementById(id);
+
+  function nightKind() {
+    const el = document.querySelector('input[name=nk]:checked');
+    return el ? el.value : 'rp';
+  }
+
+  function syncFields() {
+    const kind = nightKind();
+    $('wrap-end').hidden = kind !== 'charter';
+    $('wrap-karts').hidden = kind !== 'charter';
+    $('party').min = kind === 'rp' ? String(MIN_PARTY) : '1';
+    $('party-hint').textContent = kind === 'rp'
+      ? 'レースパックは ' + MIN_PARTY + ' 名以上で承ります。'
+      : 'おおよその人数で構いません。';
+    renderPrice();
+  }
+
+  function renderPrice() {
+    if (nightKind() === 'rp') {
+      const n = Number($('party').value || 0);
+      $('price').textContent = n >= 1
+        ? '¥' + (n * RP_PRICE).toLocaleString('ja-JP') + ' （' + n + '名 × ¥' +
+          RP_PRICE.toLocaleString('ja-JP') + '）'
+        : '—';
+    } else {
+      const k = Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS);
+      $('price').textContent = '¥' + (BASE + PER_KART * k).toLocaleString('ja-JP') +
+        ' （基本料 ¥' + BASE.toLocaleString('ja-JP') + ' ＋ ' + k + '台 × ¥' +
+        PER_KART.toLocaleString('ja-JP') + '）';
+    }
+  }
+
+  document.querySelectorAll('input[name=nk]').forEach((el) => el.addEventListener('change', syncFields));
+  $('party').addEventListener('input', renderPrice);
+  $('karts').addEventListener('input', renderPrice);
+  syncFields();
+
   window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'night' });
 
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('error');
     err.hidden = true;
+    const kind = nightKind();
+    if (kind === 'rp' && Number($('party').value || 0) < MIN_PARTY) {
+      err.hidden = false;
+      err.textContent = 'レースパックは ' + MIN_PARTY + ' 名以上で承ります';
+      return;
+    }
+
     const btn = $('submit');
     btn.disabled = true;
     btn.textContent = '送信中…';
@@ -94,11 +173,14 @@ const maxDate = addDays(today, 365);
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           kind: 'night',
+          night_kind: kind,
           date: $('date').value,
           start_time: $('start').value,
-          category_code: $('category').value,
+          end_time: kind === 'charter' ? $('end').value : undefined,
           party_size: Number($('party').value || 1),
-          vehicle_count: Number($('vehicles').value || 1),
+          vehicle_count: kind === 'charter'
+            ? Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS)
+            : undefined,
           name: $('name').value,
           phone: $('phone').value,
           email: $('email').value,
@@ -119,6 +201,7 @@ const maxDate = addDays(today, 365);
 </script>
 
 <style>
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
-  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+  .price-box{margin:0 0 1rem;padding:.6rem .8rem;background:var(--bg-3);border-radius:8px;
+    font-size:.92rem;font-weight:700}
+  .price-box b{color:var(--red-deep);font-size:1.08rem}
 </style>

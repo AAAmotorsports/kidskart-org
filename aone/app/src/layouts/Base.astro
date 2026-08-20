@@ -158,6 +158,12 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
     .agree{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}
     @media (max-width:560px){ .two{grid-template-columns:1fr} }
 
+    /* ---- 戻るリンク (予約フォームの先頭に置く) ---- */
+    .back-link{display:inline-flex;align-items:center;gap:.3rem;font-size:.85rem;font-weight:700;
+      color:var(--ink-2);text-decoration:none;margin:0 0 .5rem;padding:.3rem .8rem .3rem .6rem;
+      border:1px solid var(--line-2);border-radius:100px;background:#fff}
+    .back-link:hover{box-shadow:0 2px 6px rgba(0,0,0,.07)}
+
     /* ---- 通知 ---- */
     .notice{border-radius:10px;padding:.7rem .9rem;font-size:.9rem;border:1px solid var(--line-2);background:var(--bg-2)}
     .notice.ok{background:var(--green-soft);border-color:#b9e3cf}

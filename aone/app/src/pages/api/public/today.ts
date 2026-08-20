@@ -43,7 +43,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     const s = state.sport[key];
     return {
       key,
-      label: key === 'am' ? '午前' : '午後',
+      label: key === 'am' ? 'AM' : 'PM',
       time: `${s.start_time}〜${s.end_time}`,
       used_classes: s.used_classes,
       max_classes: s.max_classes,

@@ -58,6 +58,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     date,
     session: str(body?.session),
     category_code: str(body?.category_code),
+    night_kind: str(body?.night_kind),
     start_time: str(body?.start_time),
     end_time: str(body?.end_time),
     party_size: Number(body?.party_size) || 1,

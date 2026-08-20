@@ -36,7 +36,7 @@ const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
 const dead = rows.filter((r) => ['cancelled', 'no_show'].includes(r.status));
 const needsAction = live.filter((r) => ['contact_wait', 'checking'].includes(r.status));
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
-const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 ---
 <Base title={`${date} の運営 | A-ONE 管理`} admin wide>
   <div class="spread" style="margin-bottom:.6rem">
@@ -228,13 +228,21 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
         <div class="field" id="wrap-session">
           <label>時間帯 <span class="tiny muted">(複数可)</span></label>
           <div class="choice">
-            <label><input type="checkbox" class="n-sess" value="am" checked /> 午前</label>
-            <label><input type="checkbox" class="n-sess" value="pm" /> 午後</label>
+            <label><input type="checkbox" class="n-sess" value="am" checked /> AM</label>
+            <label><input type="checkbox" class="n-sess" value="pm" /> PM</label>
           </div>
         </div>
         <div class="field" id="wrap-category">
           <label for="n-category">カテゴリー</label>
           <select id="n-category">{cats.map((c) => <option value={c.code}>{c.name}</option>)}</select>
+        </div>
+        <div class="field" id="wrap-nightkind">
+          <label for="n-nightkind">ナイターの内訳</label>
+          <select id="n-nightkind">
+            <option value="rp">レースパック</option>
+            <option value="charter">貸切</option>
+          </select>
+          <div class="tiny muted">ナイターはレンタル (RP・貸切) のみお受けします。</div>
         </div>
         <div class="two" id="wrap-times">
           <div class="field">
@@ -497,7 +505,9 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
   function syncKindFields() {
     const kind = $('n-kind').value;
     $('wrap-session').hidden = kind !== 'sport';
-    $('wrap-category').hidden = !(kind === 'sport' || kind === 'night');
+    // ナイターはレンタル (RP・貸切) のみなので、カテゴリーではなく内訳を選ぶ
+    $('wrap-category').hidden = kind !== 'sport';
+    $('wrap-nightkind').hidden = kind !== 'night';
     $('wrap-times').hidden = kind === 'sport';
   }
   $('n-kind').addEventListener('change', syncKindFields);
@@ -536,16 +546,18 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
 
     for (const c of combos) {
       const label = c.date.slice(5).replace('-', '/') +
-        (c.session ? (c.session === 'am' ? ' 午前' : ' 午後') : '');
+        (c.session ? (c.session === 'am' ? ' AM' : ' PM') : '');
       try {
         const r = await post('/api/admin/reservation', {
           action: 'create',
           kind,
           date: c.date,
           session: c.session,
-          category_code: (kind === 'sport' || kind === 'night') ? $('n-category').value : undefined,
+          category_code: kind === 'sport' ? $('n-category').value : undefined,
+          night_kind: kind === 'night' ? $('n-nightkind').value : undefined,
           start_time: kind === 'sport' ? undefined : $('n-start').value,
-          end_time: kind === 'charter' ? $('n-end').value : undefined,
+          end_time: (kind === 'charter' || (kind === 'night' && $('n-nightkind').value === 'charter'))
+            ? $('n-end').value : undefined,
           party_size: Number($('n-party').value || 1),
           vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
           name: $('n-name').value,
