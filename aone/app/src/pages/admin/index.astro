@@ -132,9 +132,9 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
   .kpi .n{font-size:1.6rem;font-weight:800;line-height:1.1}
   .kpi .n.small{font-size:1rem}
   .kpi .l{font-size:.72rem;color:var(--ink-3);font-weight:700}
-  .week{display:grid;grid-template-columns:repeat(7,1fr);gap:.4rem}
+  .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.4rem}
   .wday{display:block;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;
-    padding:.4rem;text-decoration:none;color:inherit;min-height:80px}
+    padding:.4rem;text-decoration:none;color:inherit;min-height:80px;min-width:0;overflow:hidden}
   .wday:hover{box-shadow:0 3px 8px rgba(0,0,0,.08)}
   .wday.is-today{border-color:var(--red);outline:1px solid var(--red)}
   .wd{font-weight:800;font-size:.8rem;margin-bottom:.2rem}
