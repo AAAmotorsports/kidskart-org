@@ -50,6 +50,14 @@ for (const r of monthRows.filter((r) => inMode(r.kind))) {
   byDate.set(r.date, list);
 }
 
+/** 予約 1 件の左の色帯。スポーツ走行はカテゴリー色、それ以外は種別色 */
+function rowColor(r: Reservation): string {
+  if (r.kind === 'sport') {
+    return cats.find((c) => c.code === r.category_code)?.color ?? '#6d8095';
+  }
+  return r.kind === 'rp' ? '#d7263d' : r.kind === 'charter' ? '#7c6fdb' : '#2f6fb5';
+}
+
 /** カレンダーのセル 1 行ぶんの表記 (例: 「前 カート 山田様」「10:00 RP 田中様 5名」) */
 function cellLabel(r: Reservation): string {
   const name = `${r.contact_name} 様`;
@@ -81,8 +89,9 @@ const weekData = view === 'week'
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
-const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-const WD = ['日', '月', '火', '水', '木', '金', '土'];
+// 月曜はじまり。getUTCDay() は 日=0 なので月曜起点に直す
+const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+const WD = ['月', '火', '水', '木', '金', '土', '日'];
 const isOpen = (v: string) => v === 'true';
 ---
 <Base title="カレンダー | A-ONE 管理" admin wide>
@@ -119,7 +128,7 @@ const isOpen = (v: string) => v === 'true';
   {view === 'month' && (
     !days ? <div class="card"><p class="muted">取得できませんでした。</p></div> : (
       <div class="cal">
-        {WD.map((w, i) => <div class:list={['cal-head', i === 0 && 'sun', i === 6 && 'sat']}>{w}</div>)}
+        {WD.map((w, i) => <div class:list={['cal-head', i === 6 && 'sun', i === 5 && 'sat']}>{w}</div>)}
         {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
         {days.map((d) => (
           <a class:list={[
@@ -134,6 +143,7 @@ const isOpen = (v: string) => v === 'true';
             ))}
             {(byDate.get(d.date) ?? []).map((r) => (
               <div class:list={['tiny', 'res', r.kind, r.status !== 'confirmed' && 'pending']}
+                   style={`border-left-color:${rowColor(r)}`}
                    title={`${r.contact_name} 様 / ${r.party_size}名 / ${STATUS_LABELS[r.status]}${r.contact_phone ? ' / ' + r.contact_phone : ''}${r.staff_memo ? ' / ' + r.staff_memo : ''}`}>
                 {cellLabel(r)}
                 {r.status !== 'confirmed' && <span class="pend-mark">{STATUS_LABELS[r.status]}</span>}
@@ -155,13 +165,15 @@ const isOpen = (v: string) => v === 'true';
 
   {view === 'month' && days && (
     <p class="tiny muted" style="margin:.5rem 0 0">
-      セル内の各行が予約 1 件です。<span class="lg res sport">前 カート 山田様</span>
-      <span class="lg res rp">10:00 RP 田中様 5名</span>
-      <span class="lg res charter">貸切</span>
-      <span class="lg res night">ナイター</span>
+      セル内の各行が予約 1 件です。左の色帯で種別が分かります:
+      {cats.map((c) => (
+        <span class="lg res" style={`border-left-color:${c.color}`}>{c.name}</span>
+      ))}
+      <span class="lg res" style="border-left-color:#d7263d">RP</span>
+      <span class="lg res" style="border-left-color:#7c6fdb">貸切</span>
+      <span class="lg res" style="border-left-color:#2f6fb5">ナイター</span>
       <span class="lg res pending">連絡待ち・確認中</span>
-      ／ 日付をクリックするとその日の運営画面が開きます。氏名はこの管理画面にだけ表示され、
-      公開スケジュールには出ません。
+      ／ 日付をクリックするとその日の運営画面が開きます。
     </p>
   )}
 
@@ -333,10 +345,10 @@ const isOpen = (v: string) => v === 'true';
   /* 予約 1 件 = 1 行。今までの手書きスケジュール表と同じ読み方ができるようにする */
   .res{border-left:3px solid var(--ink-4);padding-left:.25rem;line-height:1.35;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .res.sport{border-color:var(--ink-3)}
-  .res.rp{border-color:var(--red);color:var(--red-deep);font-weight:700}
-  .res.charter{border-color:var(--violet, #7c6fdb);color:#5646b8;font-weight:700}
-  .res.night{border-color:#2f6fb5;color:#1d5386;font-weight:700}
+  /* 色帯はカテゴリー / 種別ごとに inline style で入れる (色はデータ側で持つ) */
+  .res.rp{color:var(--red-deep);font-weight:700}
+  .res.charter{color:#5646b8;font-weight:700}
+  .res.night{color:#1d5386;font-weight:700}
   .res.pending{background:#fff5e2}
   .pend-mark{margin-left:.2rem;font-size:.9em;color:#8a5a06}
   .lg{display:inline-block;margin:0 .3rem;padding:0 .3rem;white-space:nowrap}

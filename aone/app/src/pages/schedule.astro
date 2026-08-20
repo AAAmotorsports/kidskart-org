@@ -31,9 +31,10 @@ const days = await monthState(env, year, month);
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
 
-// 月初の曜日ぶんだけ空セルを置く
-const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-const WD = ['日', '月', '火', '水', '木', '金', '土'];
+// カレンダーは月曜はじまり (日本のサーキット運営では週末が右端に来る方が読みやすい)。
+// getUTCDay() は 日=0 なので、月曜を 0 とする並びに直してから空セルを置く。
+const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+const WD = ['月', '火', '水', '木', '金', '土', '日'];
 const isOpen = (v: string) => v === 'true';
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
@@ -69,7 +70,7 @@ const isOpen = (v: string) => v === 'true';
   ) : (
     <>
       <div class="cal">
-        {WD.map((w, i) => <div class:list={['cal-head', i === 0 && 'sun', i === 6 && 'sat']}>{w}</div>)}
+        {WD.map((w, i) => <div class:list={['cal-head', i === 6 && 'sun', i === 5 && 'sat']}>{w}</div>)}
         {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
         {days.map((d) => {
           const dnum = Number(d.date.slice(8, 10));
