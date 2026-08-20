@@ -110,7 +110,7 @@ function footer(env: Env): string[] {
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     env.PUBLIC_SITE_NAME || 'A-ONE サーキット',
-    `📞 ${env.PUBLIC_SITE_TEL || '092-927-1177'}`,
+    `📞 ${env.PUBLIC_SITE_TEL || '092-919-7186'}`,
     `✉️ ${env.MAIL_REPLY_TO || 'info@kidskart.org'}`,
     '━━━━━━━━━━━━━━━━━━━━',
   ];

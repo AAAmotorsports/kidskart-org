@@ -56,7 +56,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   <!-- ============ 天候ワンタップ ============ -->
   <div class="card wx-card">
     <div class="spread" style="margin-bottom:.5rem">
-      <h2 style="margin:0">本日の営業状態</h2>
+      <h2 style="margin:0"><span class="ic">🌦</span> 本日の営業状態</h2>
       <span class="tiny muted">押すとすぐ公開ページに反映されます</span>
     </div>
     <div class="wx-buttons">
@@ -95,7 +95,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
 
   {pending.length > 0 && (
     <div class="card">
-      <h2>要対応 (連絡待ち・確認中)</h2>
+      <h2><span class="ic">⚠️</span> 要対応 (連絡待ち・確認中)</h2>
       <div class="table-scroll">
         <table>
           <thead><tr><th>日付</th><th>種別</th><th>時間</th><th>お名前</th><th>連絡先</th><th>状態</th><th></th></tr></thead>
@@ -121,7 +121,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   )}
 
   <div class="card">
-    <h2>今日の受付状況</h2>
+    <h2><span class="ic">🏁</span> 今日の受付状況</h2>
     {state ? (
       <div class="row" style="gap:1.4rem">
         {sessions.map(([key, label]) => (
@@ -151,7 +151,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   </div>
 
   <div class="card">
-    <h2>今週</h2>
+    <h2><span class="ic">📅</span> 今週</h2>
     <div class="week">
       {week.map((d, i) => {
         const s = weekStates[i];
@@ -231,6 +231,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
 <style>
   /* 天候ワンタップ: 雨が降った瞬間に押せることが最優先なので、
      ボタンを大きく・色で状態が分かるようにする */
+  .ic{font-size:1.05em;margin-right:.15rem}
   .wx-card{border-left:4px solid var(--amber)}
   .wx-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem}
   .wx-btn{display:flex;align-items:center;justify-content:center;gap:.35rem;

@@ -61,7 +61,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     <div>
       <!-- ============ 営業状態 (天候) ============ -->
       <div class="card">
-        <h2>営業状態</h2>
+        <h2><span class="ic">🌦</span> 営業状態</h2>
         <div class="choice" id="wx-choice">
           {Object.entries(WEATHER_LABELS).map(([code, label]) => (
             <label>
@@ -100,7 +100,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
       <!-- ============ 一括連絡 ============ -->
       <div class="card">
-        <h2>この日の予約者へ一括連絡</h2>
+        <h2><span class="ic">✉️</span> この日の予約者へ一括連絡</h2>
         <p class="tiny muted">メールアドレスのある {mailTargets} 件に送信します (キャンセル済みを除く)。</p>
         <div class="field">
           <label for="bc-subject">件名</label>
@@ -116,7 +116,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
       <!-- ============ 予約一覧 ============ -->
       <div class="card">
-        <h2>予約 ({live.length} 件 / {live.reduce((a, r) => a + (r.party_size ?? 0), 0)} 名)</h2>
+        <h2><span class="ic">📋</span> 予約 ({live.length} 件 / {live.reduce((a, r) => a + (r.party_size ?? 0), 0)} 名)</h2>
         {live.length === 0 && <p class="muted small">この日の予約はまだありません。</p>}
         {live.map((r) => (
           <div class="res" data-id={r.id}>
@@ -177,7 +177,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     <div>
       <!-- ============ 受付状況 ============ -->
       <div class="card">
-        <h2>受付状況</h2>
+        <h2><span class="ic">🏁</span> 受付状況</h2>
         {state ? (
           <>
             {sessions.map(([key, label]) => (
@@ -208,8 +208,8 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
       </div>
 
       <!-- ============ 代理入力 ============ -->
-      <div class="card">
-        <h2>電話・店頭予約の入力</h2>
+      <div class="card entry-card">
+        <h2 class="entry-head"><span class="ic">📞</span> 電話・店頭予約の入力</h2>
         <p class="tiny muted">Web 予約と同じ台帳に入ります。入力した瞬間に Web 側の空きへ反映されます。</p>
         <div class="field">
           <label for="n-kind">種別</label>
@@ -308,7 +308,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
       <!-- ============ ブロック予定 ============ -->
       <div class="card">
-        <h2>この日の予定・受付停止</h2>
+        <h2><span class="ic">📅</span> この日の予定・受付停止</h2>
         {(state?.blocks ?? []).map((b) => (
           <div class="spread blk">
             <div>
@@ -630,6 +630,11 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
 <style>
   .cols{display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;align-items:start}
+  .ic{font-size:1.05em;margin-right:.15rem}
+  /* 電話が鳴ったらまずここ。1 画面の中で一番見つけやすくしておく */
+  .entry-card{border:2px solid var(--red);box-shadow:0 4px 14px rgba(215,38,61,.12)}
+  .entry-head{background:var(--red);color:#fff;margin:-1rem -1rem .7rem;padding:.6rem 1rem;
+    border-radius:10px 10px 0 0;font-size:1.05rem}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
   .res{border:1px solid var(--line);border-radius:10px;padding:.6rem;margin-bottom:.6rem;background:var(--bg-2)}
   .res .acts{margin-top:.4rem}
