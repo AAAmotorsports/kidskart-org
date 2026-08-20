@@ -36,6 +36,15 @@ const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padS
 const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
 const WD = ['月', '火', '水', '木', '金', '土', '日'];
 const isOpen = (v: string) => v === 'true';
+
+// その時間帯に実際に走れるカテゴリー名。
+// カート・ミニバイクは予約なしで走れるので常に候補、
+// キッズカート・その他は予約が入っている日だけ (= その日は実際に走っている)。
+function runnable(cats: { short_name: string; status: string; requires_reservation: boolean; running: boolean }[]): string[] {
+  return (cats ?? [])
+    .filter((c) => c.status === 'open' && (!c.requires_reservation || c.running))
+    .map((c) => c.short_name);
+}
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
   <div class="spread" style="margin-bottom:.8rem">
@@ -97,9 +106,13 @@ const isOpen = (v: string) => v === 'true';
                 </div>
               )}
               {!closed && showSport && (
-                <div class="tiny day-slots">
-                  <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
-                  <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
+                <div class="tiny sport-lines">
+                  {([['前', d.am_categories], ['後', d.pm_categories]] as const).map(([label, cats]) => {
+                    const names = runnable(cats as any);
+                    return names.length > 0
+                      ? <div class="ok"><b>{label}</b> {names.join('・')}</div>
+                      : <div class="ng"><b>{label}</b> 受付停止</div>;
+                  })}
                 </div>
               )}
               {d.date >= today && !closed && (
@@ -112,8 +125,8 @@ const isOpen = (v: string) => v === 'true';
 
       <p class="tiny muted" style="margin-top:.6rem">
         {showRental && 'RP ○ = レースパックの受付可。'}
-        {showSport && '前/後 ○ = 午前/午後のスポーツ走行の受付可。'}
-        ✕ = 受付停止 (レース・イベント・貸切・満枠など)。
+        {showSport && '前 / 後 = 午前 / 午後に走行できるカテゴリーです。'}
+        受付停止はレース・イベント・貸切・満枠などによるものです。
         当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
       </p>
 
@@ -158,6 +171,11 @@ const isOpen = (v: string) => v === 'true';
   .mode-btn.on{background:var(--ink);color:#fff}
   .day-slots{display:flex;flex-wrap:wrap;gap:.2rem}
   .day-slots:last-of-type{margin-top:auto}
+  /* 「前 カート・ミニバイク」のように、その時間帯に走れるカテゴリーを出す */
+  .sport-lines{margin-top:auto;line-height:1.4}
+  .sport-lines b{display:inline-block;min-width:1.4em;color:var(--ink-3);font-weight:800}
+  .sport-lines .ok{color:#14724a}
+  .sport-lines .ng{color:var(--ink-4)}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
   .book{margin-top:.1rem;text-decoration:none;font-weight:800;color:var(--red)}
   @media (max-width:640px){

@@ -62,6 +62,16 @@ export async function dayState(env: Env, date: string): Promise<DayState | null>
   }
 }
 
+export interface MonthCategory {
+  code: string;
+  name: string;
+  short_name: string;
+  status: 'open' | 'limited' | 'closed' | 'off';
+  running: boolean;
+  requires_reservation: boolean;
+  walk_in_ok: boolean;
+}
+
 export interface MonthDay {
   date: string;
   dow: number;
@@ -69,6 +79,8 @@ export interface MonthDay {
   weather: string;
   sport_am: string;
   sport_pm: string;
+  am_categories: MonthCategory[];
+  pm_categories: MonthCategory[];
   rp_free: number;
   blocks: Array<{ title: string; public_label: string; kind: string; is_public: boolean }>;
   counts: { sport: number; rp: number; charter: number; night: number; people: number };
