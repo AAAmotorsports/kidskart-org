@@ -205,6 +205,32 @@ export async function reservationById(env: Env, id: string) {
   }
 }
 
+/**
+ * 1 か月ぶんの予約 (管理カレンダーに予約名を出すため)。
+ * キャンセル・無断キャンセルは除く。日付順・時間順で返す。
+ */
+export async function reservationsOfMonth(env: Env, year: number, month: number) {
+  const first = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const last = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  try {
+    const { data, error } = await getSupabaseAdmin(env)
+      .from('aone_reservations')
+      .select(RESERVATION_COLUMNS)
+      .gte('date', first)
+      .lte('date', last)
+      .in('status', ['confirmed', 'contact_wait', 'checking', 'completed'])
+      .order('date')
+      .order('session', { nullsFirst: true })
+      .order('start_time', { nullsFirst: true });
+    if (error) throw error;
+    return (data ?? []) as unknown as Reservation[];
+  } catch (e) {
+    console.warn('[queries] reservationsOfMonth 失敗', e);
+    return [] as Reservation[];
+  }
+}
+
 /** 要対応 (連絡待ち・確認中) の予約 — 管理トップに出す */
 export async function pendingReservations(env: Env, fromDate: string) {
   try {
