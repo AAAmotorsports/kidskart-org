@@ -204,7 +204,10 @@ const WIDGET_JS = String.raw`
     var open = cats.some(function (c) {
       return c.status === 'open' && (!c.requires_reservation || c.running);
     });
-    return open ? '' : '<div class="n">' + label + ' 受付停止</div>';
+    // 空いている枠は ○、止まっている枠は理由が分かるように「受付停止」
+    return open
+      ? '<div class="y">' + label + ' ○</div>'
+      : '<div class="n">' + label + ' 受付停止</div>';
   }
 
   /** その日に何か予約が入っているか */
@@ -276,7 +279,7 @@ const WIDGET_JS = String.raw`
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
     html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
-      + 'セルに出ているのはすでにご予約が入っている枠です。'
+      + '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。'
       + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;

@@ -154,11 +154,12 @@ const isOpen = (v: string) => v === 'true';
             {d.counts.people > 0 && (
               <div class="tiny cnt"><span class="muted">計 {d.counts.people} 名</span></div>
             )}
-            <div class="tiny sl">
-              <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前{isOpen(d.sport_am) ? '○' : '✕'}</span>
-              <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>後{isOpen(d.sport_pm) ? '○' : '✕'}</span>
-
-            </div>
+            {mode !== 'rental' && (
+              <div class="tiny sl">
+                <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>AM {isOpen(d.sport_am) ? '○' : '✕'}</span>
+                <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>PM {isOpen(d.sport_pm) ? '○' : '✕'}</span>
+              </div>
+            )}
           </a>
         ))}
       </div>

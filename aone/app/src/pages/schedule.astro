@@ -138,13 +138,13 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                     <div class="tiny sport-lines">
                       {([['AM', d.am_categories], ['PM', d.pm_categories]] as const).map(([label, cats]) => {
                         const names = bookedClasses(cats as any);
+                        // 予約が入っていればそのクラス名、空いていれば ○、
+                        // 止まっていれば理由が分かるように「受付停止」を出す。
                         if (names.length > 0) {
                           return <div class="ok"><b>{label}</b> {names.join('・')}</div>;
                         }
-                        // 予約が無い時間帯は、受付できるなら何も出さない (下の「ご予約受付中」で誘導)。
-                        // 受付停止のときだけ理由が分かるように出す。
                         return sessionOpen(cats as any)
-                          ? null
+                          ? <div class="ok"><b>{label}</b> ○</div>
                           : <div class="ng"><b>{label}</b> 受付停止</div>;
                       })}
                     </div>
@@ -159,7 +159,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
 
       <p class="tiny muted" style="margin-top:.6rem">
         <strong>日付をクリックするとご予約に進めます。</strong>
-        セルに出ているのは<strong>すでにご予約が入っている枠</strong>です
+        <strong>○</strong> = 受付可、クラス名が出ている枠は<strong>すでにご予約が入っています</strong>
         （{showSport && 'AM / PM = 午前 / 午後'}{showSport && showRental && '、'}
         {showRental && 'RP・貸切は時間と代表者名'}）。
         何も出ていない日はどなたでもご予約いただけます。
