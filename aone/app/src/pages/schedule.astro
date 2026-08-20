@@ -47,13 +47,16 @@ const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
 const WD = ['月', '火', '水', '木', '金', '土', '日'];
 const isOpen = (v: string) => v === 'true';
 
-// その時間帯に実際に走れるカテゴリー名。
-// カート・ミニバイクは予約なしで走れるので常に候補、
-// キッズカート・その他は予約が入っている日だけ (= その日は実際に走っている)。
-function runnable(cats: { short_name: string; status: string; requires_reservation: boolean; running: boolean }[]): string[] {
-  return (cats ?? [])
-    .filter((c) => c.status === 'open' && (!c.requires_reservation || c.running))
-    .map((c) => c.short_name);
+// その時間帯に **予約が入っている** クラス。
+// 旧スケジュール表と同じ考え方: 毎日「カート・ミニバイク」と並べても情報量が無い。
+// 実際に走るクラスが入っている日だけそれを出し、空いている日は予約を促す。
+function bookedClasses(cats: { short_name: string; running: boolean }[]): string[] {
+  return (cats ?? []).filter((c) => c.running).map((c) => c.short_name);
+}
+
+/** その時間帯が受付できるか (1 つでも受付可のカテゴリーがあるか) */
+function sessionOpen(cats: { status: string; requires_reservation: boolean; running: boolean }[]): boolean {
+  return (cats ?? []).some((c) => c.status === 'open' && (!c.requires_reservation || c.running));
 }
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
@@ -95,12 +98,15 @@ function runnable(cats: { short_name: string; status: string; requires_reservati
           const dnum = Number(d.date.slice(8, 10));
           const publicBlocks = (d.blocks ?? []).filter((b) => b.is_public);
           const closed = d.weather === 'cancelled';
+          // 過ぎた日は空にする (「受付停止」が並ぶと休業日のように見えてしまう)
+          const isPast = d.date < today;
           return (
             <div class:list={[
               'cal-cell',
               d.date === today && 'today',
               d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
               closed && 'closed',
+              isPast && 'past',
             ]}>
               <div class="cal-day">{dnum}</div>
               {d.weather !== 'normal' && (
@@ -109,31 +115,43 @@ function runnable(cats: { short_name: string; status: string; requires_reservati
               {publicBlocks.map((b) => (
                 <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.public_label}</div>
               ))}
-              {showRental && (bookings[d.date] ?? []).map((b) => (
-                <div class:list={['tiny', 'bk', b.kind]}>
-                  {b.kind === 'rp'
-                    ? `${b.time} RP`
-                    : `貸切 ${b.time}${b.end_time ? '〜' + b.end_time : ''}`}
-                  {b.name ? ` ${b.name}` : ''}
-                </div>
-              ))}
-              {!closed && showRental && (
-                <div class="tiny day-slots">
-                  <span class={d.rp_free > 0 ? 'ok' : 'ng'}>RP {d.rp_free > 0 ? '○' : '✕'}</span>
-                </div>
-              )}
-              {!closed && showSport && (
-                <div class="tiny sport-lines">
-                  {([['前', d.am_categories], ['後', d.pm_categories]] as const).map(([label, cats]) => {
-                    const names = runnable(cats as any);
-                    return names.length > 0
-                      ? <div class="ok"><b>{label}</b> {names.join('・')}</div>
-                      : <div class="ng"><b>{label}</b> 受付停止</div>;
-                  })}
-                </div>
-              )}
-              {d.date >= today && !closed && (
-                <a class="tiny book" href={`${reserveHref}?date=${d.date}`}>予約</a>
+              {isPast ? null : (
+                <>
+                  {showRental && (bookings[d.date] ?? []).map((b) => (
+                    <div class:list={['tiny', 'bk', b.kind]}>
+                      {b.kind === 'rp'
+                        ? `${b.time} RP`
+                        : `貸切 ${b.time}${b.end_time ? '〜' + b.end_time : ''}`}
+                      {b.name ? ` ${b.name}` : ''}
+                    </div>
+                  ))}
+
+                  {!closed && showSport && (
+                    <div class="tiny sport-lines">
+                      {([['前', d.am_categories], ['後', d.pm_categories]] as const).map(([label, cats]) => {
+                        const names = bookedClasses(cats as any);
+                        if (names.length > 0) {
+                          return <div class="ok"><b>{label}</b> {names.join('・')}</div>;
+                        }
+                        // 予約が無い時間帯は、受付できるなら何も出さない (下の「ご予約受付中」で誘導)。
+                        // 受付停止のときだけ理由が分かるように出す。
+                        return sessionOpen(cats as any)
+                          ? null
+                          : <div class="ng"><b>{label}</b> 受付停止</div>;
+                      })}
+                    </div>
+                  )}
+
+                  {!closed && (
+                    <a class="tiny book" href={`${reserveHref}?date=${d.date}`}>
+                      {(showRental && (bookings[d.date] ?? []).length > 0) ||
+                       (showSport && (bookedClasses(d.am_categories as any).length > 0 ||
+                                      bookedClasses(d.pm_categories as any).length > 0))
+                        ? 'ご予約はこちら'
+                        : 'ご予約受付中'}
+                    </a>
+                  )}
+                </>
               )}
             </div>
           );
@@ -141,8 +159,10 @@ function runnable(cats: { short_name: string; status: string; requires_reservati
       </div>
 
       <p class="tiny muted" style="margin-top:.6rem">
-        {showRental && 'RP ○ = レースパックの受付可。'}
-        {showSport && '前 / 後 = 午前 / 午後に走行できるカテゴリーです。'}
+        セルに出ているのは<strong>すでにご予約が入っている枠</strong>です
+        （{showSport && '前 / 後 = 午前 / 午後'}{showSport && showRental && '、'}
+        {showRental && 'RP・貸切は時間と代表者名'}）。
+        何も出ていない日はどなたでもご予約いただけます。
         受付停止はレース・イベント・貸切・満枠などによるものです。
         当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
       </p>
@@ -178,6 +198,8 @@ function runnable(cats: { short_name: string; status: string; requires_reservati
   .cal-cell.empty{background:var(--bg-2)}
   .cal-cell.today{outline:2px solid var(--red);outline-offset:-2px}
   .cal-cell.closed{background:#fdeef0}
+  .cal-cell.past{background:var(--bg-2)}
+  .cal-cell.past .cal-day{color:var(--ink-4)}
   .cal-day{font-weight:800;font-size:.86rem}
   .cal-cell.sun .cal-day,.cal-cell.holiday .cal-day{color:var(--red)}
   .cal-cell.sat .cal-day{color:var(--blue)}
@@ -202,7 +224,7 @@ function runnable(cats: { short_name: string; status: string; requires_reservati
   .sport-lines .ok{color:#14724a}
   .sport-lines .ng{color:var(--ink-4)}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
-  .book{margin-top:.1rem;text-decoration:none;font-weight:800;color:var(--red)}
+  .book{margin-top:auto;text-decoration:none;font-weight:800;color:var(--red)}
   @media (max-width:640px){
     .cal-cell{min-height:74px;font-size:.72rem}
     .cal-day{font-size:.78rem}

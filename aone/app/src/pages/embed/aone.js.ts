@@ -80,6 +80,10 @@ const WIDGET_JS = String.raw`
     '.aone-cal td.pad{background:#f7fafc}',
     '.aone-cal td.today{outline:2px solid var(--aone-red);outline-offset:-2px}',
     '.aone-cal td.closed{background:#fdeef0}',
+    '.aone-cal td.past{background:#f7fafc}',
+    '.aone-cal td.past .aone-d{color:#a8b8c5}',
+    '.aone-book{display:block;margin-top:auto;font-weight:800;color:var(--aone-red);',
+    '  font-size:.92em;text-decoration:none}',
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
     '.aone-cal td.sat .aone-d{color:#2f6fb5}',
@@ -185,21 +189,30 @@ const WIDGET_JS = String.raw`
   }
 
   // ---- 月間スケジュール ---------------------------------------------------
-  // その時間帯に走れるカテゴリー名を並べる (カート・ミニバイクは予約なしで走れる、
-  // キッズ・その他は予約が入っている日だけ)
+  // その時間帯に **予約が入っている** クラスを出す。
+  // 毎日「カート・ミニバイク」と並べても情報量が無いので、実際に走るクラスが
+  // 入っている日だけ出し、空いている日は予約を促す。
   function sessionLine(label, cats, fallbackOpen) {
-    var names = (cats || [])
-      .filter(function (c) {
-        return c.status === 'open' && (!c.requires_reservation || c.running);
-      })
-      .map(function (c) { return c.short_name; });
     if (!cats || !cats.length) {
-      return '<div class="' + (fallbackOpen ? 'y' : 'n') + '">' + label +
-        (fallbackOpen ? ' ○' : ' ✕') + '</div>';
+      return fallbackOpen ? '' : '<div class="n">' + label + ' 受付停止</div>';
     }
-    return names.length
-      ? '<div class="y">' + label + ' ' + esc(names.join('・')) + '</div>'
-      : '<div class="n">' + label + ' 受付停止</div>';
+    var booked = cats.filter(function (c) { return c.running; })
+      .map(function (c) { return c.short_name; });
+    if (booked.length) {
+      return '<div class="y">' + label + ' ' + esc(booked.join('・')) + '</div>';
+    }
+    var open = cats.some(function (c) {
+      return c.status === 'open' && (!c.requires_reservation || c.running);
+    });
+    return open ? '' : '<div class="n">' + label + ' 受付停止</div>';
+  }
+
+  /** その日に何か予約が入っているか */
+  function hasBookings(day) {
+    if ((day.bookings || []).length) return true;
+    return []
+      .concat(day.am_categories || [], day.pm_categories || [])
+      .some(function (c) { return c.running; });
   }
 
   function renderMonth(el, d) {
@@ -228,6 +241,7 @@ const WIDGET_JS = String.raw`
       if (day.is_holiday) cls.push('holiday');
       if (day.date === d.today) cls.push('today');
       if (day.weather === 'cancelled') cls.push('closed');
+      if (day.date < d.today) cls.push('past');
 
       html += '<td class="' + cls.join(' ') + '"><div class="aone-d">' + day.day + '</div>';
       if (day.weather_label) html += '<div class="aone-wxs">' + esc(day.weather_label) + '</div>';
@@ -235,25 +249,28 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
       });
       // すでに入っている RP・貸切 (旧スケジュールページの「RP ○○様」に相当)
-      (day.bookings || []).forEach(function (b) {
+      (day.date < d.today ? [] : (day.bookings || [])).forEach(function (b) {
         var label = b.kind === 'rp'
           ? b.time + ' RP'
           : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
         if (b.name) label += ' ' + b.name;
         html += '<div class="aone-bk ' + b.kind + '" title="' + esc(label) + '">' + esc(label) + '</div>';
       });
-      if (day.weather !== 'cancelled') {
+      if (day.weather !== 'cancelled' && day.date >= d.today) {
         html += '<div class="aone-ss">'
           + sessionLine('前', day.am_categories, day.am_open)
           + sessionLine('後', day.pm_categories, day.pm_open)
-          + '</div>';
+          + '</div>'
+          + '<a class="aone-book" href="' + d.links.reserve + '?date=' + day.date + '">'
+          + (hasBookings(day) ? 'ご予約はこちら' : 'ご予約受付中') + '</a>';
       }
       html += '</td>';
       col++;
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
-    html += '<p class="aone-note">前 / 後 = 午前 / 午後に走行できるカテゴリーです。'
+    html += '<p class="aone-note">セルに出ているのはすでにご予約が入っている枠です。'
+      + '何も出ていない日はどなたでもご予約いただけます。'
       + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;
