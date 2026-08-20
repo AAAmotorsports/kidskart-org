@@ -216,9 +216,21 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
             {Object.entries(KIND_LABELS).map(([code, label]) => <option value={code}>{label}</option>)}
           </select>
         </div>
+        <div class="field">
+          <label>対象日 <span class="tiny muted">(複数可 — 連日・毎週のまとめ登録に)</span></label>
+          <div class="row" style="margin-bottom:.35rem">
+            <input type="date" id="n-date-add" style="max-width:11rem" />
+            <button type="button" class="btn sm" id="n-date-btn">日を追加</button>
+          </div>
+          <div id="n-dates" class="row"></div>
+        </div>
+
         <div class="field" id="wrap-session">
-          <label for="n-session">時間帯</label>
-          <select id="n-session"><option value="am">午前</option><option value="pm">午後</option></select>
+          <label>時間帯 <span class="tiny muted">(複数可)</span></label>
+          <div class="choice">
+            <label><input type="checkbox" class="n-sess" value="am" checked /> 午前</label>
+            <label><input type="checkbox" class="n-sess" value="pm" /> 午後</label>
+          </div>
         </div>
         <div class="field" id="wrap-category">
           <label for="n-category">カテゴリー</label>
@@ -448,6 +460,40 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
   }));
 
   // ---- 代理入力 ----
+  // 電話口で「土日どっちも」「毎週土曜で 3 回」と言われることがあるので、
+  // 日付と時間帯を複数選んでまとめて登録できるようにする。
+  // カテゴリー・人数・連絡先は共通、予約は 1 日 1 件ずつ独立して作る
+  // (1 日だけキャンセル・変更できるようにするため)。
+  var pickedDates = [date];
+
+  function renderDates() {
+    var wrap = $('n-dates');
+    wrap.innerHTML = '';
+    pickedDates.sort();
+    pickedDates.forEach(function (d) {
+      var chip = document.createElement('span');
+      chip.className = 'badge info date-chip';
+      chip.innerHTML = d.slice(5).replace('-', '/') +
+        (pickedDates.length > 1 ? ' <b data-del="' + d + '" style="cursor:pointer">×</b>' : '');
+      wrap.appendChild(chip);
+    });
+    wrap.querySelectorAll('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        pickedDates = pickedDates.filter(function (x) { return x !== b.dataset.del; });
+        renderDates();
+      });
+    });
+  }
+
+  $('n-date-btn').addEventListener('click', function () {
+    var v = $('n-date-add').value;
+    if (!v) return;
+    if (pickedDates.indexOf(v) === -1) pickedDates.push(v);
+    $('n-date-add').value = '';
+    renderDates();
+  });
+  renderDates();
+
   function syncKindFields() {
     const kind = $('n-kind').value;
     $('wrap-session').hidden = kind !== 'sport';
@@ -461,35 +507,77 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
     const out = $('n-out');
     out.hidden = true;
     const kind = $('n-kind').value;
-    try {
-      const r = await post('/api/admin/reservation', {
-        action: 'create',
-        kind,
-        date,
-        session: kind === 'sport' ? $('n-session').value : undefined,
-        category_code: (kind === 'sport' || kind === 'night') ? $('n-category').value : undefined,
-        start_time: kind === 'sport' ? undefined : $('n-start').value,
-        end_time: kind === 'charter' ? $('n-end').value : undefined,
-        party_size: Number($('n-party').value || 1),
-        vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
-        name: $('n-name').value,
-        phone: $('n-phone').value,
-        email: $('n-email').value,
-        staff_memo: $('n-memo').value,
-        source: $('n-source').value,
-        amount: $('n-amount').value ? Number($('n-amount').value) : undefined,
-        forced: $('n-forced').checked,
-        forced_reason: $('n-forced-reason').value,
-        send_mail: $('n-mail').checked,
-      });
-      out.hidden = false;
+    const btn = $('n-save');
+
+    if (pickedDates.length === 0) {
+      out.hidden = false; out.className = 'notice ng';
+      out.textContent = '対象日を 1 つ以上選んでください';
+      return;
+    }
+
+    // 登録する組み合わせを作る (スポーツ走行は 日付 × 時間帯)
+    const sessions = Array.from(document.querySelectorAll('.n-sess:checked'))
+      .map((el) => el.value);
+    if (kind === 'sport' && sessions.length === 0) {
+      out.hidden = false; out.className = 'notice ng';
+      out.textContent = '時間帯を 1 つ以上選んでください';
+      return;
+    }
+    const combos = [];
+    pickedDates.forEach((d) => {
+      if (kind === 'sport') sessions.forEach((s) => combos.push({ date: d, session: s }));
+      else combos.push({ date: d, session: undefined });
+    });
+
+    btn.disabled = true;
+    btn.textContent = '登録中…';
+    const okList = [];
+    const ngList = [];
+
+    for (const c of combos) {
+      const label = c.date.slice(5).replace('-', '/') +
+        (c.session ? (c.session === 'am' ? ' 午前' : ' 午後') : '');
+      try {
+        const r = await post('/api/admin/reservation', {
+          action: 'create',
+          kind,
+          date: c.date,
+          session: c.session,
+          category_code: (kind === 'sport' || kind === 'night') ? $('n-category').value : undefined,
+          start_time: kind === 'sport' ? undefined : $('n-start').value,
+          end_time: kind === 'charter' ? $('n-end').value : undefined,
+          party_size: Number($('n-party').value || 1),
+          vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
+          name: $('n-name').value,
+          phone: $('n-phone').value,
+          email: $('n-email').value,
+          staff_memo: $('n-memo').value,
+          source: $('n-source').value,
+          amount: $('n-amount').value ? Number($('n-amount').value) : undefined,
+          forced: $('n-forced').checked,
+          forced_reason: $('n-forced-reason').value,
+          send_mail: $('n-mail').checked,
+        });
+        okList.push(label + ' (' + r.reservation_number + ')');
+      } catch (e) {
+        ngList.push(label + ': ' + e.message);
+      }
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'この内容で登録';
+    out.hidden = false;
+    if (ngList.length === 0) {
       out.className = 'notice ok';
-      out.textContent = '登録しました: ' + r.reservation_number;
-      setTimeout(() => location.reload(), 700);
-    } catch (e) {
-      out.hidden = false;
-      out.className = 'notice ng';
-      out.textContent = e.message + '（強制受付にチェックすると上限を無視して登録できます）';
+      out.textContent = okList.length + ' 件登録しました — ' + okList.join(' / ');
+      setTimeout(() => location.reload(), 900);
+    } else {
+      out.className = okList.length ? 'notice warn' : 'notice ng';
+      out.innerHTML =
+        (okList.length ? '<strong>' + okList.length + ' 件登録しました</strong>: ' + okList.join(' / ') + '<br>' : '') +
+        '<strong>登録できなかった日</strong>: ' + ngList.join(' / ') +
+        '<br><span class="tiny">「受付上限を無視して強制受付する」にチェックすると登録できます</span>';
+      if (okList.length) setTimeout(() => location.reload(), 3500);
     }
   });
 
