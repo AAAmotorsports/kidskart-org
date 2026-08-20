@@ -25,8 +25,8 @@ function rpSummary(s: DayState | null): string {
   const first = open[0].time;
   const last = open[open.length - 1].time;
   return open.length === s.rp.slots.length
-    ? `${first}〜${last} すべて空きあり`
-    : `${first}〜 空きあり (残り ${open.length} 枠)`;
+    ? `${first}〜${last} 空きあり`
+    : `${first}〜 空きあり`;
 }
 
 const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
@@ -112,7 +112,8 @@ const closedToday = state?.weather.status === 'cancelled';
             );
           })}
           <p class="tiny muted" style="margin:.4rem 0 0">
-            <strong>「走れます」</strong>= ご予約なしでお越しいただけます（○ 受付可 ／ △ 残りわずか ／ ✕ 受付停止）。<br />
+            <strong>○ 走れます</strong>= ご予約なしでお越しいただけます ／
+            <strong>✕</strong> 受付停止 ／ <strong>—</strong> 対象外。<br />
             キッズカート・その他（大型バイク等）は<strong>事前予約制</strong>のため、
             ご予約が入っている日のみ表示しています。ご希望の方は
             <a href="/reserve/sport">こちらからご予約</a>ください。

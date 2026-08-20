@@ -12,6 +12,9 @@ const NUMERIC_FIELDS = [
   'max_classes_holiday_am', 'max_classes_holiday_pm',
   'rp_min_party', 'rp_slot_minutes', 'rp_duration_minutes',
   'rp_max_groups_per_start', 'rp_groups_block_sport', 'rp_cancel_deadline_hours',
+  // 料金 (レースパック = 人数 × 単価、貸切 = 基本料 + 台数 × 単価)
+  'rp_price_per_person', 'charter_base_price', 'charter_price_per_kart',
+  'charter_min_karts', 'rental_heat_price', 'rental_heat_minutes',
 ];
 const TIME_FIELDS = [
   'course_open_time', 'am_start_time', 'am_end_time',
@@ -64,6 +67,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (!code) continue;
       const cpatch: Record<string, unknown> = {};
       if (typeof c?.requires_reservation === 'boolean') cpatch.requires_reservation = c.requires_reservation;
+      if (typeof c?.admin_only === 'boolean') cpatch.admin_only = c.admin_only;
       if (typeof c?.is_active === 'boolean') cpatch.is_active = c.is_active;
       if (Object.keys(cpatch).length === 0) continue;
       const { error: cerr } = await supabase.from('aone_categories').update(cpatch).eq('code', code);

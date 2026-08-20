@@ -175,7 +175,7 @@ const WIDGET_JS = String.raw`
       + '<a class="aone-btn" href="' + d.links.charter + '">貸切を申し込む</a>'
       + '<a class="aone-btn" href="' + d.links.night + '">ナイターを相談</a></div>';
     html += '<p class="aone-note">○ 走れます（ご予約なしでもお越しいただけます） ／ '
-      + '△ 残りわずか ／ ✕ 受付停止</p>';
+      + '✕ 受付停止</p>';
     html += '</div>';
 
     el.innerHTML = html;
@@ -217,7 +217,6 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-ss">'
           + '<span class="' + (day.am_open ? 'y' : 'n') + '">前' + (day.am_open ? '○' : '✕') + '</span> '
           + '<span class="' + (day.pm_open ? 'y' : 'n') + '">後' + (day.pm_open ? '○' : '✕') + '</span>'
-          + (day.rp_free > 0 ? ' <span class="y">RP' + day.rp_free + '</span>' : '')
           + '</div>';
       }
       html += '</td>';
@@ -225,8 +224,7 @@ const WIDGET_JS = String.raw`
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
-    html += '<p class="aone-note">○ = スポーツ走行の受付可 ／ ✕ = 受付停止（レース・貸切・満枠など）'
-      + ' ／ RP の数字は空いている開始時間の数です。'
+    html += '<p class="aone-note">○ = スポーツ走行の受付可 ／ ✕ = 受付停止（レース・貸切・満枠など）。'
       + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;

@@ -1,8 +1,13 @@
 ---
 import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { settings } from '@lib/queries';
 import { todayJst, addDays } from '@lib/domain';
 
 export const prerender = false;
+
+const cfg = await settings(envFrom(Astro.locals));
+const pricePerPerson: number = cfg?.rp_price_per_person ?? 6600;
 
 // レースパック (RP) の予約フォーム (仕様 3)。
 // 同一開始時刻は 2 グループまで、17:00 以降は要相談 — 判定は DB 側。
@@ -16,6 +21,11 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     3 名以上のグループでお楽しみいただけるレースパックです。代表者 1 名がご予約ください。
     開始時間は 10:00〜17:00 の 30 分刻み。17:00 以降のご希望は要相談として承ります。
   </p>
+  <div class="notice info small" style="margin-bottom:1rem">
+    <strong>料金 {pricePerPerson.toLocaleString('ja-JP')} 円 / 人</strong>
+    （練習 → 予選 → レース。表彰台で記念撮影あり）<br />
+    お支払いは当日現地でお願いします。
+  </div>
 
   <form id="form" class="card" novalidate>
     <div class="field">
@@ -39,6 +49,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
         <label for="party">ご参加人数</label>
         <input type="number" id="party" name="party_size" min="3" max="40" value="3" required />
         <div class="hint">3 名以上で承ります。人数は後から専用ページで変更できます。</div>
+        <div class="price-box">お支払い予定額 <b id="price">—</b></div>
       </div>
       <div class="field">
         <label for="tel-note">ご希望の連絡方法</label>
@@ -97,7 +108,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
   </form>
 </Base>
 
-<script is:inline>
+<script is:inline define:vars={{ PRICE_PER_PERSON: pricePerPerson }}>
   const $ = (id) => document.getElementById(id);
   let state = null;
   let picked = null;
@@ -158,6 +169,16 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     $('party').min = String(state.rp.min_party || 3);
   }
 
+  function renderPrice() {
+    const n = Number($('party').value || 0);
+    $('price').textContent = n >= 1
+      ? '¥' + (n * PRICE_PER_PERSON).toLocaleString('ja-JP') + ' （' + n + '名 × ¥' +
+        PRICE_PER_PERSON.toLocaleString('ja-JP') + '）'
+      : '—';
+  }
+  $('party').addEventListener('input', renderPrice);
+  renderPrice();
+
   $('date').addEventListener('change', loadDay);
   loadDay();
   window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'rp' });
@@ -209,4 +230,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
   /* スロットや 2 列レイアウトのスタイルは Base.astro のグローバル側にある。
      JS で生成する要素にはスコープ CSS が当たらないため。 */
   .picked-label{font-weight:800;color:var(--red-deep)}
+  .price-box{margin-top:.4rem;padding:.5rem .7rem;background:var(--bg-3);border-radius:8px;
+    font-size:.9rem;font-weight:700}
+  .price-box b{color:var(--red-deep);font-size:1.05rem}
 </style>

@@ -24,6 +24,19 @@ const [y, m] = ym.split('-').map(Number);
 const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
 const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
 
+// 表示モード: レンタル (RP・貸切) / スポーツ走行 (持ち込み) / 両方。
+// 公開スケジュールと同じ切り替えを管理側にも置く。
+const modeParam = Astro.url.searchParams.get('mode');
+const mode: 'rental' | 'sport' | 'both' =
+  modeParam === 'rental' ? 'rental' : modeParam === 'sport' ? 'sport' : 'both';
+
+/** モードに合う予約か (ナイターとイベントは常に表示) */
+function inMode(kind: string): boolean {
+  if (mode === 'both') return true;
+  if (kind === 'night') return true;
+  return mode === 'rental' ? (kind === 'rp' || kind === 'charter') : kind === 'sport';
+}
+
 const cats = await categories(env);
 const days = view === 'month' ? await monthState(env, year, month) : null;
 
@@ -31,7 +44,7 @@ const days = view === 'month' ? await monthState(env, year, month) : null;
 // 管理画面は Basic 認証の内側なので氏名を出す。公開スケジュール側には出さない。
 const monthRows = view === 'month' ? await reservationsOfMonth(env, year, month) : [];
 const byDate = new Map<string, Reservation[]>();
-for (const r of monthRows) {
+for (const r of monthRows.filter((r) => inMode(r.kind))) {
   const list = byDate.get(r.date) ?? [];
   list.push(r);
   byDate.set(r.date, list);
@@ -60,7 +73,9 @@ const weekData = view === 'week'
   ? await Promise.all(weekDates.map(async (d) => ({
       date: d,
       state: await dayState(env, d),
-      rows: (await reservationsOfDay(env, d)).filter((r) => !['cancelled', 'no_show'].includes(r.status)),
+      rows: (await reservationsOfDay(env, d))
+        .filter((r) => !['cancelled', 'no_show'].includes(r.status))
+        .filter((r) => inMode(r.kind)),
     })))
   : [];
 
@@ -76,20 +91,29 @@ const isOpen = (v: string) => v === 'true';
     <div class="row">
       {view === 'month' ? (
         <>
-          <a class="btn sm" href={`/admin/calendar?ym=${prev}`}>← 前月</a>
-          <a class="btn sm" href={`/admin/calendar?ym=${today.slice(0, 7)}`}>今月</a>
-          <a class="btn sm" href={`/admin/calendar?ym=${next}`}>翌月 →</a>
-          <a class="btn sm ghost" href={`/admin/calendar?view=week&start=${today}`}>週表示</a>
+          <a class="btn sm" href={`/admin/calendar?ym=${prev}&mode=${mode}`}>← 前月</a>
+          <a class="btn sm" href={`/admin/calendar?ym=${today.slice(0, 7)}&mode=${mode}`}>今月</a>
+          <a class="btn sm" href={`/admin/calendar?ym=${next}&mode=${mode}`}>翌月 →</a>
+          <a class="btn sm ghost" href={`/admin/calendar?view=week&start=${today}&mode=${mode}`}>週表示</a>
         </>
       ) : (
         <>
-          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, -7)}`}>← 前週</a>
-          <a class="btn sm" href={`/admin/calendar?view=week&start=${today}`}>今週</a>
-          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, 7)}`}>翌週 →</a>
-          <a class="btn sm ghost" href={`/admin/calendar?ym=${today.slice(0, 7)}`}>月表示</a>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, -7)}&mode=${mode}`}>← 前週</a>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${today}&mode=${mode}`}>今週</a>
+          <a class="btn sm" href={`/admin/calendar?view=week&start=${addDays(weekStart, 7)}&mode=${mode}`}>翌週 →</a>
+          <a class="btn sm ghost" href={`/admin/calendar?ym=${today.slice(0, 7)}&mode=${mode}`}>月表示</a>
         </>
       )}
     </div>
+  </div>
+
+  <div class="modes">
+    {([['rental', 'レンタル (RP・貸切)'], ['sport', 'スポーツ走行'], ['both', '両方']] as const).map(([m, label]) => (
+      <a class:list={['mode-btn', mode === m && 'on']}
+         href={view === 'week'
+           ? `/admin/calendar?view=week&start=${weekStart}&mode=${m}`
+           : `/admin/calendar?ym=${ym}&mode=${m}`}>{label}</a>
+    ))}
   </div>
 
   {view === 'month' && (
@@ -121,7 +145,7 @@ const isOpen = (v: string) => v === 'true';
             <div class="tiny sl">
               <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前{isOpen(d.sport_am) ? '○' : '✕'}</span>
               <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>後{isOpen(d.sport_pm) ? '○' : '✕'}</span>
-              <span class="muted">RP{d.rp_free}</span>
+
             </div>
           </a>
         ))}
@@ -323,6 +347,11 @@ const isOpen = (v: string) => v === 'true';
   .wk-col.today{border-color:var(--red)}
   .wk-head{display:block;font-weight:800;font-size:.82rem;margin-bottom:.3rem;text-decoration:none;color:inherit}
   .wk .res{border-top:1px dashed var(--line);padding:.25rem 0}
+  .modes{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;overflow:hidden;
+    background:#fff;margin:0 0 .7rem}
+  .mode-btn{padding:.4rem 1rem;font-size:.85rem;font-weight:700;text-decoration:none;color:var(--ink-2)}
+  .mode-btn+.mode-btn{border-left:1px solid var(--line)}
+  .mode-btn.on{background:var(--ink);color:#fff}
   .four{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem}
   @media (max-width:900px){
     .four{grid-template-columns:1fr 1fr}

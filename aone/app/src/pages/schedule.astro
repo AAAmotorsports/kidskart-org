@@ -15,6 +15,17 @@ const [y, m] = ymParam.split('-').map(Number);
 const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
 const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
 
+// 表示モード: レンタル (RP・貸切) / スポーツ走行 (持ち込み) / 両方
+// A-ONE のお客さんは「レンタルで遊びに来る人」と「マイマシンを持ち込む人」に
+// はっきり分かれるので、見たい情報だけに切り替えられるようにする。
+const modeParam = Astro.url.searchParams.get('mode');
+const mode: 'rental' | 'sport' | 'both' =
+  modeParam === 'rental' ? 'rental' : modeParam === 'sport' ? 'sport' : 'both';
+const showRental = mode === 'rental' || mode === 'both';
+const showSport = mode === 'sport' || mode === 'both';
+const reserveHref =
+  mode === 'rental' ? '/reserve/rp' : mode === 'sport' ? '/reserve/sport' : '/reserve';
+
 const days = await monthState(env, year, month);
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
@@ -29,10 +40,29 @@ const isOpen = (v: string) => v === 'true';
   <div class="spread" style="margin-bottom:.8rem">
     <h1 style="margin:0">{year}年{month}月のスケジュール</h1>
     <div class="row">
-      <a class="btn sm" href={`/schedule?ym=${prev}`}>← 前の月</a>
-      <a class="btn sm" href={`/schedule?ym=${next}`}>次の月 →</a>
+      <a class="btn sm" href={`/schedule?ym=${prev}&mode=${mode}`}>← 前の月</a>
+      <a class="btn sm" href={`/schedule?ym=${next}&mode=${mode}`}>次の月 →</a>
     </div>
   </div>
+
+  <div class="modes">
+    <a class:list={['mode-btn', mode === 'rental' && 'on']} href={`/schedule?ym=${ymParam}&mode=rental`}>
+      レンタル
+    </a>
+    <a class:list={['mode-btn', mode === 'sport' && 'on']} href={`/schedule?ym=${ymParam}&mode=sport`}>
+      スポーツ走行
+    </a>
+    <a class:list={['mode-btn', mode === 'both' && 'on']} href={`/schedule?ym=${ymParam}&mode=both`}>
+      両方
+    </a>
+  </div>
+  <p class="tiny muted" style="margin:.2rem 0 .8rem">
+    {mode === 'rental'
+      ? 'レンタルカートのレースパック・貸切の空き状況です。通常のレンタル走行はご予約不要です。'
+      : mode === 'sport'
+        ? 'マイマシン持ち込みのスポーツ走行枠です。'
+        : 'レンタル（レースパック・貸切）と、持ち込みのスポーツ走行の両方を表示しています。'}
+  </p>
 
   {!days ? (
     <div class="card"><p class="muted">スケジュールを取得できませんでした。</p></div>
@@ -59,15 +89,20 @@ const isOpen = (v: string) => v === 'true';
               {publicBlocks.map((b) => (
                 <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.public_label}</div>
               ))}
-              {!closed && (
+              {!closed && showRental && (
                 <div class="tiny day-slots">
-                  <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>午前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
-                  <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>午後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
-                  {d.rp_free > 0 && <span class="ok">RP {d.rp_free}枠</span>}
+                  <span class={d.rp_free > 0 ? 'ok' : 'ng'}>RP {d.rp_free > 0 ? '○' : '✕'}</span>
+                  {d.counts.charter > 0 && <span class="ng">貸切あり</span>}
                 </div>
               )}
-              {d.date >= today && (
-                <a class="tiny book" href={`/reserve/sport?date=${d.date}`}>予約</a>
+              {!closed && showSport && (
+                <div class="tiny day-slots">
+                  <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
+                  <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
+                </div>
+              )}
+              {d.date >= today && !closed && (
+                <a class="tiny book" href={`${reserveHref}?date=${d.date}`}>予約</a>
               )}
             </div>
           );
@@ -75,8 +110,9 @@ const isOpen = (v: string) => v === 'true';
       </div>
 
       <p class="tiny muted" style="margin-top:.6rem">
-        ○ = スポーツ走行の受付可、✕ = 受付停止 (レース・イベント・貸切・満枠など)。
-        RP の枠数は 30 分刻みの空き開始時間の数です。
+        {showRental && 'RP ○ = レースパックの受付可。'}
+        {showSport && '前/後 ○ = 午前/午後のスポーツ走行の受付可。'}
+        ✕ = 受付停止 (レース・イベント・貸切・満枠など)。
         当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
       </p>
 
@@ -114,7 +150,13 @@ const isOpen = (v: string) => v === 'true';
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* カレンダーセル内の ○✕ 行 (Base の .slots とは別物なので名前を分ける) */
-  .day-slots{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:auto}
+  .modes{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;overflow:hidden;
+    background:#fff;margin-bottom:.2rem}
+  .mode-btn{padding:.4rem 1rem;font-size:.85rem;font-weight:700;text-decoration:none;color:var(--ink-2)}
+  .mode-btn+.mode-btn{border-left:1px solid var(--line)}
+  .mode-btn.on{background:var(--ink);color:#fff}
+  .day-slots{display:flex;flex-wrap:wrap;gap:.2rem}
+  .day-slots:last-of-type{margin-top:auto}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
   .book{margin-top:.1rem;text-decoration:none;font-weight:800;color:var(--red)}
   @media (max-width:640px){
