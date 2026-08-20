@@ -45,6 +45,8 @@ const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padS
 // getUTCDay() は 日=0 なので、月曜を 0 とする並びに直してから空セルを置く。
 const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
 const WD = ['月', '火', '水', '木', '金', '土', '日'];
+// getUTCDay() 順 (日=0) の曜日名。スマホの縦長表示で日付の横に出す。
+const WD_BY_DOW = ['日', '月', '火', '水', '木', '金', '土'];
 const isOpen = (v: string) => v === 'true';
 
 // その時間帯に **予約が入っている** クラス。
@@ -116,7 +118,10 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
               isPast && 'past',
               linkable && 'linkable',
             ]}>
-              <div class="cal-day">{dnum}</div>
+              <div class="cal-day">
+                {dnum}<span class="dow-label"> ({WD_BY_DOW[d.dow]})</span>
+              </div>
+              <div class="cell-body">
               {d.weather !== 'normal' && (
                 <div class="tiny wx">{WEATHER_LABELS[d.weather] ?? d.weather}</div>
               )}
@@ -152,6 +157,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
 
                 </>
               )}
+              </div>
             </Cell>
           );
         })}
@@ -226,8 +232,27 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .sport-lines .ok{color:#14724a}
   .sport-lines .ng{color:var(--ink-4)}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
+  .dow-label{display:none}
+  .cell-body{display:flex;flex-direction:column;gap:.15rem;min-width:0;width:100%}
+
+  /* スマホでは 7 列だと 1 セルが狭すぎて読めないので、旧スケジュール表と同じ
+     「1 日 = 1 行、AM / PM は左右」の縦長レイアウトに切り替える。 */
   @media (max-width:640px){
-    .cal-cell{min-height:74px;font-size:.72rem}
-    .cal-day{font-size:.78rem}
+    .cal{grid-template-columns:1fr;gap:0;border-radius:10px}
+    .cal-head{display:none}
+    .cal-cell.empty{display:none}
+    .cal-cell{
+      flex-direction:row;align-items:flex-start;gap:.6rem;
+      min-height:0;padding:.5rem .6rem;border-bottom:1px solid var(--line);
+      font-size:.82rem;
+    }
+    .cal-cell:last-child{border-bottom:none}
+    .cal-day{flex:0 0 3.6rem;font-size:.9rem}
+    .dow-label{display:inline;font-size:.8em}
+    .cell-body{gap:.2rem}
+    /* AM / PM を左右に並べる (旧スケジュール表と同じ見え方) */
+    .sport-lines{display:grid;grid-template-columns:1fr 1fr;gap:.3rem;margin-top:0}
+    .sport-lines>div{white-space:normal}
+    .bk{white-space:normal}
   }
 </style>
