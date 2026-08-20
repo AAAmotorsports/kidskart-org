@@ -8,6 +8,7 @@ import {
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS,
+  nameWithHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -60,7 +61,7 @@ function rowColor(r: Reservation): string {
 
 /** カレンダーのセル 1 行ぶんの表記 (例: 「前 カート 山田様」「10:00 RP 田中様 5名」) */
 function cellLabel(r: Reservation): string {
-  const name = `${r.contact_name} 様`;
+  const name = nameWithHonorific(r.contact_name);
   if (r.kind === 'sport') {
     const when = r.session === 'am' ? '前' : '後';
     const cat = cats.find((c) => c.code === r.category_code)?.short_name
@@ -144,7 +145,7 @@ const isOpen = (v: string) => v === 'true';
             {(byDate.get(d.date) ?? []).map((r) => (
               <div class:list={['tiny', 'res', r.kind, r.status !== 'confirmed' && 'pending']}
                    style={`border-left-color:${rowColor(r)}`}
-                   title={`${r.contact_name} 様 / ${r.party_size}名 / ${STATUS_LABELS[r.status]}${r.contact_phone ? ' / ' + r.contact_phone : ''}${r.staff_memo ? ' / ' + r.staff_memo : ''}`}>
+                   title={`${nameWithHonorific(r.contact_name)} / ${r.party_size}名 / ${STATUS_LABELS[r.status]}${r.contact_phone ? ' / ' + r.contact_phone : ''}${r.staff_memo ? ' / ' + r.staff_memo : ''}`}>
                 {cellLabel(r)}
                 {r.status !== 'confirmed' && <span class="pend-mark">{STATUS_LABELS[r.status]}</span>}
               </div>

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
-import { monthState } from '@lib/queries';
+import { monthState, rentalBookings } from '@lib/queries';
 import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS } from '@lib/domain';
 
 export const prerender = false;
@@ -33,6 +33,11 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     });
   }
 
+  // RP・貸切の予約 (時間・人数・表示名のみ)。名前の粒度は /admin/settings 次第で、
+  // 「名前は出さない」を選べば name が null になる。
+  const lastDay = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
+  const bookings = await rentalBookings(env, `${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`);
+
   const origin = new URL(request.url).origin;
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -60,6 +65,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
           kind_label: BLOCK_KIND_LABELS[b.kind] ?? b.kind,
         })),
       counts: d.counts,
+      bookings: bookings[d.date] ?? [],
     })),
     links: {
       site: `${origin}/`,

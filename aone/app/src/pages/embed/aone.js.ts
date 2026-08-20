@@ -86,7 +86,10 @@ const WIDGET_JS = String.raw`
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
     '  font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
-    '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px}',
+    '.aone-bk{font-size:.92em;font-weight:700;line-height:1.3;border-left:3px solid var(--aone-red);',
+    '  padding-left:3px;color:#a81a2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
+    '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px;line-height:1.35}',
     '.aone-ss .y{color:#14724a}.aone-ss .n{color:#a8b8c5}',
     '.aone-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}',
     '.aone-nav button{border:1px solid var(--aone-line);background:#fff;border-radius:99px;',
@@ -182,6 +185,23 @@ const WIDGET_JS = String.raw`
   }
 
   // ---- 月間スケジュール ---------------------------------------------------
+  // その時間帯に走れるカテゴリー名を並べる (カート・ミニバイクは予約なしで走れる、
+  // キッズ・その他は予約が入っている日だけ)
+  function sessionLine(label, cats, fallbackOpen) {
+    var names = (cats || [])
+      .filter(function (c) {
+        return c.status === 'open' && (!c.requires_reservation || c.running);
+      })
+      .map(function (c) { return c.short_name; });
+    if (!cats || !cats.length) {
+      return '<div class="' + (fallbackOpen ? 'y' : 'n') + '">' + label +
+        (fallbackOpen ? ' ○' : ' ✕') + '</div>';
+    }
+    return names.length
+      ? '<div class="y">' + label + ' ' + esc(names.join('・')) + '</div>'
+      : '<div class="n">' + label + ' 受付停止</div>';
+  }
+
   function renderMonth(el, d) {
     // 月曜はじまり (公開スケジュール・管理カレンダーと揃える)
     var WD = ['月', '火', '水', '木', '金', '土', '日'];
@@ -214,10 +234,18 @@ const WIDGET_JS = String.raw`
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
       });
+      // すでに入っている RP・貸切 (旧スケジュールページの「RP ○○様」に相当)
+      (day.bookings || []).forEach(function (b) {
+        var label = b.kind === 'rp'
+          ? b.time + ' RP'
+          : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
+        if (b.name) label += ' ' + b.name;
+        html += '<div class="aone-bk ' + b.kind + '" title="' + esc(label) + '">' + esc(label) + '</div>';
+      });
       if (day.weather !== 'cancelled') {
         html += '<div class="aone-ss">'
-          + '<span class="' + (day.am_open ? 'y' : 'n') + '">前' + (day.am_open ? '○' : '✕') + '</span> '
-          + '<span class="' + (day.pm_open ? 'y' : 'n') + '">後' + (day.pm_open ? '○' : '✕') + '</span>'
+          + sessionLine('前', day.am_categories, day.am_open)
+          + sessionLine('後', day.pm_categories, day.pm_open)
           + '</div>';
       }
       html += '</td>';
@@ -225,7 +253,7 @@ const WIDGET_JS = String.raw`
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
-    html += '<p class="aone-note">○ = スポーツ走行の受付可 ／ ✕ = 受付停止（レース・貸切・満枠など）。'
+    html += '<p class="aone-note">前 / 後 = 午前 / 午後に走行できるカテゴリーです。'
       + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;
