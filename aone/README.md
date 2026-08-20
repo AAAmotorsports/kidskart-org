@@ -70,15 +70,25 @@ aone/
 
 ### 1. Supabase
 
-新規プロジェクトを作り、SQL Editor で `db/0001` → `0005` を順に実行します。
+新規プロジェクト (リージョンは Northeast Asia (Tokyo)) を作り、SQL Editor に
+**`db/INSTALL_ALL.sql` の全文**を貼って Run を 1 回。0001〜0005 を結合した
+初回インストール用ファイルです。
+
+運用開始後は `INSTALL_ALL.sql` を使わず、`db/000N_*.sql` を連番で追加して
+1 本ずつ適用してください (`INSTALL_ALL.sql` は `./build_install_all.sh` で
+再生成できます)。
 
 ```
-0001_initial_schema.sql
-0002_seed_holidays.sql
-0003_availability_engine.sql
-0004_reservation_rpcs.sql
-0005_grants_and_rls.sql
+0001_initial_schema.sql       テーブル / VIEW / トリガー
+0002_seed_holidays.sql        祝日マスタ
+0003_availability_engine.sql  受付ルール
+0004_reservation_rpcs.sql     予約の作成 / 変更 / キャンセル
+0005_grants_and_rls.sql       RLS と権限
 ```
+
+プロジェクト作成時の Security 設定は
+「Enable Data API = ON」「Automatically expose new tables = OFF」
+「Enable automatic RLS = ON」を推奨 (必要な権限は 0005 が明示的に付けます)。
 
 ### 2. Cloudflare Workers
 
