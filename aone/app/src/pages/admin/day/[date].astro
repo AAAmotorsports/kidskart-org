@@ -236,6 +236,14 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
           <label for="n-category">カテゴリー</label>
           <select id="n-category">{cats.map((c) => <option value={c.code}>{c.name}</option>)}</select>
         </div>
+        <div class="field" id="wrap-nightkind">
+          <label for="n-nightkind">ナイターの内訳</label>
+          <select id="n-nightkind">
+            <option value="rp">レースパック</option>
+            <option value="charter">貸切</option>
+          </select>
+          <div class="tiny muted">ナイターはレンタル (RP・貸切) のみお受けします。</div>
+        </div>
         <div class="two" id="wrap-times">
           <div class="field">
             <label for="n-start">開始</label>
@@ -497,7 +505,9 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
   function syncKindFields() {
     const kind = $('n-kind').value;
     $('wrap-session').hidden = kind !== 'sport';
-    $('wrap-category').hidden = !(kind === 'sport' || kind === 'night');
+    // ナイターはレンタル (RP・貸切) のみなので、カテゴリーではなく内訳を選ぶ
+    $('wrap-category').hidden = kind !== 'sport';
+    $('wrap-nightkind').hidden = kind !== 'night';
     $('wrap-times').hidden = kind === 'sport';
   }
   $('n-kind').addEventListener('change', syncKindFields);
@@ -543,9 +553,11 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
           kind,
           date: c.date,
           session: c.session,
-          category_code: (kind === 'sport' || kind === 'night') ? $('n-category').value : undefined,
+          category_code: kind === 'sport' ? $('n-category').value : undefined,
+          night_kind: kind === 'night' ? $('n-nightkind').value : undefined,
           start_time: kind === 'sport' ? undefined : $('n-start').value,
-          end_time: kind === 'charter' ? $('n-end').value : undefined,
+          end_time: (kind === 'charter' || (kind === 'night' && $('n-nightkind').value === 'charter'))
+            ? $('n-end').value : undefined,
           party_size: Number($('n-party').value || 1),
           vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
           name: $('n-name').value,

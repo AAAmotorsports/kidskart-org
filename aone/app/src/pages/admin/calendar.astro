@@ -75,7 +75,8 @@ function cellLabel(r: Reservation): string {
   if (r.kind === 'charter') {
     return `貸切 ${(r.start_time ?? '').slice(0, 5)}〜${(r.end_time ?? '').slice(0, 5)} ${name}`;
   }
-  return `ナイター ${(r.start_time ?? '').slice(0, 5)} ${name}`;
+  const nk = r.night_kind === 'rp' ? 'RP' : r.night_kind === 'charter' ? '貸切' : '';
+  return `ナイター${nk ? ' ' + nk : ''} ${(r.start_time ?? '').slice(0, 5)} ${name}`;
 }
 const weekDates = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
 const weekData = view === 'week'
