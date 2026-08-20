@@ -100,13 +100,21 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
           const closed = d.weather === 'cancelled';
           // 過ぎた日は空にする (「受付停止」が並ぶと休業日のように見えてしまう)
           const isPast = d.date < today;
+          // 予約できる日はセルごとリンクにする。「ご予約受付中」の文字を
+          // 全セルに出すとうるさいので、押せることは色と hover で示す。
+          const linkable = !isPast && !closed;
+          const Cell = linkable ? 'a' : 'div';
           return (
-            <div class:list={[
+            <Cell
+              href={linkable ? `${reserveHref}?date=${d.date}` : undefined}
+              title={linkable ? 'この日のご予約へ' : undefined}
+              class:list={[
               'cal-cell',
               d.date === today && 'today',
               d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
               closed && 'closed',
               isPast && 'past',
+              linkable && 'linkable',
             ]}>
               <div class="cal-day">{dnum}</div>
               {d.weather !== 'normal' && (
@@ -142,23 +150,15 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                     </div>
                   )}
 
-                  {!closed && (
-                    <a class="tiny book" href={`${reserveHref}?date=${d.date}`}>
-                      {(showRental && (bookings[d.date] ?? []).length > 0) ||
-                       (showSport && (bookedClasses(d.am_categories as any).length > 0 ||
-                                      bookedClasses(d.pm_categories as any).length > 0))
-                        ? 'ご予約はこちら'
-                        : 'ご予約受付中'}
-                    </a>
-                  )}
                 </>
               )}
-            </div>
+            </Cell>
           );
         })}
       </div>
 
       <p class="tiny muted" style="margin-top:.6rem">
+        <strong>日付をクリックするとご予約に進めます。</strong>
         セルに出ているのは<strong>すでにご予約が入っている枠</strong>です
         （{showSport && '前 / 後 = 午前 / 午後'}{showSport && showRental && '、'}
         {showRental && 'RP・貸切は時間と代表者名'}）。
@@ -198,6 +198,8 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .cal-cell.empty{background:var(--bg-2)}
   .cal-cell.today{outline:2px solid var(--red);outline-offset:-2px}
   .cal-cell.closed{background:#fdeef0}
+  .cal-cell.linkable{cursor:pointer;text-decoration:none;color:inherit}
+  .cal-cell.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--red)}
   .cal-cell.past{background:var(--bg-2)}
   .cal-cell.past .cal-day{color:var(--ink-4)}
   .cal-day{font-weight:800;font-size:.86rem}
@@ -224,7 +226,6 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .sport-lines .ok{color:#14724a}
   .sport-lines .ng{color:var(--ink-4)}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
-  .book{margin-top:auto;text-decoration:none;font-weight:800;color:var(--red)}
   @media (max-width:640px){
     .cal-cell{min-height:74px;font-size:.72rem}
     .cal-day{font-size:.78rem}
