@@ -1,7 +1,10 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { monthState, dayState, reservationsOfDay, categories } from '@lib/queries';
+import {
+  monthState, dayState, reservationsOfDay, reservationsOfMonth, categories,
+  type Reservation,
+} from '@lib/queries';
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS,
@@ -21,7 +24,37 @@ const [y, m] = ym.split('-').map(Number);
 const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
 const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
 
+const cats = await categories(env);
 const days = view === 'month' ? await monthState(env, year, month) : null;
+
+// 月表示のセルに予約名を出す (今までの手書きスケジュール表と同じ感覚で見られるように)。
+// 管理画面は Basic 認証の内側なので氏名を出す。公開スケジュール側には出さない。
+const monthRows = view === 'month' ? await reservationsOfMonth(env, year, month) : [];
+const byDate = new Map<string, Reservation[]>();
+for (const r of monthRows) {
+  const list = byDate.get(r.date) ?? [];
+  list.push(r);
+  byDate.set(r.date, list);
+}
+
+/** カレンダーのセル 1 行ぶんの表記 (例: 「前 カート 山田様」「10:00 RP 田中様 5名」) */
+function cellLabel(r: Reservation): string {
+  const name = `${r.contact_name} 様`;
+  if (r.kind === 'sport') {
+    const when = r.session === 'am' ? '前' : '後';
+    const cat = cats.find((c) => c.code === r.category_code)?.short_name
+      ?? cats.find((c) => c.code === r.category_code)?.name
+      ?? r.category_code ?? '';
+    return `${when} ${cat} ${name}`;
+  }
+  if (r.kind === 'rp') {
+    return `${(r.start_time ?? '').slice(0, 5)} RP ${name} ${r.party_size}名`;
+  }
+  if (r.kind === 'charter') {
+    return `貸切 ${(r.start_time ?? '').slice(0, 5)}〜${(r.end_time ?? '').slice(0, 5)} ${name}`;
+  }
+  return `ナイター ${(r.start_time ?? '').slice(0, 5)} ${name}`;
+}
 const weekDates = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
 const weekData = view === 'week'
   ? await Promise.all(weekDates.map(async (d) => ({
@@ -31,7 +64,6 @@ const weekData = view === 'week'
     })))
   : [];
 
-const cats = await categories(env);
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
 const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
@@ -76,13 +108,15 @@ const isOpen = (v: string) => v === 'true';
             {(d.blocks ?? []).map((b) => (
               <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.title}</div>
             ))}
-            {(d.counts.sport > 0 || d.counts.rp > 0 || d.counts.charter > 0) && (
-              <div class="tiny cnt">
-                {d.counts.sport > 0 && <span>走行{d.counts.sport}</span>}
-                {d.counts.rp > 0 && <span>RP{d.counts.rp}</span>}
-                {d.counts.charter > 0 && <span>貸切{d.counts.charter}</span>}
-                {d.counts.people > 0 && <span class="muted">{d.counts.people}名</span>}
+            {(byDate.get(d.date) ?? []).map((r) => (
+              <div class:list={['tiny', 'res', r.kind, r.status !== 'confirmed' && 'pending']}
+                   title={`${r.contact_name} 様 / ${r.party_size}名 / ${STATUS_LABELS[r.status]}${r.contact_phone ? ' / ' + r.contact_phone : ''}${r.staff_memo ? ' / ' + r.staff_memo : ''}`}>
+                {cellLabel(r)}
+                {r.status !== 'confirmed' && <span class="pend-mark">{STATUS_LABELS[r.status]}</span>}
               </div>
+            ))}
+            {d.counts.people > 0 && (
+              <div class="tiny cnt"><span class="muted">計 {d.counts.people} 名</span></div>
             )}
             <div class="tiny sl">
               <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>前{isOpen(d.sport_am) ? '○' : '✕'}</span>
@@ -93,6 +127,18 @@ const isOpen = (v: string) => v === 'true';
         ))}
       </div>
     )
+  )}
+
+  {view === 'month' && days && (
+    <p class="tiny muted" style="margin:.5rem 0 0">
+      セル内の各行が予約 1 件です。<span class="lg res sport">前 カート 山田様</span>
+      <span class="lg res rp">10:00 RP 田中様 5名</span>
+      <span class="lg res charter">貸切</span>
+      <span class="lg res night">ナイター</span>
+      <span class="lg res pending">連絡待ち・確認中</span>
+      ／ 日付をクリックするとその日の運営画面が開きます。氏名はこの管理画面にだけ表示され、
+      公開スケジュールには出ません。
+    </p>
   )}
 
   {view === 'week' && (
@@ -247,7 +293,7 @@ const isOpen = (v: string) => v === 'true';
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .cal-head{background:var(--ink);color:#fff;text-align:center;font-size:.76rem;font-weight:800;padding:.3rem 0}
   .cal-head.sun{color:#ffb3bd} .cal-head.sat{color:#b7d8ff}
-  .cal-cell{background:#fff;min-height:104px;padding:.3rem;display:flex;flex-direction:column;gap:.12rem;
+  .cal-cell{background:#fff;min-height:132px;padding:.3rem;display:flex;flex-direction:column;gap:.12rem;
     text-decoration:none;color:inherit}
   .cal-cell.empty{background:var(--bg-2)}
   .cal-cell:hover{background:var(--bg-2)}
@@ -260,6 +306,16 @@ const isOpen = (v: string) => v === 'true';
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cnt{display:flex;gap:.3rem;flex-wrap:wrap;font-weight:700;color:var(--ink-2)}
+  /* 予約 1 件 = 1 行。今までの手書きスケジュール表と同じ読み方ができるようにする */
+  .res{border-left:3px solid var(--ink-4);padding-left:.25rem;line-height:1.35;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .res.sport{border-color:var(--ink-3)}
+  .res.rp{border-color:var(--red);color:var(--red-deep);font-weight:700}
+  .res.charter{border-color:var(--violet, #7c6fdb);color:#5646b8;font-weight:700}
+  .res.night{border-color:#2f6fb5;color:#1d5386;font-weight:700}
+  .res.pending{background:#fff5e2}
+  .pend-mark{margin-left:.2rem;font-size:.9em;color:#8a5a06}
+  .lg{display:inline-block;margin:0 .3rem;padding:0 .3rem;white-space:nowrap}
   .sl{display:flex;gap:.3rem;margin-top:auto}
   .sl .ok{color:#14724a} .sl .ng{color:var(--ink-4)}
   .wk{display:grid;grid-template-columns:repeat(7,1fr);gap:.4rem}

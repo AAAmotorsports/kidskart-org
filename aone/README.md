@@ -154,6 +154,23 @@ npm run typecheck   # astro check
 npm run build
 ```
 
+## WordPress (rk-a1.com) との連携
+
+`WORDPRESS.md` を参照。iframe ではなく **公開 JSON API + 貼り付けウィジェット**で、
+ホームページの見た目のままデータだけ同期する方式にしている。
+
+```html
+<div data-aone="today"></div>   <!-- 今日走れる？ -->
+<div data-aone="month"></div>   <!-- 月間スケジュール -->
+<script src="https://<予約システム>/embed/aone.js" async></script>
+```
+
+| URL | 用途 |
+|---|---|
+| `/api/public/today` | 今日の走行状況 (個人情報なし・CORS 許可) |
+| `/api/public/month?ym=YYYY-MM` | 月間スケジュール |
+| `/embed/aone.js` | 上記を描画する貼り付けウィジェット |
+
 ## 画面一覧
 
 ### 利用者向け
