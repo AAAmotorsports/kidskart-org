@@ -127,10 +127,16 @@ const closedToday = state?.weather.status === 'cancelled';
           <p style="margin:.2rem 0">{rpSummary(state)}</p>
           <div class="rp-strip">
             {state.rp.slots.map((s) => (
-              <span class:list={['rp-slot', s.accepting ? (s.groups > 0 ? 'part' : 'free') : 'full']}
-                    title={s.message}>{s.time}</span>
+              s.accepting
+                ? <a class:list={['rp-slot', s.groups > 0 ? 'part' : 'free']}
+                     href={`/reserve/rp?date=${state.date}&time=${s.time}`}
+                     title={`${s.time} で予約する`}>{s.time}</a>
+                : <span class="rp-slot full" title={s.message}>{s.time}</span>
             ))}
           </div>
+          <p class="tiny muted" style="margin:.35rem 0 0">
+            時間をタップすると、その開始時間でレースパックのご予約に進めます。
+          </p>
           <p class="tiny muted" style="margin:.5rem 0 0">
             {state.rp.min_party} 名以上・30 分刻み。{state.rp.last_start} 以降の開始は要相談です。
           </p>
@@ -207,7 +213,10 @@ const closedToday = state?.weather.status === 'cancelled';
   .walkin-txt{color:#14724a;font-weight:700}
   .cat-name{font-size:.78rem;font-weight:700;color:var(--ink-2);margin-bottom:.2rem}
   .rp-strip{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
-  .rp-slot{font-size:.76rem;font-weight:700;padding:.2rem .5rem;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-2);color:var(--ink-3)}
+  .rp-slot{display:inline-block;font-size:.82rem;font-weight:700;padding:.3rem .6rem;border-radius:6px;
+    border:1px solid var(--line-2);background:var(--bg-2);color:var(--ink-3);text-decoration:none}
+  a.rp-slot:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  a.rp-slot:active{transform:scale(.97)}
   .rp-slot.free{background:var(--green-soft);border-color:#b9e3cf;color:#14724a}
   .rp-slot.part{background:#fff5e2;border-color:#f2d69b;color:#8a5a06}
   .rp-slot.full{background:#fdeef0;border-color:#f2bcc4;color:var(--red-deep);text-decoration:line-through}

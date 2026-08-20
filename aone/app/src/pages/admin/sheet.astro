@@ -1,0 +1,178 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { reservationsOfDay, dayState, categories } from '@lib/queries';
+import {
+  jaDate, todayJst, addDays, hhmm, nameWithHonorific,
+  KIND_SHORT, STATUS_LABELS, SOURCE_LABELS, WEATHER_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 本日の受付シート。
+// コース脇でスマホで見る / A4 に印刷して受付に置く、の両方で使う。
+// Web 予約も電話予約も同じ台帳なので、ここに全部出る (仕様 13)。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const date = Astro.url.searchParams.get('date') ?? today;
+
+const [rows, state, cats] = await Promise.all([
+  reservationsOfDay(env, date),
+  dayState(env, date),
+  categories(env),
+]);
+
+const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
+
+/** 並び順の基準になる時刻 (スポーツ走行は AM 9:00 / PM 13:00 として扱う) */
+function sortTime(r: { kind: string; session: string | null; start_time: string | null }): string {
+  if (r.kind === 'sport') return r.session === 'am' ? '09:00' : '13:00';
+  return hhmm(r.start_time) || '99:99';
+}
+const sorted = [...live].sort((a, b) => sortTime(a).localeCompare(sortTime(b)));
+
+const people = sorted.reduce((a, r) => a + (r.party_size ?? 0), 0);
+const catName = (code: string | null) =>
+  cats.find((c) => c.code === code)?.name ?? code ?? '';
+
+/** 種別の表示 (ナイターは内訳も出す) */
+function kindLabel(r: { kind: string; night_kind: string | null }): string {
+  const base = KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind;
+  if (r.kind !== 'night') return base;
+  return `${base}${r.night_kind === 'rp' ? ' RP' : r.night_kind === 'charter' ? ' 貸切' : ''}`;
+}
+
+/** 内容 (カテゴリー / 時間) */
+function detail(r: any): string {
+  if (r.kind === 'sport') return `${r.session === 'am' ? 'AM' : 'PM'} ${catName(r.category_code)}`;
+  const s = hhmm(r.start_time);
+  const e = hhmm(r.end_time);
+  return e ? `${s}〜${e}` : s;
+}
+---
+<Base title={`${date} 受付シート | A-ONE 管理`} admin wide>
+  <div class="spread no-print" style="margin-bottom:.6rem">
+    <h1 style="margin:0">受付シート</h1>
+    <div class="row">
+      <a class="btn sm" href={`/admin/sheet?date=${addDays(date, -1)}`}>← 前日</a>
+      <a class="btn sm" href={`/admin/sheet?date=${today}`}>今日</a>
+      <a class="btn sm" href={`/admin/sheet?date=${addDays(date, 1)}`}>翌日 →</a>
+      <a class="btn sm ghost" href={`/admin/day/${date}`}>運営画面</a>
+      <button type="button" class="btn primary sm" id="print">印刷する</button>
+    </div>
+  </div>
+
+  <div class="sheet-head">
+    <div>
+      <h2 class="sheet-date">{jaDate(date)}</h2>
+      <div class="small muted">
+        {sorted.length} 件 / 計 {people} 名
+        {state && state.weather.status !== 'normal' && (
+          <strong> ／ {WEATHER_LABELS[state.weather.status]}</strong>
+        )}
+      </div>
+    </div>
+    <div class="small muted print-only">A-ONE サーキット 受付シート</div>
+  </div>
+
+  {(state?.blocks ?? []).length > 0 && (
+    <div class="blocks small">
+      予定:{' '}
+      {(state?.blocks ?? []).map((b) => <span class="blk-chip">{b.title}</span>)}
+    </div>
+  )}
+
+  {sorted.length === 0 ? (
+    <p class="muted">この日の予約はありません。</p>
+  ) : (
+    <div class="table-scroll">
+      <table class="sheet">
+        <thead>
+          <tr>
+            <th style="width:4.5rem">時刻</th>
+            <th style="width:4rem">種別</th>
+            <th>内容</th>
+            <th>お名前</th>
+            <th style="width:5rem">人数/台数</th>
+            <th style="width:8rem">電話</th>
+            <th>メモ</th>
+            <th style="width:3.5rem" class="no-print">受付</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr class:list={[r.status !== 'confirmed' && 'pending']}>
+              <td class="num">{sortTime(r)}</td>
+              <td><strong>{kindLabel(r)}</strong></td>
+              <td>{detail(r)}</td>
+              <td>
+                <strong>{nameWithHonorific(r.contact_name)}</strong>
+                {r.status !== 'confirmed' && (
+                  <span class="badge warn">{STATUS_LABELS[r.status]}</span>
+                )}
+                {r.forced && <span class="badge ng">強制</span>}
+                <div class="tiny muted">
+                  {SOURCE_LABELS[r.source] ?? r.source} / {r.reservation_number}
+                </div>
+              </td>
+              <td class="num">
+                {r.party_size} 名{r.vehicle_count ? ` / ${r.vehicle_count} 台` : ''}
+              </td>
+              <td class="num">{r.contact_phone ?? '—'}</td>
+              <td class="tiny">
+                {r.staff_memo && <div class="memo">{r.staff_memo}</div>}
+                {r.request_note && <div>{r.request_note}</div>}
+                {r.amount != null && (
+                  <div class="muted">¥{r.amount.toLocaleString('ja-JP')}{r.is_paid ? ' 会計済' : ''}</div>
+                )}
+              </td>
+              <td class="no-print check"></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+  <p class="tiny muted no-print" style="margin-top:.8rem">
+    Web 予約・電話予約・店頭予約がすべて同じ順番で並びます。
+    受付欄はチェック用の空欄です（印刷時に出ます）。
+  </p>
+</Base>
+
+<script is:inline>
+  document.getElementById('print').addEventListener('click', () => window.print());
+</script>
+
+<style is:global>
+  /* 印刷時はサイトのヘッダーと操作ボタンを消して、表だけを A4 に収める */
+  .print-only{display:none}
+  @media print{
+    .site-head, .no-print{display:none !important}
+    body{background:#fff}
+    .wrap{max-width:none;padding:0}
+    .print-only{display:block}
+    table.sheet{font-size:10.5pt}
+    table.sheet tr{page-break-inside:avoid}
+    a[href]:after{content:none !important}
+  }
+</style>
+
+<style>
+  .sheet-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;
+    border-bottom:2px solid var(--ink);padding-bottom:.4rem;margin-bottom:.6rem}
+  .sheet-date{margin:0;font-size:1.3rem}
+  .blocks{margin-bottom:.6rem}
+  .blk-chip{display:inline-block;background:var(--blue-soft);color:#1d5386;border-radius:5px;
+    padding:.1rem .5rem;margin-right:.3rem;font-weight:700}
+  table.sheet th{background:var(--bg-3);color:var(--ink-2);border-bottom:1px solid var(--line-2)}
+  table.sheet td{vertical-align:top;border-bottom:1px solid var(--line)}
+  table.sheet tr.pending{background:#fff8e8}
+  .num{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .memo{color:#8a5a06;font-weight:700}
+  .check{border-left:1px dashed var(--line-2)}
+  @media (max-width:640px){
+    table.sheet{font-size:.82rem}
+    table.sheet th:nth-child(7), table.sheet td:nth-child(7){display:none}
+  }
+</style>
