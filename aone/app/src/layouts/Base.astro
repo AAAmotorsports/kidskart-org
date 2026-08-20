@@ -135,6 +135,29 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
     th{font-size:.78rem;color:var(--ink-3);font-weight:700;white-space:nowrap}
     .table-scroll{overflow-x:auto}
 
+    /* ---- 時間スロット (RP の開始時間など) ----
+       ★ JavaScript で後から生成する要素にも当てる必要があるため、
+          必ずここ (グローバル) に置く。ページ内の <style> は Astro が
+          スコープ化するので、動的生成要素にはスタイルが一切当たらない。 */
+    .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:.4rem}
+    .slot{display:flex;flex-direction:column;align-items:center;gap:.1rem;
+      padding:.5rem .2rem;border:1px solid var(--line-2);border-radius:9px;background:#fff;
+      font-weight:700;font-size:.88rem;font-family:var(--jp);color:var(--ink);cursor:pointer;
+      transition:transform .05s}
+    .slot:hover:not(:disabled){box-shadow:0 3px 8px rgba(0,0,0,.1)}
+    .slot:active:not(:disabled){transform:scale(.97)}
+    .slot.free{border-color:#b9e3cf;background:var(--green-soft);color:#14724a}
+    .slot.limited{border-color:#f2d69b;background:#fff5e2;color:#8a5a06}
+    .slot.full{background:var(--bg-3);color:var(--ink-4);cursor:not-allowed;text-decoration:line-through}
+    .slot.picked{background:var(--red);border-color:var(--red);color:#fff;
+      box-shadow:0 0 0 3px rgba(215,38,61,.25)}
+    .slot.picked .tiny{color:#fff}
+
+    /* 2 列レイアウトとチェックボックス付きラベル (フォームで多用) */
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+    .agree{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}
+    @media (max-width:560px){ .two{grid-template-columns:1fr} }
+
     /* ---- 通知 ---- */
     .notice{border-radius:10px;padding:.7rem .9rem;font-size:.9rem;border:1px solid var(--line-2);background:var(--bg-2)}
     .notice.ok{background:var(--green-soft);border-color:#b9e3cf}
