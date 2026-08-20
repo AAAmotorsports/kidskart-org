@@ -97,6 +97,9 @@ const WIDGET_JS = String.raw`
     '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
     '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px;line-height:1.35}',
     '.aone-ss .y{color:#14724a}.aone-ss .n{color:#a8b8c5}',
+    '.aone-sess{display:flex;gap:4px;align-items:flex-start}',
+    '.aone-sess>b{flex:0 0 1.9em;color:var(--aone-ink3)}',
+    '.aone-sess-items{flex:1;min-width:0}',
     '.aone-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}',
     '.aone-nav button{border:1px solid var(--aone-line);background:#fff;border-radius:99px;',
     '  padding:5px 14px;font-weight:700;cursor:pointer;font-size:.9em;font-family:inherit;',
@@ -114,7 +117,7 @@ const WIDGET_JS = String.raw`
     '  .aone-body{flex:1;min-width:0}',
     '  .aone-d{flex:0 0 3.6em}',
     '  .aone-dow{display:inline;font-size:.86em}',
-    '  .aone-ss{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:0}',
+    '  .aone-ss{margin-top:0}',
     '  .aone-e,.aone-bk{white-space:normal}}'
   ].join('');
 
@@ -205,23 +208,24 @@ const WIDGET_JS = String.raw`
   // その時間帯に **予約が入っている** クラスを出す。
   // 毎日「カート・ミニバイク」と並べても情報量が無いので、実際に走るクラスが
   // 入っている日だけ出し、空いている日は予約を促す。
-  function sessionLine(label, cats, fallbackOpen) {
+  function sessionLine(cats, fallbackOpen) {
     if (!cats || !cats.length) {
-      return fallbackOpen ? '' : '<div class="n">' + label + ' 受付停止</div>';
+      return fallbackOpen ? '<div class="y">○</div>' : '<div class="n">受付停止</div>';
     }
     var booked = cats.filter(function (c) { return c.running; })
       .map(function (c) { return c.short_name; });
     if (booked.length) {
-      return '<div class="y">' + label + ' ' + esc(booked.join('・')) + '</div>';
+      return '<div class="y">' + esc(booked.join('・')) + '</div>';
     }
     var open = cats.some(function (c) {
       return c.status === 'open' && (!c.requires_reservation || c.running);
     });
     // 空いている枠は ○、止まっている枠は理由が分かるように「受付停止」
-    return open
-      ? '<div class="y">' + label + ' ○</div>'
-      : '<div class="n">' + label + ' 受付停止</div>';
+    return open ? '<div class="y">○</div>' : '<div class="n">受付停止</div>';
   }
+
+  // RP・貸切が AM 枠か PM 枠か (12:00 開始からは PM)
+  function isPmBooking(t) { return (t || '') >= '12:00'; }
 
   /** その日に何か予約が入っているか */
   function hasBookings(day) {
@@ -229,6 +233,24 @@ const WIDGET_JS = String.raw`
     return []
       .concat(day.am_categories || [], day.pm_categories || [])
       .some(function (c) { return c.running; });
+  }
+
+  // 1 つの時間帯 (AM / PM) の中身。予約が先、受付状況が後。
+  function sessionBlock(label, cats, fallbackOpen, books, closedDay) {
+    var items = (books || []).map(function (b) {
+      var t = b.kind === 'rp'
+        ? b.time + ' RP'
+        : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
+      if (b.name) t += ' ' + b.name;
+      return '<div class="aone-bk ' + b.kind + '" title="' + esc(t) + '">' + esc(t) + '</div>';
+    });
+    if (!closedDay) {
+      var mark = sessionLine(cats, fallbackOpen);
+      if (mark) items.push(mark);
+    }
+    if (!items.length) return '';
+    return '<div class="aone-sess"><b>' + label + '</b><div class="aone-sess-items">' +
+      items.join('') + '</div></div>';
   }
 
   function renderMonth(el, d) {
@@ -275,18 +297,16 @@ const WIDGET_JS = String.raw`
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
       });
-      // すでに入っている RP・貸切 (旧スケジュールページの「RP ○○様」に相当)
-      (day.date < d.today ? [] : (day.bookings || [])).forEach(function (b) {
-        var label = b.kind === 'rp'
-          ? b.time + ' RP'
-          : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
-        if (b.name) label += ' ' + b.name;
-        html += '<div class="aone-bk ' + b.kind + '" title="' + esc(label) + '">' + esc(label) + '</div>';
-      });
-      if (day.weather !== 'cancelled' && day.date >= d.today) {
+
+      if (day.date >= d.today) {
+        // AM / PM ごとに「予約 → 受付状況」の順で並べる
+        var books = day.bookings || [];
+        var closedDay = day.weather === 'cancelled';
         html += '<div class="aone-ss">'
-          + sessionLine('AM', day.am_categories, day.am_open)
-          + sessionLine('PM', day.pm_categories, day.pm_open)
+          + sessionBlock('AM', day.am_categories, day.am_open,
+              books.filter(function (b) { return !isPmBooking(b.time); }), closedDay)
+          + sessionBlock('PM', day.pm_categories, day.pm_open,
+              books.filter(function (b) { return isPmBooking(b.time); }), closedDay)
           + '</div>';
       }
       html += '</div>' + (linkable ? '</a></td>' : '</div></td>');
