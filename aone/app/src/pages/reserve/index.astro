@@ -30,6 +30,7 @@ const rpSummary = !state
       : `本日は ${rpOpen[0].time}〜 空きあり`;
 ---
 <Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのレースパック・スポーツ走行・貸切・ナイターの予約メニュー">
+  <a class="back-link" href="/">← トップに戻る</a>
   <h1>ご予約</h1>
 
   {state && state.weather.status !== 'normal' && (

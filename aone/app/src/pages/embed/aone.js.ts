@@ -266,8 +266,8 @@ const WIDGET_JS = String.raw`
       });
       if (day.weather !== 'cancelled' && day.date >= d.today) {
         html += '<div class="aone-ss">'
-          + sessionLine('前', day.am_categories, day.am_open)
-          + sessionLine('後', day.pm_categories, day.pm_open)
+          + sessionLine('AM', day.am_categories, day.am_open)
+          + sessionLine('PM', day.pm_categories, day.pm_open)
           + '</div>';
       }
       html += linkable ? '</a></td>' : '</div></td>';

@@ -63,7 +63,7 @@ function rowColor(r: Reservation): string {
 function cellLabel(r: Reservation): string {
   const name = nameWithHonorific(r.contact_name);
   if (r.kind === 'sport') {
-    const when = r.session === 'am' ? '前' : '後';
+    const when = r.session === 'am' ? 'AM' : 'PM';
     const cat = cats.find((c) => c.code === r.category_code)?.short_name
       ?? cats.find((c) => c.code === r.category_code)?.name
       ?? r.category_code ?? '';
@@ -192,7 +192,7 @@ const isOpen = (v: string) => v === 'true';
           {d.rows.map((r) => (
             <div class="tiny res">
               <strong>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</strong>{' '}
-              {r.kind === 'sport' ? (r.session === 'am' ? '午前' : '午後') : timeRangeLabel(r)}<br />
+              {r.kind === 'sport' ? (r.session === 'am' ? 'AM' : 'PM') : timeRangeLabel(r)}<br />
               {r.contact_name} 様 ({r.party_size}名)
               {r.status !== 'confirmed' && <span class="badge warn">{STATUS_LABELS[r.status]}</span>}
             </div>

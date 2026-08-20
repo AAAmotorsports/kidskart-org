@@ -169,7 +169,7 @@ const isSport = r?.kind === 'sport';
       if (kind === 'sport') {
         const sw = $('sessions');
         sw.innerHTML = '';
-        [['am', '午前'], ['pm', '午後']].forEach(([key, label]) => {
+        [['am', 'AM'], ['pm', 'PM']].forEach(([key, label]) => {
           const s = state.sport[key];
           const usable = s.categories.some((c) => c.status === 'open' || c.status === 'limited') || key === curSession;
           const l = document.createElement('label');

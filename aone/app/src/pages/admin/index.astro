@@ -24,7 +24,7 @@ const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
 const people = live.reduce((a, r) => a + (r.party_size ?? 0), 0);
 const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 const weekStates = await Promise.all(week.map((d) => dayState(env, d)));
-const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 ---
 <Base title="A-ONE 管理" admin wide>
   <div class="spread" style="margin-bottom:.8rem">

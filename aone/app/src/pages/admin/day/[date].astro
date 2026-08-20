@@ -36,7 +36,7 @@ const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
 const dead = rows.filter((r) => ['cancelled', 'no_show'].includes(r.status));
 const needsAction = live.filter((r) => ['contact_wait', 'checking'].includes(r.status));
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
-const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 ---
 <Base title={`${date} の運営 | A-ONE 管理`} admin wide>
   <div class="spread" style="margin-bottom:.6rem">
@@ -228,8 +228,8 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
         <div class="field" id="wrap-session">
           <label>時間帯 <span class="tiny muted">(複数可)</span></label>
           <div class="choice">
-            <label><input type="checkbox" class="n-sess" value="am" checked /> 午前</label>
-            <label><input type="checkbox" class="n-sess" value="pm" /> 午後</label>
+            <label><input type="checkbox" class="n-sess" value="am" checked /> AM</label>
+            <label><input type="checkbox" class="n-sess" value="pm" /> PM</label>
           </div>
         </div>
         <div class="field" id="wrap-category">
@@ -546,7 +546,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後
 
     for (const c of combos) {
       const label = c.date.slice(5).replace('-', '/') +
-        (c.session ? (c.session === 'am' ? ' 午前' : ' 午後') : '');
+        (c.session ? (c.session === 'am' ? ' AM' : ' PM') : '');
       try {
         const r = await post('/api/admin/reservation', {
           action: 'create',
