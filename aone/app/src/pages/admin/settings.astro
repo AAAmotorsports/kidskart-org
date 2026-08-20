@@ -23,6 +23,15 @@ const NUM = [
   ['rp_cancel_deadline_hours', 'キャンセル料 100% になる時間 (時間前)'],
 ] as const;
 
+const PRICE = [
+  ['rp_price_per_person', 'レースパック 1 人あたり (円)'],
+  ['charter_base_price', '貸切 基本料 (円)'],
+  ['charter_price_per_kart', '貸切 カート 1 台あたり (円)'],
+  ['charter_min_karts', '貸切 最小台数'],
+  ['rental_heat_price', 'レンタル走行 1 ヒート (円)'],
+  ['rental_heat_minutes', 'レンタル走行 1 ヒートの分数'],
+] as const;
+
 const TIME = [
   ['course_open_time', 'コースオープン'],
   ['am_start_time', '午前走行 開始'],
@@ -56,6 +65,23 @@ const TIME = [
             <div class="field">
               <label for={key}>{label}</label>
               <input type="number" id={key} data-key={key} value={cfg[key]} min="0" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>料金</h2>
+        <p class="tiny muted">
+          予約時に自動計算して予約に記録します（レースパック = 人数 × 単価、
+          貸切 = 基本料 ＋ 台数 × 単価）。金額を変えると<strong>これ以降の予約</strong>に反映されます。
+          既存の予約金額は変わりません。個別の金額はスタッフが予約ごとに上書きできます。
+        </p>
+        <div class="grid2">
+          {PRICE.map(([key, label]) => (
+            <div class="field">
+              <label for={key}>{label}</label>
+              <input type="number" id={key} data-key={key} value={cfg[key]} min="0" step="100" />
             </div>
           ))}
         </div>

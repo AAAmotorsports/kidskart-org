@@ -1,7 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { dayState } from '@lib/queries';
+import { dayState, settings } from '@lib/queries';
 import { todayJst, jaDate, WEATHER_LABELS } from '@lib/domain';
 
 export const prerender = false;
@@ -11,7 +11,14 @@ export const prerender = false;
 // 一番伸ばしたいメニューなので、他の 3 つとは扱いを分けて大きく置く。
 const env = envFrom(Astro.locals);
 const today = todayJst();
-const state = await dayState(env, today);
+const [state, cfg] = await Promise.all([dayState(env, today), settings(env)]);
+const rpPrice: number = cfg?.rp_price_per_person ?? 6600;
+const charterBase: number = cfg?.charter_base_price ?? 10000;
+const charterPerKart: number = cfg?.charter_price_per_kart ?? 10000;
+const charterMinKarts: number = cfg?.charter_min_karts ?? 5;
+const heatPrice: number = cfg?.rental_heat_price ?? 2200;
+const heatMinutes: number = cfg?.rental_heat_minutes ?? 7;
+const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
 
 const rpOpen = state ? state.rp.slots.filter((s) => s.accepting) : [];
 const rpSummary = !state
@@ -38,11 +45,13 @@ const rpSummary = !state
     <div class="hero-badge">いちばん人気</div>
     <div class="hero-body">
       <div class="hero-title">レースパック <span class="hero-abbr">RP</span></div>
+      <div class="hero-price">{yen(rpPrice)} <span>/ 人</span></div>
       <p class="hero-lead">
         3 名以上のグループ向け。みんなでタイムを競って、いちばん盛り上がるプランです。
         代表者 1 名がまとめてご予約ください。
       </p>
       <ul class="hero-points">
+        <li>練習 → 予選 → レース。表彰台で記念撮影ができます</li>
         <li>10:00〜17:00 の 30 分刻みで開始時間を選べます</li>
         <li>ご予約後も、人数・時間は専用ページからいつでも変更できます</li>
         <li>会社の懇親会・部活・お友達同士のグループに</li>
@@ -58,16 +67,19 @@ const rpSummary = !state
   <h2 class="sub-head">そのほかのご予約</h2>
   <div class="menu">
     <a class="menu-card" href="/reserve/sport">
-      <div class="menu-title">スポーツ走行</div>
+      <div class="menu-title">スポーツ走行 <span class="tag">持ち込み</span></div>
       <p class="small muted">
-        カート／ミニバイクは<strong>ご予約なし</strong>でもお越しいただけます。
-        キッズカート・その他（大型バイク等）は事前のご予約が必要です。
+        マイマシンでの走行です。カート／ミニバイクは<strong>ご予約なし</strong>でもお越しいただけます。
+        キッズカートのご予約はお電話で承ります。
       </p>
       <span class="btn sm">予約する</span>
     </a>
 
     <a class="menu-card" href="/reserve/charter">
       <div class="menu-title">貸切</div>
+      <div class="card-price">{yen(charterBase)} ＋ {yen(charterPerKart)} × カート台数<br />
+        <span class="muted">（最小 {charterMinKarts} 台 = {yen(charterBase + charterPerKart * charterMinKarts)}）</span>
+      </div>
       <p class="small muted">コースを貸切でご利用いただけます。他のご予約状況によっては A-ONE より折り返しご連絡します。</p>
       <span class="btn sm">申し込む</span>
     </a>
@@ -79,10 +91,22 @@ const rpSummary = !state
     </a>
   </div>
 
+  <div class="card walkin-card">
+    <h2>レンタルカート走行（1 ヒート {yen(heatPrice)} / {heatMinutes} 分）</h2>
+    <p class="small">
+      通常のレンタルカート走行は<strong>ご予約不要</strong>です。営業時間内にお越しいただければ、
+      その場で受付して走行できます。本日走れるかどうかは
+      <a href="/">「今日走れる？」</a>でご確認ください。
+    </p>
+    <p class="small muted">
+      グループでレースをしたい方は上のレースパック、コースを独占したい方は貸切をご利用ください。
+    </p>
+  </div>
+
   <div class="card">
     <h2>ご予約にあたって</h2>
     <ul class="small">
-      <li>お支払いは原則として当日現地でのお支払いです。</li>
+      <li>お支払いは原則として当日現地でのお支払いです（レースパック {yen(rpPrice)}／人、貸切 {yen(charterBase)} ＋ {yen(charterPerKart)}×台数）。</li>
       <li>スポーツ走行は当日でもご連絡いただければキャンセル可能です (キャンセル料なし)。ご連絡のないキャンセルは無断キャンセルとして記録します。</li>
       <li>レースパック・貸切は、ご利用開始 24 時間前以降のキャンセルは料金 100% を申し受けます。</li>
       <li>ご予約後は、予約完了メールに記載の専用 URL からいつでも内容の確認・変更・キャンセルができます。</li>
@@ -112,6 +136,8 @@ const rpSummary = !state
     font-size:.8rem;background:var(--red);border-radius:6px;padding:.1rem .45rem;
     vertical-align:middle;margin-left:.3rem;letter-spacing:.06em;
   }
+  .hero-price{font-size:1.15rem;font-weight:800;color:#ffd7dd;margin:0 0 .5rem}
+  .hero-price span{font-size:.8rem;font-weight:700;opacity:.85}
   .hero-lead{margin:0 0 .6rem;font-size:.94rem;color:#dbe6f0}
   .hero-points{margin:0 0 .8rem;padding-left:1.1rem;font-size:.85rem;color:#c3d3e2}
   .hero-points li{margin:.15rem 0}
@@ -127,6 +153,10 @@ const rpSummary = !state
   .menu-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
   .menu-card:active{transform:scale(.995)}
   .menu-title{font-weight:800;font-size:1.02rem;margin-bottom:.3rem}
+  .menu-title .tag{font-size:.66rem;background:var(--bg-3);color:var(--ink-3);border-radius:5px;
+    padding:.1rem .4rem;vertical-align:middle;font-weight:700}
+  .card-price{font-size:.82rem;font-weight:700;color:var(--red-deep);margin-bottom:.3rem;line-height:1.45}
+  .walkin-card{border-left:4px solid var(--green)}
   .menu-card p{margin:.2rem 0 .7rem}
   @media (max-width:760px){ .menu{grid-template-columns:1fr} }
 </style>

@@ -3,7 +3,7 @@
 # 新しいマイグレーションを足したら、このスクリプトの FILES に追記して実行する。
 set -eu
 cd "$(dirname "$0")"
-FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql 0006_category_walkin.sql 0007_sport_no_limited.sql 0008_admin_only_category.sql"
+FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql 0006_category_walkin.sql 0007_sport_no_limited.sql 0008_admin_only_category.sql 0009_prices.sql"
 
 {
   cat <<'HDR'

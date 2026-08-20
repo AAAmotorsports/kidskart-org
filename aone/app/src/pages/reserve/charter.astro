@@ -1,8 +1,15 @@
 ---
 import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { settings } from '@lib/queries';
 import { todayJst, addDays } from '@lib/domain';
 
 export const prerender = false;
+
+const cfg = await settings(envFrom(Astro.locals));
+const basePrice: number = cfg?.charter_base_price ?? 10000;
+const perKart: number = cfg?.charter_price_per_kart ?? 10000;
+const minKarts: number = cfg?.charter_min_karts ?? 5;
 
 // 貸切の申込フォーム (仕様 5)。
 // 他予約が無ければそのまま確定、あっても申込は受け付けて「連絡待ち」にする。
@@ -15,6 +22,12 @@ const maxDate = addDays(today, 365);
     コースを貸切でご利用いただけます。他のご予約が入っている時間帯の場合も
     お申し込み自体は承り、A-ONE より折り返しご連絡いたします。
   </p>
+  <div class="notice info small" style="margin-bottom:1rem">
+    <strong>料金 {basePrice.toLocaleString('ja-JP')} 円 ＋ カート 1 台につき {perKart.toLocaleString('ja-JP')} 円</strong>
+    （最小 {minKarts} 台から）<br />
+    例: {minKarts} 台なら {(basePrice + perKart * minKarts).toLocaleString('ja-JP')} 円。
+    お支払いは当日現地でお願いします。
+  </div>
 
   <form id="form" class="card" novalidate>
     <div class="field">
@@ -41,6 +54,11 @@ const maxDate = addDays(today, 365);
         <input type="number" id="party" min="1" max="200" value="10" required />
       </div>
       <div class="field">
+        <label for="karts">カート台数</label>
+        <input type="number" id="karts" min={minKarts} max="30" value={minKarts} required />
+        <div class="hint">最小 {minKarts} 台から承ります。</div>
+      </div>
+      <div class="field">
         <label for="contact-method">ご希望の連絡方法</label>
         <select id="contact-method">
           <option value="email">メール</option>
@@ -49,6 +67,8 @@ const maxDate = addDays(today, 365);
         <div class="hint">確認のご連絡はこちらの方法で差し上げます。</div>
       </div>
     </div>
+
+    <div class="price-box">お支払い予定額 <b id="price">—</b></div>
 
     <fieldset>
       <legend>ご連絡先</legend>
@@ -93,8 +113,15 @@ const maxDate = addDays(today, 365);
   </form>
 </Base>
 
-<script is:inline>
+<script is:inline define:vars={{ BASE: basePrice, PER_KART: perKart, MIN_KARTS: minKarts }}>
   const $ = (id) => document.getElementById(id);
+
+  function renderPrice() {
+    const k = Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS);
+    $('price').textContent = '¥' + (BASE + PER_KART * k).toLocaleString('ja-JP') +
+      ' （基本料 ¥' + BASE.toLocaleString('ja-JP') + ' ＋ ' + k + '台 × ¥' +
+      PER_KART.toLocaleString('ja-JP') + '）';
+  }
 
   async function loadDay() {
     const date = $('date').value;
@@ -124,6 +151,9 @@ const maxDate = addDays(today, 365);
     }
   }
 
+  $('karts').addEventListener('input', renderPrice);
+  renderPrice();
+
   $('date').addEventListener('change', loadDay);
   loadDay();
   window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'charter' });
@@ -152,6 +182,7 @@ const maxDate = addDays(today, 365);
           start_time: $('start').value,
           end_time: $('end').value,
           party_size: Number($('party').value || 1),
+          vehicle_count: Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS),
           preferred_contact: $('contact-method').value,
           name: $('name').value,
           kana: $('kana').value,
@@ -177,5 +208,8 @@ const maxDate = addDays(today, 365);
 <style>
   .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
   .agree{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}
+  .price-box{margin:0 0 1rem;padding:.6rem .8rem;background:var(--bg-3);border-radius:8px;
+    font-size:.92rem;font-weight:700}
+  .price-box b{color:var(--red-deep);font-size:1.08rem}
   @media (max-width:560px){ .two{grid-template-columns:1fr} }
 </style>
