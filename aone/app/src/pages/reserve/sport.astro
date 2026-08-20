@@ -18,6 +18,10 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     カート・ミニバイク・キッズカート・その他 (大型バイク等) のスポーツ走行枠です。
     同じカテゴリーは何台入っても 1 クラス扱いです。
   </p>
+  <div class="notice info small" style="margin-bottom:1rem">
+    カート・ミニバイクは、ご予約なしでもお越しいただけます (ご予約いただくと枠を確保します)。<br />
+    <strong>キッズカート・その他 (大型バイク等) は事前のご予約が必要です。</strong>
+  </div>
 
   <form id="form" class="card" novalidate>
     <div class="field">
@@ -171,7 +175,8 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
       l.innerHTML =
         '<input type="radio" name="category" value="' + c.code + '"' +
         (usable ? '' : ' disabled') + (category === c.code ? ' checked' : '') + '> ' +
-        c.name + ' <span class="mark ' + c.status + '" style="font-size:1rem">' + MARK[c.status] + '</span>';
+        c.name + ' <span class="mark ' + c.status + '" style="font-size:1rem">' + MARK[c.status] + '</span>' +
+        (c.requires_reservation ? ' <span class="badge warn">要予約</span>' : '');
       wrap.appendChild(l);
     });
     wrap.querySelectorAll('input[name=category]').forEach((el) => {

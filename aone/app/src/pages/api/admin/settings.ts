@@ -52,7 +52,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-  const { error } = await getSupabaseAdmin(env).from('aone_settings').update(patch).eq('id', 1);
+  const supabase = getSupabaseAdmin(env);
+  const { error } = await supabase.from('aone_settings').update(patch).eq('id', 1);
   if (error) return mapRpcError(error);
+
+  // カテゴリーごとの「予約が必要か」「受付するか」も同じ画面から更新する。
+  // カート・ミニバイクは飛び込み可、キッズ・その他は要予約、が既定。
+  if (Array.isArray(body?.categories)) {
+    for (const c of body.categories) {
+      const code = str(c?.code);
+      if (!code) continue;
+      const cpatch: Record<string, unknown> = {};
+      if (typeof c?.requires_reservation === 'boolean') cpatch.requires_reservation = c.requires_reservation;
+      if (typeof c?.is_active === 'boolean') cpatch.is_active = c.is_active;
+      if (Object.keys(cpatch).length === 0) continue;
+      const { error: cerr } = await supabase.from('aone_categories').update(cpatch).eq('code', code);
+      if (cerr) return mapRpcError(cerr);
+    }
+  }
+
   return json({ ok: true });
 };

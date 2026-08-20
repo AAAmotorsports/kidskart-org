@@ -27,7 +27,12 @@ export interface DayState {
     categories: Array<{
       code: string; name: string; short_name: string;
       status: 'open' | 'limited' | 'closed' | 'off';
-      running: boolean; reason: string; message: string;
+      running: boolean;
+      /** 事前予約が必要なカテゴリーか (false = 飛び込みでも走れる) */
+      requires_reservation: boolean;
+      /** 予約なしで来場してそのまま走れるか */
+      walk_in_ok: boolean;
+      reason: string; message: string;
     }>;
   }>;
   rp: {
@@ -83,7 +88,15 @@ export async function monthState(env: Env, year: number, month: number): Promise
   }
 }
 
-export interface Category { code: string; name: string; short_name: string | null; sort_order: number; is_active: boolean }
+export interface Category {
+  code: string;
+  name: string;
+  short_name: string | null;
+  sort_order: number;
+  is_active: boolean;
+  /** true = 事前予約が必要 / false = 飛び込みでも走れる */
+  requires_reservation: boolean;
+}
 
 export async function categories(env: Env): Promise<Category[]> {
   try {

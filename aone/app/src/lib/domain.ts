@@ -91,6 +91,26 @@ export const STATUS_TEXT: Record<CategoryStatus, string> = {
   off: '対象外',
 };
 
+/**
+ * カテゴリー 1 つの状態を利用者向けの一言にする。
+ *
+ * A-ONE の運用: カート・ミニバイクは予約なしの飛び込みでも走れるが、
+ * キッズカートとその他 (大型バイク等) は事前予約が必要 (仕様外の実運用ルール)。
+ * 「走れます」と出したせいでキッズの子が来て走れない、という事故を防ぐため、
+ * 予約が要るカテゴリーは必ず「要予約」と出す。
+ */
+export function categoryText(c: {
+  status: CategoryStatus;
+  requires_reservation?: boolean;
+  walk_in_ok?: boolean;
+  running?: boolean;
+}): string {
+  if (c.status === 'off') return '対象外';
+  if (c.status === 'closed') return '受付停止';
+  if (c.walk_in_ok) return c.status === 'limited' ? '走れます (残りわずか)' : '走れます';
+  return c.status === 'limited' ? '要予約 (残りわずか)' : '要予約';
+}
+
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
 export function jaDate(iso: string): string {
