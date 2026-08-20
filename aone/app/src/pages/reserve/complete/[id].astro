@@ -1,0 +1,86 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { reservationById } from '@lib/queries';
+import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen } from '@lib/domain';
+
+export const prerender = false;
+
+// 予約完了ページ。
+// URL に予約 ID が入るため、?t=<access_token> が一致したときだけ内容を出す
+// (ID の総当たりで他人の予約が覗けないようにする)。
+const env = envFrom(Astro.locals);
+const { id } = Astro.params;
+const token = Astro.url.searchParams.get('t') ?? '';
+const r = id ? await reservationById(env, id) : null;
+const visible = r && token && r.access_token === token;
+const pending = visible && r.status !== 'confirmed';
+---
+<Base title="ご予約を受付けました | A-ONE サーキット">
+  {!visible ? (
+    <div class="card">
+      <h1>予約内容を表示できません</h1>
+      <p class="muted">
+        URL が正しくないか、有効期限が切れています。予約完了メールに記載の
+        専用 URL からアクセスしてください。
+      </p>
+      <a class="btn" href="/">トップへ</a>
+    </div>
+  ) : (
+    <>
+      <div class="card done">
+        <div class="big">{pending ? '📩' : '✅'}</div>
+        <h1>{pending ? 'お申し込みを受付けました' : 'ご予約が確定しました'}</h1>
+        <p class="muted">
+          {pending
+            ? '内容を確認のうえ、A-ONE より折り返しご連絡いたします。'
+            : 'ご来場をお待ちしております。確認メールをお送りしました。'}
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>ご予約内容</h2>
+        <table>
+          <tbody>
+            <tr><th>予約番号</th><td>{r.reservation_number}</td></tr>
+            <tr><th>内容</th><td>{KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}</td></tr>
+            <tr><th>状態</th><td>{STATUS_LABELS[r.status] ?? r.status}</td></tr>
+            <tr><th>日付</th><td>{jaDate(r.date)}</td></tr>
+            <tr><th>時間</th><td>{timeRangeLabel(r)}</td></tr>
+            <tr><th>人数</th><td>{r.party_size} 名</td></tr>
+            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
+            <tr><th>お名前</th><td>{r.contact_name} 様</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>予約者専用ページ</h2>
+        <p class="small">
+          下記の URL から、いつでも内容の確認・日時や人数の変更・キャンセルができます。
+          同じ URL を予約完了メールにも記載しています。
+        </p>
+        <p><a class="btn primary" href={`/r/${r.access_token}`}>予約者専用ページを開く</a></p>
+      </div>
+
+      <div class="card">
+        <h2>当日について</h2>
+        <ul class="small">
+          <li>当日の営業状況 (天候による判断) は <a href="/">トップページ</a> でご確認いただけます。</li>
+          {r.kind === 'sport' ? (
+            <li>スポーツ走行は当日でもご連絡いただければキャンセル可能です (キャンセル料なし)。ご連絡のないキャンセルは無断キャンセルとして記録します。</li>
+          ) : (
+            <li>ご利用開始 24 時間前以降のキャンセルは、料金 100% を申し受けます。</li>
+          )}
+          <li>お支払いは原則として当日現地でのお支払いです。</li>
+        </ul>
+      </div>
+    </>
+  )}
+</Base>
+
+<style>
+  .done{text-align:center}
+  .done .big{font-size:2.4rem;line-height:1}
+  .done h1{margin:.3rem 0 .2rem}
+</style>

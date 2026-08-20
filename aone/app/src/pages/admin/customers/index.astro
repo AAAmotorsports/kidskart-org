@@ -1,0 +1,60 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { customerStats } from '@lib/queries';
+import { jaDateShort } from '@lib/domain';
+
+export const prerender = false;
+
+// 顧客一覧 (仕様 16)。電話番号・メールで名寄せした履歴を出す。
+const env = envFrom(Astro.locals);
+const q = Astro.url.searchParams.get('q') ?? '';
+const rows = await customerStats(env, q || undefined, 200);
+---
+<Base title="顧客 | A-ONE 管理" admin wide>
+  <h1>顧客</h1>
+
+  <form class="card row" method="get">
+    <input type="text" name="q" value={q} placeholder="お名前・フリガナ・電話・メールで検索" style="max-width:24rem" />
+    <button class="btn primary" type="submit">検索</button>
+  </form>
+
+  <p class="small muted">{rows.length} 名</p>
+
+  <div class="card table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>お名前</th><th>連絡先</th><th>RP</th><th>走行</th><th>貸切</th>
+          <th>キャンセル</th><th>無断</th><th>最終来場</th><th>メモ・タグ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((c) => (
+          <tr>
+            <td>
+              <a href={`/admin/customers/${c.id}`}><strong>{c.name} 様</strong></a>
+              {c.kana && <div class="tiny muted">{c.kana}</div>}
+            </td>
+            <td class="tiny">{c.phone ?? '—'}<br />{c.email ?? '—'}</td>
+            <td>{c.rp_count}</td>
+            <td>{c.sport_count}</td>
+            <td>{c.charter_count}</td>
+            <td>{c.cancel_count}</td>
+            <td>{c.no_show_count > 0 ? <span class="badge ng">{c.no_show_count}</span> : 0}</td>
+            <td class="tiny">{c.last_visit_date ? jaDateShort(c.last_visit_date) : '—'}</td>
+            <td class="tiny">
+              {(c.tags ?? []).map((t) => <span class="badge">{t}</span>)}
+              {c.staff_memo && <div class="memo">{c.staff_memo}</div>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {rows.length === 0 && <p class="muted small">該当する顧客はいません。</p>}
+  </div>
+</Base>
+
+<style>
+  .memo{color:#8a5a06}
+</style>

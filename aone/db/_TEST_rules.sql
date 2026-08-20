@@ -1,0 +1,338 @@
+-- =============================================================================
+-- A-ONE ルールエンジンのテスト (ローカル Postgres 用)
+-- =============================================================================
+-- 使い方 (ローカルに空の DB を用意して):
+--   psql -f 0001_initial_schema.sql -f 0002_seed_holidays.sql \
+--        -f 0003_availability_engine.sql -f 0004_reservation_rpcs.sql
+--   psql -v ON_ERROR_STOP=1 -f _TEST_rules.sql
+--
+-- 全部通れば最後に「ALL TESTS PASSED」と出る。
+-- 本番 (Supabase) では実行しないこと — テストデータを作って rollback する。
+-- =============================================================================
+begin;
+
+-- テスト用の基準日: 次の平日 (月〜金) と 次の日曜
+create temp table t_dates as
+select
+  (select d from generate_series(aone_today() + 1, aone_today() + 14, interval '1 day') g(d)
+    where extract(dow from d) between 1 and 5 and not aone_is_holiday(d::date) limit 1)::date as weekday,
+  (select d from generate_series(aone_today() + 1, aone_today() + 14, interval '1 day') g(d)
+    where extract(dow from d) = 0 limit 1)::date as sunday,
+  -- 2 つめの平日 (先の平日と別日にしたいケース用)
+  (select d from generate_series(aone_today() + 6, aone_today() + 20, interval '1 day') g(d)
+    where extract(dow from d) between 1 and 5 and not aone_is_holiday(d::date) limit 1)::date as weekday2;
+
+create or replace function t_book(p jsonb) returns jsonb language sql volatile as $$
+  select aone_create_reservation(
+    p || jsonb_build_object('contact', jsonb_build_object(
+      'name', coalesce(p->>'who', 'テスト太郎'),
+      'phone', coalesce(p->>'phone', '090-0000-0000'),
+      'email', coalesce(p->>'email', '')))
+  );
+$$;
+
+do $$
+declare
+  d_weekday date;
+  d_sunday  date;
+  d_wd2     date;
+  r  jsonb;
+  st jsonb;
+  ok boolean;
+  msg text;
+  id1 uuid;
+begin
+  select weekday, sunday, weekday2 into d_weekday, d_sunday, d_wd2 from t_dates;
+
+  -- =========================================================================
+  raise notice '--- 1. スポーツ走行: 平日は 2 クラスまで、同一カテゴリーは何台でも 1 クラス';
+  -- =========================================================================
+  r := t_book(jsonb_build_object('kind','sport','date',d_weekday,'session','am',
+                                 'category_code','kart','party_size',2,'who','カートA'));
+  assert (r->>'status') = 'confirmed', '1-1 カート1件目が確定しない: ' || r::text;
+
+  -- 同一カテゴリー2件目 → 1 クラス扱いなので通る
+  r := t_book(jsonb_build_object('kind','sport','date',d_weekday,'session','am',
+                                 'category_code','kart','party_size',1,'who','カートB'));
+  assert (r->>'status') = 'confirmed', '1-2 同一カテゴリー追加が弾かれた';
+  assert (r->'check'->>'reason') = 'existing_class', '1-2 reason が existing_class でない';
+
+  -- 2 クラス目 (別カテゴリー) → 通る
+  r := t_book(jsonb_build_object('kind','sport','date',d_weekday,'session','am',
+                                 'category_code','minibike','party_size',1,'who','バイクA'));
+  assert (r->>'status') = 'confirmed', '1-3 2クラス目が弾かれた';
+
+  -- 3 クラス目 → 上限で弾かれる
+  begin
+    r := t_book(jsonb_build_object('kind','sport','date',d_weekday,'session','am',
+                                   'category_code','kidskart','party_size',1,'who','キッズA'));
+    assert false, '1-4 3クラス目が受け付けられてしまった';
+  exception when sqlstate 'AONE1' then
+    get stacked diagnostics msg = pg_exception_hint;
+    assert msg = 'class_full', '1-4 hint が class_full でない: ' || msg;
+  end;
+
+  -- 午後は別枠なので空いている
+  r := aone_check_availability('sport', d_weekday, 'kidskart', 'pm');
+  assert (r->>'ok')::boolean, '1-5 午後まで塞がっている';
+
+  -- 「今日走れる？」表示: 午前のキッズは closed、カートは open (既存クラス)
+  st := aone_day_state(d_weekday);
+  assert (st->'sport'->'am'->'categories'->2->>'status') = 'closed', '1-6 キッズが closed でない';
+  assert (st->'sport'->'am'->'categories'->0->>'status') = 'open',   '1-6 カートが open でない';
+  assert (st->'sport'->'am'->>'used_classes') = '2', '1-6 used_classes が 2 でない';
+
+  -- =========================================================================
+  raise notice '--- 2. 土日祝の午後は 1 クラスまで';
+  -- =========================================================================
+  r := t_book(jsonb_build_object('kind','sport','date',d_sunday,'session','pm',
+                                 'category_code','kart','party_size',1,'who','日曜カート'));
+  assert (r->>'status') = 'confirmed', '2-1 日曜午後 1 クラス目が弾かれた';
+  begin
+    r := t_book(jsonb_build_object('kind','sport','date',d_sunday,'session','pm',
+                                   'category_code','minibike','party_size',1,'who','日曜バイク'));
+    assert false, '2-2 日曜午後 2 クラス目が受け付けられてしまった';
+  exception when sqlstate 'AONE1' then
+    get stacked diagnostics msg = pg_exception_hint;
+    assert msg = 'class_full', '2-2 hint が class_full でない: ' || msg;
+  end;
+  -- 日曜午前は 2 クラス
+  r := aone_check_availability('sport', d_sunday, 'minibike', 'am');
+  assert (r->>'ok')::boolean, '2-3 日曜午前が受け付けられない';
+  st := aone_day_state(d_sunday);
+  assert (st->'sport'->'pm'->>'max_classes') = '1', '2-4 日曜午後の上限が 1 でない';
+  assert (st->'sport'->'am'->>'max_classes') = '2', '2-4 日曜午前の上限が 2 でない';
+
+  -- =========================================================================
+  raise notice '--- 3. RP: 3 名以上 / 同一開始時刻は 2 グループまで';
+  -- =========================================================================
+  begin
+    r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','14:00',
+                                   'party_size',2,'who','RP少人数'));
+    assert false, '3-1 2 名の RP が受け付けられてしまった';
+  exception when sqlstate 'AONE1' then
+    get stacked diagnostics msg = pg_exception_hint;
+    assert msg = 'min_party', '3-1 hint が min_party でない: ' || msg;
+  end;
+
+  r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','14:00',
+                                 'party_size',5,'who','RP-A'));
+  assert (r->>'status') = 'confirmed', '3-2 RP 1 組目が確定しない';
+  assert (r->>'end_time') = '15:30', '3-2 終了時刻が自動計算されていない: ' || (r->>'end_time');
+
+  r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','14:00',
+                                 'party_size',4,'who','RP-B'));
+  assert (r->>'status') = 'confirmed', '3-3 RP 2 組目が確定しない';
+
+  begin
+    r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','14:00',
+                                   'party_size',3,'who','RP-C'));
+    assert false, '3-4 同一開始時刻の 3 組目が受け付けられてしまった';
+  exception when sqlstate 'AONE1' then
+    get stacked diagnostics msg = pg_exception_hint;
+    assert msg = 'rp_start_full', '3-4 hint が rp_start_full でない: ' || msg;
+  end;
+
+  -- 30 分ずらせば受付できる (RP をできるだけ受ける設計 — 仕様 3)
+  r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','14:30',
+                                 'party_size',3,'who','RP-C2'));
+  assert (r->>'status') = 'confirmed', '3-5 30 分ずらした RP が弾かれた';
+
+  -- 17:00 以降は要相談 (受け付けるが確認中)
+  r := t_book(jsonb_build_object('kind','rp','date',d_weekday,'start_time','17:30',
+                                 'party_size',3,'who','RP-夕方'));
+  assert (r->>'status') = 'checking', '3-6 17:30 開始が確認中にならない: ' || r::text;
+
+  -- =========================================================================
+  raise notice '--- 4. RP が 3 グループ重なった時間帯はスポーツ走行を停止';
+  -- =========================================================================
+  -- 14:00 / 14:00 / 14:30 の 3 グループが 14:30〜15:30 に重なっている
+  assert aone_rp_peak_groups(d_weekday, '13:00', '16:30') >= 3,
+    '4-1 RP ピークが 3 に達していない';
+  r := aone_check_availability('sport', d_weekday, 'kidskart', 'pm');
+  assert not (r->>'ok')::boolean, '4-2 RP 3 組でもスポーツが受付できてしまう';
+  assert (r->>'reason') = 'rp_saturated', '4-2 reason が rp_saturated でない: ' || (r->>'reason');
+  -- 午前は影響を受けない
+  r := aone_check_availability('sport', d_weekday, 'kidskart', 'am');
+  assert (r->>'reason') <> 'rp_saturated', '4-3 午前まで停止している';
+
+  -- =========================================================================
+  raise notice '--- 5. 貸切: 他予約が無ければ確定、あれば連絡待ち';
+  -- =========================================================================
+  r := t_book(jsonb_build_object('kind','charter','date',d_weekday,'start_time','13:00',
+                                 'end_time','16:00','party_size',10,
+                                 'preferred_contact','phone','who','貸切A'));
+  assert (r->>'status') = 'contact_wait', '5-1 他予約ありの貸切が連絡待ちにならない: ' || r::text;
+
+  -- 予約が 1 件も無い日 (+13 日) の貸切は確定
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today() + 13,
+                                 'start_time','09:00','end_time','12:00','party_size',8,
+                                 'preferred_contact','email','who','貸切B'));
+  assert (r->>'status') = 'confirmed', '5-2 空き日の貸切が確定しない: ' || r::text;
+  id1 := (r->>'id')::uuid;
+
+  -- 確定貸切の時間帯はスポーツも RP も停止
+  r := aone_check_availability('sport', aone_today() + 13, 'kart', 'am');
+  assert (r->>'reason') = 'charter_confirmed', '5-3 貸切中にスポーツが受付できてしまう';
+  r := aone_check_availability('rp', aone_today() + 13, null, null, '10:00', null, 4);
+  assert (r->>'reason') = 'charter_confirmed', '5-4 貸切中に RP が受付できてしまう';
+  -- 午後は空いている
+  r := aone_check_availability('sport', aone_today() + 13, 'kart', 'pm');
+  assert (r->>'ok')::boolean, '5-5 貸切の時間外まで止まっている';
+
+  -- =========================================================================
+  raise notice '--- 6. ブロック予定 (レース / イベント / 臨時休業)';
+  -- =========================================================================
+  insert into aone_blocks (date, kind, title, scope)
+  values (aone_today() + 10, 'race', 'A-ONE シリーズ第 3 戦', 'am');
+
+  r := aone_check_availability('sport', aone_today() + 10, 'kart', 'am');
+  assert (r->>'reason') = 'blocked', '6-1 午前ブロックが効いていない';
+  r := aone_check_availability('sport', aone_today() + 10, 'kart', 'pm');
+  assert (r->>'ok')::boolean, '6-2 午後まで止まっている';
+  st := aone_day_state(aone_today() + 10);
+  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '6-3 午前が off 表示にならない';
+
+  -- カテゴリー指定ブロック
+  insert into aone_blocks (date, kind, title, scope, category_code)
+  values (aone_today() + 11, 'event', 'キッズイベント', 'category', 'kidskart');
+  r := aone_check_availability('sport', aone_today() + 11, 'kidskart', 'am');
+  assert (r->>'reason') = 'blocked', '6-4 カテゴリーブロックが効いていない';
+  r := aone_check_availability('sport', aone_today() + 11, 'kart', 'am');
+  assert (r->>'ok')::boolean, '6-5 別カテゴリーまで止まっている';
+  -- RP には影響しない
+  r := aone_check_availability('rp', aone_today() + 11, null, null, '11:00', null, 3);
+  assert (r->>'ok')::boolean, '6-6 カテゴリーブロックが RP を止めている';
+
+  -- 臨時休業 (終日)
+  insert into aone_blocks (date, kind, title, scope)
+  values (aone_today() + 12, 'closed', '臨時休業', 'all');
+  r := aone_check_availability('rp', aone_today() + 12, null, null, '10:00', null, 5);
+  assert (r->>'reason') = 'blocked', '6-7 終日ブロックが RP を止めていない';
+
+  -- =========================================================================
+  raise notice '--- 7. 天候中止';
+  -- =========================================================================
+  insert into aone_business_days (date, weather_status, status_message)
+  values (d_sunday, 'cancelled', '雨天のため本日は中止です');
+  r := aone_check_availability('sport', d_sunday, 'kart', 'am');
+  assert (r->>'reason') = 'weather_cancelled', '7-1 雨天中止が効いていない';
+  st := aone_day_state(d_sunday);
+  assert (st->'weather'->>'status') = 'cancelled', '7-2 day_state に天候が出ない';
+  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '7-3 中止日が off 表示にならない';
+
+  -- =========================================================================
+  raise notice '--- 8. 変更: 自分自身を除外して再判定';
+  -- =========================================================================
+  -- 貸切 B (単独日) の時間変更 → 自分自身とぶつからない
+  r := aone_update_reservation(jsonb_build_object('id', id1,
+        'start_time','13:00','end_time','16:00','actor','test'));
+  assert (r->>'ok')::boolean, '8-1 自分自身との衝突で変更できない: ' || r::text;
+  assert (r->>'start_time') = '13:00', '8-2 開始時刻が変わっていない';
+
+  -- RP の人数変更
+  r := aone_update_reservation(jsonb_build_object(
+        'access_token', (select access_token::text from aone_reservations where contact_name = 'RP-A'),
+        'party_size', 8, 'actor','customer'));
+  assert (r->>'party_size') = '8', '8-3 人数変更が反映されない';
+
+  -- =========================================================================
+  raise notice '--- 9. キャンセルすると枠が戻る / 無断キャンセル記録';
+  -- =========================================================================
+  -- 日曜午後のカートをキャンセル → ミニバイクが入れるようになる
+  r := aone_cancel_reservation(jsonb_build_object(
+        'id', (select id from aone_reservations where contact_name = '日曜カート'),
+        'reason','テスト','actor','admin'));
+  assert (r->>'status') = 'cancelled', '9-1 キャンセルできない';
+  r := aone_check_availability('sport', d_sunday, 'minibike', 'pm');
+  -- 日曜は天候中止を入れてあるので weather_cancelled になる。天候を戻して再判定
+  update aone_business_days set weather_status = 'normal' where date = d_sunday;
+  r := aone_check_availability('sport', d_sunday, 'minibike', 'pm');
+  assert (r->>'ok')::boolean, '9-2 キャンセル後も枠が空かない: ' || r::text;
+
+  -- 無断キャンセル (仕様 9)
+  r := aone_cancel_reservation(jsonb_build_object(
+        'id', (select id from aone_reservations where contact_name = 'カートB'),
+        'no_show', true, 'actor','admin'));
+  assert (r->>'status') = 'no_show', '9-3 無断キャンセルが記録できない';
+  assert (select no_show_count from aone_customer_stats
+           where id = (select customer_id from aone_reservations where contact_name = 'カートB')) = 1,
+    '9-4 顧客統計に無断キャンセルが反映されない';
+
+  -- RP の 24 時間以内キャンセルは料金 100% フラグが立つ
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today(), 'start_time','16:00',
+                                 'party_size',3,'who','RP当日'));
+  r := aone_cancel_reservation(jsonb_build_object('id', (r->>'id')::uuid, 'actor','customer'));
+  assert (r->>'cancel_fee')::boolean, '9-5 24 時間以内キャンセルの料金フラグが立たない';
+
+  -- =========================================================================
+  raise notice '--- 10. 管理者の強制受付 (仕様 15)';
+  -- =========================================================================
+  r := t_book(jsonb_build_object('kind','sport','date',d_weekday,'session','am',
+                                 'category_code','other','party_size',1,
+                                 'forced', true, 'forced_reason','常連さんの飛び込み',
+                                 'source','phone','created_by','staff','who','強制受付'));
+  assert (r->>'status') = 'confirmed', '10-1 強制受付ができない: ' || r::text;
+  assert (select forced from aone_reservations where id = (r->>'id')::uuid), '10-2 forced が記録されない';
+  assert (select count(*) from aone_reservation_events
+           where reservation_id = (r->>'id')::uuid and event = 'forced') = 1,
+    '10-3 強制受付が監査ログに残らない';
+
+  -- =========================================================================
+  raise notice '--- 11. 顧客の名寄せ (仕様 16)';
+  -- =========================================================================
+  -- 同じメールアドレスの 2 予約は 1 顧客にまとまる
+  perform t_book(jsonb_build_object('kind','sport','date', aone_today()+9, 'session','am',
+                                    'category_code','kart','party_size',1,
+                                    'who','名寄せ太郎','email','yorise@example.com',
+                                    'phone','090-1111-2222'));
+  perform t_book(jsonb_build_object('kind','rp','date', aone_today()+9, 'start_time','15:00',
+                                    'party_size',4,'who','名寄せ太郎','email','YORISE@example.com',
+                                    'phone','090-1111-2222'));
+  assert (select count(*) from aone_customers where lower(email) = 'yorise@example.com') = 1,
+    '11-1 メールで名寄せされていない';
+  assert (select sport_count + rp_count from aone_customer_stats
+           where lower(email) = 'yorise@example.com') = 2,
+    '11-2 顧客統計が合算されない';
+
+
+  -- =========================================================================
+  raise notice '--- 12. 電話予約も同じ台帳に入り、即座に Web の空きへ反映される (仕様 13)';
+  -- =========================================================================
+  -- 別の平日の午後枠を電話予約 2 件で埋める
+  perform t_book(jsonb_build_object('kind','sport','date', d_wd2, 'session','pm',
+                                    'category_code','kart','party_size',1,'source','phone',
+                                    'who','電話予約A','phone','092-000-0001'));
+  perform t_book(jsonb_build_object('kind','sport','date', d_wd2, 'session','pm',
+                                    'category_code','minibike','party_size',1,'source','counter',
+                                    'who','店頭予約B','phone','092-000-0002'));
+  st := aone_day_state(d_wd2);
+  assert (st->'sport'->'pm'->>'used_classes') = '2',
+    '12-1 電話・店頭予約がクラス数に反映されない';
+  r := aone_check_availability('sport', d_wd2, 'kidskart', 'pm');
+  assert (r->>'reason') = 'class_full',
+    '12-2 電話予約が Web の空きを塞いでいない: ' || r::text;
+
+  -- =========================================================================
+  raise notice '--- 13. 連絡待ちの貸切は他予約を止めない (確定してから止める)';
+  -- =========================================================================
+  -- +7 日にスポーツ走行 → その後に貸切申込 (連絡待ちになる)
+  perform t_book(jsonb_build_object('kind','sport','date', aone_today()+7, 'session','am',
+                                    'category_code','kart','party_size',1,'who','先客'));
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+7, 'start_time','09:00',
+                                 'end_time','12:00','party_size',10,'who','貸切C'));
+  assert (r->>'status') = 'contact_wait', '13-1 貸切が連絡待ちにならない';
+  id1 := (r->>'id')::uuid;
+  -- 連絡待ちの間は RP もスポーツも受け付けられる
+  r := aone_check_availability('rp', aone_today()+7, null, null, '10:00', null, 4);
+  assert (r->>'ok')::boolean, '13-2 連絡待ちの貸切が RP を止めている: ' || r::text;
+  -- 管理者が確定させると止まる
+  perform aone_set_reservation_status(jsonb_build_object('id', id1, 'status','confirmed','actor','admin'));
+  r := aone_check_availability('rp', aone_today()+7, null, null, '10:00', null, 4);
+  assert (r->>'reason') = 'charter_confirmed', '13-3 確定貸切が RP を止めていない';
+
+  raise notice 'ALL TESTS PASSED';
+end;
+$$;
+
+rollback;

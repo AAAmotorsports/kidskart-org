@@ -1,0 +1,52 @@
+/**
+ * Cloudflare Workers deployment config — A-ONE 予約システム
+ *
+ * ★ ASMS で 3 回やらかした事故の再発防止 (asms/CLAUDE.md 参照):
+ *   - `vars` を空オブジェクトにしたり、キーごと消したりすると、deploy 時に
+ *     Dashboard 側の非機密変数が **全削除** される。
+ *   - Dashboard の「シークレット」型だけが deploy を生き延びる。
+ *   したがって、この `vars` ブロックは常に全キー入りで維持すること。
+ *
+ * ADMIN_PASSWORD_HASH は SHA-256 の 16 進ダイジェスト。
+ *   printf '<newpass>' | sha256sum
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aone-booking",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    // Supabase (A-ONE 用に新規プロジェクトを作成して差し替える)
+    "PUBLIC_SUPABASE_URL": "https://owdtmtkvravihqonoykk.supabase.co",
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_jEEuSqPX1RjMWcYkPxF20w_xDGTOGsY",
+    // 管理画面の Basic 認証
+    "ADMIN_USERNAME": "aone",
+    "ADMIN_PASSWORD_HASH": "80b7b5ae9b7568db0956157c7a8a88f426b2a0f06834abd9a7a879f5057067fa",
+    // 送信メール
+    "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
+    "MAIL_FROM_NAME": "A-ONE サーキット",
+    "MAIL_REPLY_TO": "info@kidskart.org",
+    "MAIL_ADMIN_TO": "info@kidskart.org",
+    // 施設情報 (メール文面・トップページに使う)
+    "PUBLIC_SITE_NAME": "A-ONE サーキット",
+    "PUBLIC_SITE_TEL": "092-927-1177",
+    // 気象庁の予報エリアコード (福岡県 = 400000)。管理画面の参考情報用。
+    "JMA_AREA_CODE": "400000",
+    "JMA_AREA_NAME": "福岡県",
+    // GA4 (空文字なら計測タグを出さない)
+    "PUBLIC_GA4_MEASUREMENT_ID": ""
+  }
+  //
+  // Secrets (Cloudflare Dashboard → 変数とシークレット → シークレット型):
+  //   SUPABASE_SERVICE_ROLE_KEY
+  //   RESEND_API_KEY
+  //   CRON_SECRET          ← /api/cron/mails を GitHub Actions から叩く共有鍵
+}

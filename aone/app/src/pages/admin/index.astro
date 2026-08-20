@@ -1,0 +1,148 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { dayState, reservationsOfDay, pendingReservations } from '@lib/queries';
+import {
+  jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
+  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, STATUS_MARK,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 管理トップ = 今日の運営ダッシュボード。
+// 「今日どうなってる / 何を対応すべきか」だけを 1 画面に出す。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+
+const [state, rows, pending] = await Promise.all([
+  dayState(env, today),
+  reservationsOfDay(env, today),
+  pendingReservations(env, today),
+]);
+
+const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
+const people = live.reduce((a, r) => a + (r.party_size ?? 0), 0);
+const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+const weekStates = await Promise.all(week.map((d) => dayState(env, d)));
+const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+---
+<Base title="A-ONE 管理" admin wide>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">{jaDate(today)}</h1>
+    <div class="row">
+      <a class="btn primary sm" href={`/admin/day/${today}`}>今日の運営画面</a>
+      <a class="btn sm" href="/admin/calendar">カレンダー</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="n">{live.length}</div><div class="l">本日の予約</div></div>
+    <div class="kpi"><div class="n">{people}</div><div class="l">本日の人数</div></div>
+    <div class="kpi"><div class="n">{live.filter((r) => r.kind === 'rp').length}</div><div class="l">RP</div></div>
+    <div class="kpi"><div class="n">{pending.length}</div><div class="l">要対応</div></div>
+    <div class="kpi wx">
+      <div class="n small">{WEATHER_LABELS[state?.weather.status ?? 'normal']}</div>
+      <div class="l">営業状態</div>
+    </div>
+  </div>
+
+  {pending.length > 0 && (
+    <div class="card">
+      <h2>要対応 (連絡待ち・確認中)</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>日付</th><th>種別</th><th>時間</th><th>お名前</th><th>連絡先</th><th>状態</th><th></th></tr></thead>
+          <tbody>
+            {pending.map((r) => (
+              <tr>
+                <td>{jaDateShort(r.date)}</td>
+                <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
+                <td>{timeRangeLabel(r)}</td>
+                <td>{r.contact_name} 様 ({r.party_size}名)</td>
+                <td class="tiny">
+                  {r.preferred_contact === 'phone' ? '☎ ' : '✉ '}
+                  {r.preferred_contact === 'phone' ? (r.contact_phone ?? '—') : (r.contact_email ?? '—')}
+                </td>
+                <td><span class="badge warn">{STATUS_LABELS[r.status]}</span></td>
+                <td><a class="btn sm" href={`/admin/day/${r.date}`}>開く</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )}
+
+  <div class="card">
+    <h2>今日の受付状況</h2>
+    {state ? (
+      <div class="row" style="gap:1.4rem">
+        {sessions.map(([key, label]) => (
+          <div>
+            <div class="tiny muted">{label} ({state.sport[key].used_classes}/{state.sport[key].max_classes} クラス)</div>
+            <div class="row">
+              {state.sport[key].categories.map((c) => (
+                <span class="tiny">{c.short_name}
+                  <span class:list={['mark', c.status]} style="font-size:.95rem">{STATUS_MARK[c.status]}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div>
+          <div class="tiny muted">RP 空き</div>
+          <div class="tiny">{state.rp.slots.filter((s) => s.accepting).length} / {state.rp.slots.length} 枠</div>
+        </div>
+      </div>
+    ) : (
+      <p class="muted small">
+        Supabase の接続設定が未完了です。<code>wrangler.jsonc</code> の
+        <code>PUBLIC_SUPABASE_URL</code> / <code>PUBLIC_SUPABASE_ANON_KEY</code> と
+        Dashboard の <code>SUPABASE_SERVICE_ROLE_KEY</code> をご確認ください。
+      </p>
+    )}
+  </div>
+
+  <div class="card">
+    <h2>今週</h2>
+    <div class="week">
+      {week.map((d, i) => {
+        const s = weekStates[i];
+        return (
+          <a class:list={['wday', d === today && 'is-today']} href={`/admin/day/${d}`}>
+            <div class="wd">{jaDateShort(d)}</div>
+            {s ? (
+              <>
+                {s.weather.status !== 'normal' && <div class="tiny wx-tag">{WEATHER_LABELS[s.weather.status]}</div>}
+                <div class="tiny">走行 {s.counts.sport} / RP {s.counts.rp}</div>
+                <div class="tiny muted">{s.counts.people} 名</div>
+                {(s.blocks ?? []).slice(0, 2).map((b) => <div class="tiny ev">{b.title}</div>)}
+              </>
+            ) : <div class="tiny muted">—</div>}
+          </a>
+        );
+      })}
+    </div>
+  </div>
+</Base>
+
+<style>
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;margin-bottom:1rem}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem;text-align:center}
+  .kpi .n{font-size:1.6rem;font-weight:800;line-height:1.1}
+  .kpi .n.small{font-size:1rem}
+  .kpi .l{font-size:.72rem;color:var(--ink-3);font-weight:700}
+  .week{display:grid;grid-template-columns:repeat(7,1fr);gap:.4rem}
+  .wday{display:block;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;
+    padding:.4rem;text-decoration:none;color:inherit;min-height:80px}
+  .wday:hover{box-shadow:0 3px 8px rgba(0,0,0,.08)}
+  .wday.is-today{border-color:var(--red);outline:1px solid var(--red)}
+  .wd{font-weight:800;font-size:.8rem;margin-bottom:.2rem}
+  .wx-tag{color:#8a5a06;font-weight:700}
+  .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @media (max-width:900px){
+    .kpis{grid-template-columns:repeat(3,1fr)}
+    .week{grid-template-columns:repeat(4,1fr)}
+  }
+</style>

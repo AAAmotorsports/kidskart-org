@@ -1,0 +1,284 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { reservationByToken } from '@lib/queries';
+import {
+  jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, todayJst, addDays,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 予約者専用ページ (仕様 10)。
+// ログイン操作は不要 — 予約完了メールに載せた access_token の URL がそのまま鍵。
+const env = envFrom(Astro.locals);
+const { token } = Astro.params;
+const r = token ? await reservationByToken(env, token) : null;
+
+const today = todayJst();
+const maxDate = addDays(today, 365);
+const finished = r && ['cancelled', 'no_show'].includes(r.status);
+const isRp = r?.kind === 'rp';
+const isSport = r?.kind === 'sport';
+---
+<Base title="ご予約内容 | A-ONE サーキット">
+  {!r ? (
+    <div class="card">
+      <h1>予約が見つかりません</h1>
+      <p class="muted">URL をご確認ください。ご不明な場合はお電話 ({env.PUBLIC_SITE_TEL || '092-927-1177'}) でお問い合わせください。</p>
+      <a class="btn" href="/">トップへ</a>
+    </div>
+  ) : (
+    <>
+      <h1>ご予約内容</h1>
+
+      {finished && (
+        <div class="notice ng" style="margin-bottom:1rem">
+          このご予約は{STATUS_LABELS[r.status]}となっています。
+          <a href="/reserve">新しく予約する →</a>
+        </div>
+      )}
+      {r.status === 'contact_wait' && (
+        <div class="notice warn" style="margin-bottom:1rem">
+          既に他のご予約があるため、A-ONE より折り返しご連絡いたします。
+        </div>
+      )}
+      {r.status === 'checking' && (
+        <div class="notice warn" style="margin-bottom:1rem">
+          内容を確認中です。A-ONE より折り返しご連絡いたします。
+        </div>
+      )}
+
+      <div class="card">
+        <table>
+          <tbody>
+            <tr><th>予約番号</th><td>{r.reservation_number}</td></tr>
+            <tr><th>内容</th><td>{KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}</td></tr>
+            <tr><th>状態</th><td>{STATUS_LABELS[r.status] ?? r.status}</td></tr>
+            <tr><th>日付</th><td id="cur-date">{jaDate(r.date)}</td></tr>
+            <tr><th>時間</th><td>{timeRangeLabel(r)}</td></tr>
+            <tr><th>人数</th><td>{r.party_size} 名</td></tr>
+            {r.vehicle_count != null && <tr><th>台数</th><td>{r.vehicle_count} 台</td></tr>}
+            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
+            <tr><th>お名前</th><td>{r.contact_name} 様</td></tr>
+            <tr><th>お電話</th><td>{r.contact_phone ?? '—'}</td></tr>
+            <tr><th>メール</th><td>{r.contact_email ?? '—'}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {!finished && (
+        <>
+          <div class="card">
+            <h2>ご予約の変更</h2>
+            <p class="small muted">
+              日時・人数はいつでも変更できます。変更時に最新の空き状況を再確認します。
+            </p>
+
+            <div class="field">
+              <label for="date">日付</label>
+              <input type="date" id="date" value={r.date} min={today} max={maxDate} />
+            </div>
+
+            {isSport && (
+              <div class="field">
+                <label>時間帯</label>
+                <div class="choice" id="sessions"></div>
+              </div>
+            )}
+
+            {isRp && (
+              <div class="field">
+                <label>開始時間</label>
+                <div id="slots" class="slots"></div>
+              </div>
+            )}
+
+            {!isSport && !isRp && (
+              <div class="two">
+                <div class="field">
+                  <label for="start">開始時間</label>
+                  <input type="time" id="start" value={(r.start_time ?? '').slice(0, 5)} step="1800" />
+                </div>
+                <div class="field">
+                  <label for="end">終了時間</label>
+                  <input type="time" id="end" value={(r.end_time ?? '').slice(0, 5)} step="1800" />
+                </div>
+              </div>
+            )}
+
+            <div class="field" style="max-width:12rem">
+              <label for="party">人数</label>
+              <input type="number" id="party" value={r.party_size} min={isRp ? 3 : 1} max="200" />
+            </div>
+
+            <div id="update-msg" class="notice" hidden></div>
+            <button class="btn primary" id="save">変更を保存する</button>
+          </div>
+
+          <div class="card">
+            <h2>キャンセル</h2>
+            {r.kind === 'sport' ? (
+              <p class="small">
+                当日でもご連絡いただければキャンセル可能です (キャンセル料はいただきません)。
+                ご連絡のないキャンセルは無断キャンセルとして記録させていただきます。
+              </p>
+            ) : (
+              <p class="small">
+                ご利用開始 24 時間前以降のキャンセルは、規定により料金 100% を申し受けます。
+              </p>
+            )}
+            <div class="field">
+              <label for="reason">キャンセル理由 (任意)</label>
+              <input type="text" id="reason" placeholder="都合が悪くなったため など" />
+            </div>
+            <div id="cancel-msg" class="notice" hidden></div>
+            <button class="btn" id="cancel">この予約をキャンセルする</button>
+          </div>
+        </>
+      )}
+
+      <div class="card">
+        <h2>ご注意事項</h2>
+        <ul class="small">
+          <li>当日の営業状況 (天候による判断) は <a href="/">トップページ</a> に随時反映されます。</li>
+          <li>営業状況が変わった場合は、ご登録のメールアドレスにご連絡します。</li>
+          <li>お支払いは原則として当日現地でのお支払いです。</li>
+          <li>ご不明な点はお電話 ({env.PUBLIC_SITE_TEL || '092-927-1177'}) でお問い合わせください。</li>
+        </ul>
+      </div>
+    </>
+  )}
+</Base>
+
+{r && !finished && (
+  <script is:inline define:vars={{ token, kind: r.kind, curSession: r.session, curStart: (r.start_time ?? '').slice(0, 5) }}>
+    const $ = (id) => document.getElementById(id);
+    let session = curSession;
+    let picked = curStart;
+
+    async function loadDay() {
+      const date = $('date').value;
+      if (!date) return;
+      let state;
+      try {
+        const res = await fetch('/api/availability?date=' + encodeURIComponent(date));
+        state = await res.json();
+        if (!res.ok) throw new Error();
+      } catch (e) { return; }
+
+      if (kind === 'sport') {
+        const sw = $('sessions');
+        sw.innerHTML = '';
+        [['am', '午前'], ['pm', '午後']].forEach(([key, label]) => {
+          const s = state.sport[key];
+          const usable = s.categories.some((c) => c.status === 'open' || c.status === 'limited') || key === curSession;
+          const l = document.createElement('label');
+          l.innerHTML = '<input type="radio" name="session" value="' + key + '"' +
+            (usable ? '' : ' disabled') + (session === key ? ' checked' : '') + '> ' + label +
+            ' <span class="tiny muted">' + s.start_time + '〜' + s.end_time + '</span>';
+          sw.appendChild(l);
+        });
+        sw.querySelectorAll('input[name=session]').forEach((el) =>
+          el.addEventListener('change', () => { session = el.value; }));
+      }
+
+      if (kind === 'rp') {
+        const wrap = $('slots');
+        wrap.innerHTML = '';
+        (state.rp.slots || []).forEach((s) => {
+          const usable = s.accepting || s.time === curStart;
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'slot ' + (usable ? 'free' : 'full') + (s.time === picked ? ' picked' : '');
+          b.disabled = !usable;
+          b.textContent = s.time;
+          b.addEventListener('click', () => {
+            picked = s.time;
+            wrap.querySelectorAll('.slot').forEach((x) => x.classList.remove('picked'));
+            b.classList.add('picked');
+          });
+          wrap.appendChild(b);
+        });
+      }
+    }
+
+    $('date').addEventListener('change', loadDay);
+    loadDay();
+
+    $('save').addEventListener('click', async () => {
+      const msg = $('update-msg');
+      msg.hidden = true;
+      const btn = $('save');
+      btn.disabled = true;
+      const payload = {
+        access_token: token,
+        date: $('date').value,
+        party_size: Number($('party').value || 1),
+      };
+      if (kind === 'sport') payload.session = session;
+      else if (kind === 'rp') payload.start_time = picked;
+      else {
+        payload.start_time = $('start') ? $('start').value : undefined;
+        payload.end_time = $('end') ? $('end').value : undefined;
+      }
+
+      try {
+        const res = await fetch('/api/reserve/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '変更できませんでした');
+        msg.hidden = false;
+        msg.className = 'notice ok';
+        msg.textContent = '変更を保存しました。読み込み直します…';
+        setTimeout(() => location.reload(), 900);
+      } catch (e) {
+        msg.hidden = false;
+        msg.className = 'notice ng';
+        msg.textContent = e.message;
+        btn.disabled = false;
+      }
+    });
+
+    $('cancel').addEventListener('click', async () => {
+      if (!confirm('このご予約をキャンセルします。よろしいですか？')) return;
+      const msg = $('cancel-msg');
+      msg.hidden = true;
+      const btn = $('cancel');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/reserve/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token, reason: $('reason').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'キャンセルできませんでした');
+        msg.hidden = false;
+        msg.className = 'notice ok';
+        msg.textContent = data.cancel_fee
+          ? 'キャンセルを受付けました。規定によりキャンセル料が発生します。詳細は A-ONE よりご連絡します。'
+          : 'キャンセルを受付けました。';
+        setTimeout(() => location.reload(), 1400);
+      } catch (e) {
+        msg.hidden = false;
+        msg.className = 'notice ng';
+        msg.textContent = e.message;
+        btn.disabled = false;
+      }
+    });
+  </script>
+)}
+
+<style>
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:.4rem}
+  .slot{padding:.4rem .2rem;border:1px solid var(--line-2);border-radius:9px;background:#fff;
+    font-weight:700;font-size:.84rem;font-family:var(--jp);color:var(--ink);cursor:pointer}
+  .slot.free{border-color:#b9e3cf;background:var(--green-soft);color:#14724a}
+  .slot.full{background:var(--bg-3);color:var(--ink-4);cursor:not-allowed;text-decoration:line-through}
+  .slot.picked{outline:3px solid var(--red);outline-offset:1px}
+  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+</style>

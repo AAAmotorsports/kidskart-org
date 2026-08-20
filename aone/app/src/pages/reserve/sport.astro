@@ -1,0 +1,242 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { todayJst, addDays } from '@lib/domain';
+
+export const prerender = false;
+
+// スポーツ走行の予約フォーム (仕様 2)。
+// 空き状況は /api/availability から取得して描画する。判定ロジックは持たない。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const maxDate = addDays(today, 180);
+const initialDate = Astro.url.searchParams.get('date') ?? today;
+---
+<Base title="スポーツ走行のご予約 | A-ONE サーキット">
+  <h1>スポーツ走行のご予約</h1>
+  <p class="small muted">
+    カート・ミニバイク・キッズカート・その他 (大型バイク等) のスポーツ走行枠です。
+    同じカテゴリーは何台入っても 1 クラス扱いです。
+  </p>
+
+  <form id="form" class="card" novalidate>
+    <div class="field">
+      <label for="date">ご希望日</label>
+      <input type="date" id="date" name="date" value={initialDate} min={today} max={maxDate} required />
+    </div>
+
+    <div id="day-info" class="notice info small" style="margin-bottom:1rem">空き状況を確認しています…</div>
+
+    <div class="field">
+      <label>時間帯</label>
+      <div class="choice" id="sessions"></div>
+    </div>
+
+    <div class="field">
+      <label>カテゴリー</label>
+      <div class="choice" id="categories"></div>
+      <div class="hint" id="cat-hint"></div>
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label for="party">走行人数</label>
+        <input type="number" id="party" name="party_size" min="1" max="30" value="1" required />
+      </div>
+      <div class="field">
+        <label for="vehicles">台数</label>
+        <input type="number" id="vehicles" name="vehicle_count" min="1" max="30" value="1" />
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>ご連絡先</legend>
+      <div class="two">
+        <div class="field">
+          <label for="name">お名前</label>
+          <input type="text" id="name" name="name" autocomplete="name" required />
+        </div>
+        <div class="field">
+          <label for="kana">フリガナ</label>
+          <input type="text" id="kana" name="kana" />
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="phone">お電話番号</label>
+          <input type="tel" id="phone" name="phone" autocomplete="tel" required />
+        </div>
+        <div class="field">
+          <label for="email">メールアドレス</label>
+          <input type="email" id="email" name="email" autocomplete="email" required />
+          <div class="hint">予約完了メールに、変更・キャンセル用の専用 URL をお送りします。</div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="note">ご要望・備考 (任意)</label>
+        <textarea id="note" name="request_note" placeholder="初めての走行です／レンタル希望 など"></textarea>
+      </div>
+    </fieldset>
+
+    <div class="notice small" style="margin-bottom:1rem">
+      <strong>キャンセルについて</strong><br />
+      天候の影響が大きいため、当日でもご連絡いただければキャンセル可能です (キャンセル料はいただきません)。
+      ご連絡のないキャンセルは無断キャンセルとして記録させていただきます。
+    </div>
+
+    <div id="error" class="notice ng" hidden></div>
+
+    <button type="submit" class="btn primary" id="submit">この内容で予約する</button>
+  </form>
+</Base>
+
+<script is:inline>
+  const $ = (id) => document.getElementById(id);
+  const MARK = { open: '○', limited: '△', closed: '✕', off: '—' };
+  let state = null;
+  let session = 'am';
+  let category = null;
+
+  async function loadDay() {
+    const date = $('date').value;
+    if (!date) return;
+    $('day-info').textContent = '空き状況を確認しています…';
+    $('sessions').innerHTML = '';
+    $('categories').innerHTML = '';
+    try {
+      const res = await fetch('/api/availability?date=' + encodeURIComponent(date));
+      state = await res.json();
+      if (!res.ok) throw new Error(state.error || '取得に失敗しました');
+    } catch (e) {
+      $('day-info').className = 'notice ng small';
+      $('day-info').textContent = '空き状況を取得できませんでした。時間をおいて再度お試しください。';
+      return;
+    }
+    render();
+  }
+
+  function render() {
+    const info = $('day-info');
+    const wx = state.weather && state.weather.status;
+    if (wx === 'cancelled') {
+      info.className = 'notice ng small';
+      info.textContent = '本日は雨天中止です。' + (state.weather.message || '');
+    } else if (wx && wx !== 'normal') {
+      info.className = 'notice warn small';
+      info.textContent = '営業状態: ' + wx + ' ' + (state.weather.message || '');
+    } else {
+      info.className = 'notice info small';
+      const blocks = (state.blocks || []).filter((b) => b.is_public).map((b) => b.public_label);
+      info.textContent = blocks.length
+        ? '当日の予定: ' + blocks.join(' / ')
+        : 'この日は通常営業の予定です。';
+    }
+
+    // 時間帯
+    const sw = $('sessions');
+    sw.innerHTML = '';
+    [['am', '午前'], ['pm', '午後']].forEach(([key, label]) => {
+      const s = state.sport[key];
+      const usable = s.categories.some((c) => c.status === 'open' || c.status === 'limited');
+      const l = document.createElement('label');
+      l.innerHTML =
+        '<input type="radio" name="session" value="' + key + '"' +
+        (usable ? '' : ' disabled') + (session === key && usable ? ' checked' : '') + '> ' +
+        label + ' <span class="tiny muted">' + s.start_time + '〜' + s.end_time +
+        ' / ' + s.used_classes + '&nbsp;of&nbsp;' + s.max_classes + ' クラス</span>';
+      sw.appendChild(l);
+    });
+    // 選択中の時間帯が使えないなら、使える方へ寄せる
+    const checked = sw.querySelector('input[name=session]:checked');
+    if (!checked) {
+      const first = sw.querySelector('input[name=session]:not([disabled])');
+      if (first) { first.checked = true; session = first.value; }
+    }
+    sw.querySelectorAll('input[name=session]').forEach((el) => {
+      el.addEventListener('change', () => { session = el.value; category = null; renderCategories(); });
+    });
+
+    renderCategories();
+  }
+
+  function renderCategories() {
+    const wrap = $('categories');
+    wrap.innerHTML = '';
+    const s = state.sport[session];
+    if (!s) return;
+    s.categories.forEach((c) => {
+      const usable = c.status === 'open' || c.status === 'limited';
+      const l = document.createElement('label');
+      l.title = c.message || '';
+      l.innerHTML =
+        '<input type="radio" name="category" value="' + c.code + '"' +
+        (usable ? '' : ' disabled') + (category === c.code ? ' checked' : '') + '> ' +
+        c.name + ' <span class="mark ' + c.status + '" style="font-size:1rem">' + MARK[c.status] + '</span>';
+      wrap.appendChild(l);
+    });
+    wrap.querySelectorAll('input[name=category]').forEach((el) => {
+      el.addEventListener('change', () => {
+        category = el.value;
+        const c = s.categories.find((x) => x.code === category);
+        $('cat-hint').textContent = c ? c.message : '';
+      });
+    });
+    const anyOpen = s.categories.some((c) => c.status === 'open' || c.status === 'limited');
+    $('cat-hint').textContent = anyOpen
+      ? '○ 受付可 ／ △ 残りわずか ／ ✕ 受付停止 ／ — 対象外'
+      : 'この時間帯は受付を停止しています。別の日・時間帯をお選びください。';
+  }
+
+  $('date').addEventListener('change', loadDay);
+  loadDay();
+  window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'sport' });
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('error');
+    err.hidden = true;
+    if (!category) { err.hidden = false; err.textContent = 'カテゴリーを選択してください'; return; }
+
+    const btn = $('submit');
+    btn.disabled = true;
+    btn.textContent = '送信中…';
+
+    const payload = {
+      kind: 'sport',
+      date: $('date').value,
+      session: session,
+      category_code: category,
+      party_size: Number($('party').value || 1),
+      vehicle_count: Number($('vehicles').value || 1),
+      name: $('name').value,
+      kana: $('kana').value,
+      phone: $('phone').value,
+      email: $('email').value,
+      request_note: $('note').value,
+      terms_agreed: true,
+    };
+
+    try {
+      const res = await fetch('/api/reserve/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '予約できませんでした');
+      window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'sport' });
+      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+    } catch (e2) {
+      err.hidden = false;
+      err.textContent = e2.message;
+      btn.disabled = false;
+      btn.textContent = 'この内容で予約する';
+      loadDay();
+    }
+  });
+</script>
+
+<style>
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+</style>

@@ -1,0 +1,14 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@lib/*": ["src/lib/*"],
+      "@layouts/*": ["src/layouts/*"]
+    },
+    "types": ["astro/client", "@cloudflare/workers-types"]
+  },
+  "include": ["src/**/*", ".astro/types.d.ts"],
+  "exclude": ["dist", "node_modules"]
+}

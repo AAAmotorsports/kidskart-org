@@ -1,0 +1,117 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { monthState } from '@lib/queries';
+import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS } from '@lib/domain';
+
+export const prerender = false;
+
+// 公開スケジュール (仕様 19)。
+// 管理カレンダーに登録された予定から自動生成する — 別途ページを手で書かない。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const ymParam = Astro.url.searchParams.get('ym') ?? today.slice(0, 7);
+const [y, m] = ymParam.split('-').map(Number);
+const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
+const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
+
+const days = await monthState(env, year, month);
+
+const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
+
+// 月初の曜日ぶんだけ空セルを置く
+const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const isOpen = (v: string) => v === 'true';
+---
+<Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">{year}年{month}月のスケジュール</h1>
+    <div class="row">
+      <a class="btn sm" href={`/schedule?ym=${prev}`}>← 前の月</a>
+      <a class="btn sm" href={`/schedule?ym=${next}`}>次の月 →</a>
+    </div>
+  </div>
+
+  {!days ? (
+    <div class="card"><p class="muted">スケジュールを取得できませんでした。</p></div>
+  ) : (
+    <>
+      <div class="cal">
+        {WD.map((w, i) => <div class:list={['cal-head', i === 0 && 'sun', i === 6 && 'sat']}>{w}</div>)}
+        {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
+        {days.map((d) => {
+          const dnum = Number(d.date.slice(8, 10));
+          const publicBlocks = (d.blocks ?? []).filter((b) => b.is_public);
+          const closed = d.weather === 'cancelled';
+          return (
+            <div class:list={[
+              'cal-cell',
+              d.date === today && 'today',
+              d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
+              closed && 'closed',
+            ]}>
+              <div class="cal-day">{dnum}</div>
+              {d.weather !== 'normal' && (
+                <div class="tiny wx">{WEATHER_LABELS[d.weather] ?? d.weather}</div>
+              )}
+              {publicBlocks.map((b) => (
+                <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.public_label}</div>
+              ))}
+              {!closed && (
+                <div class="tiny slots">
+                  <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>午前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
+                  <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>午後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
+                  {d.rp_free > 0 && <span class="ok">RP {d.rp_free}枠</span>}
+                </div>
+              )}
+              {d.date >= today && (
+                <a class="tiny book" href={`/reserve/sport?date=${d.date}`}>予約</a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p class="tiny muted" style="margin-top:.6rem">
+        ○ = スポーツ走行の受付可、✕ = 受付停止 (レース・イベント・貸切・満枠など)。
+        RP の枠数は 30 分刻みの空き開始時間の数です。
+        当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
+      </p>
+
+      <div class="card" style="margin-top:1rem">
+        <h2>営業時間</h2>
+        <ul class="small">
+          <li>コースオープン 8:30 ／ 午前走行 9:00〜12:00</li>
+          <li>午後走行 13:00〜16:30 ／ コースクローズ 17:30</li>
+          <li>レースパック 10:00〜18:00 (30 分刻み・通常の最終受付 17:00)</li>
+          <li>ナイター走行は事前予約・要相談です</li>
+        </ul>
+      </div>
+    </>
+  )}
+</Base>
+
+<style>
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cal-head{background:var(--ink);color:#fff;text-align:center;font-size:.76rem;font-weight:800;padding:.3rem 0}
+  .cal-head.sun{color:#ffb3bd} .cal-head.sat{color:#b7d8ff}
+  .cal-cell{background:#fff;min-height:92px;padding:.3rem;display:flex;flex-direction:column;gap:.15rem}
+  .cal-cell.empty{background:var(--bg-2)}
+  .cal-cell.today{outline:2px solid var(--red);outline-offset:-2px}
+  .cal-cell.closed{background:#fdeef0}
+  .cal-day{font-weight:800;font-size:.86rem}
+  .cal-cell.sun .cal-day,.cal-cell.holiday .cal-day{color:var(--red)}
+  .cal-cell.sat .cal-day{color:var(--blue)}
+  .wx{color:#8a5a06;font-weight:700}
+  .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .slots{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:auto}
+  .slots .ok{color:#14724a} .slots .ng{color:var(--ink-4)}
+  .book{margin-top:.1rem;text-decoration:none;font-weight:800;color:var(--red)}
+  @media (max-width:640px){
+    .cal-cell{min-height:74px;font-size:.72rem}
+    .cal-day{font-size:.78rem}
+  }
+</style>

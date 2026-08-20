@@ -1,0 +1,202 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { dayState, type DayState } from '@lib/queries';
+import {
+  STATUS_MARK, STATUS_TEXT, WEATHER_LABELS, WEATHER_EMOJI,
+  jaDate, todayJst, addDays, BLOCK_KIND_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// 「今日走れる？」— 予約サイトで一番大事な画面 (仕様 7)。
+// 利用者がスケジュール表を読み解かなくても、今日行って走れるかが一目で分かる。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const tomorrow = addDays(today, 1);
+
+const [state, next] = await Promise.all([dayState(env, today), dayState(env, tomorrow)]);
+
+/** RP の空きを「14:00〜 空きあり」の形にまとめる */
+function rpSummary(s: DayState | null): string {
+  if (!s) return '';
+  const open = s.rp.slots.filter((x) => x.accepting);
+  if (open.length === 0) return '本日の RP はすべて満枠です';
+  const first = open[0].time;
+  const last = open[open.length - 1].time;
+  return open.length === s.rp.slots.length
+    ? `${first}〜${last} すべて空きあり`
+    : `${first}〜 空きあり (残り ${open.length} 枠)`;
+}
+
+const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
+const closedToday = state?.weather.status === 'cancelled';
+---
+<Base title="今日走れる？ | A-ONE サーキット" description="A-ONE サーキットの本日の走行状況・空き状況をリアルタイムで表示します。">
+  {!state && (
+    <div class="card">
+      <h1>準備中</h1>
+      <p class="muted">
+        予約システムのデータベース接続がまだ設定されていません。<br />
+        <code>wrangler.jsonc</code> の <code>PUBLIC_SUPABASE_URL</code> /
+        <code>PUBLIC_SUPABASE_ANON_KEY</code> と、Cloudflare Dashboard の
+        <code>SUPABASE_SERVICE_ROLE_KEY</code> を設定してください。
+      </p>
+      <p><a class="btn" href="/reserve">予約メニューを見る</a></p>
+    </div>
+  )}
+
+  {state && (
+    <>
+      <div class="today-head">
+        <div>
+          <div class="tiny muted">本日の走行状況</div>
+          <h1 style="margin:0">{jaDate(state.date)}</h1>
+        </div>
+        <div class={`weather ${state.weather.status}`}>
+          <span class="wx-emoji">{WEATHER_EMOJI[state.weather.status] ?? '🏁'}</span>
+          <span>{WEATHER_LABELS[state.weather.status] ?? state.weather.status}</span>
+        </div>
+      </div>
+
+      {state.weather.message && (
+        <div class:list={['notice', closedToday ? 'ng' : 'warn']} style="margin-bottom:1rem">
+          {state.weather.message}
+        </div>
+      )}
+
+      {closedToday ? (
+        <div class="card">
+          <h2>本日は走行を中止しています</h2>
+          <p class="muted">
+            天候の回復状況によっては再開する場合があります。お急ぎの場合は
+            お電話 ({env.PUBLIC_SITE_TEL || '092-927-1177'}) でご確認ください。
+          </p>
+        </div>
+      ) : (
+        <div class="card">
+          <h2 class="sr-head">スポーツ走行</h2>
+          {sessions.map(([key, label]) => {
+            const sess = state.sport[key];
+            return (
+              <div class="sess">
+                <div class="sess-head">
+                  <strong>{label}</strong>
+                  <span class="tiny muted">{sess.start_time}〜{sess.end_time}</span>
+                  <span class="badge">{sess.used_classes} / {sess.max_classes} クラス</span>
+                </div>
+                <div class="cats">
+                  {sess.categories.map((c) => (
+                    <div class="cat" title={c.message}>
+                      <div class="cat-name">{c.short_name}</div>
+                      <div class:list={['mark', c.status]}>{STATUS_MARK[c.status]}</div>
+                      <div class="tiny muted">{STATUS_TEXT[c.status]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <p class="tiny muted" style="margin:.4rem 0 0">
+            ○ 受付可 ／ △ 残りわずか ／ ✕ 受付停止 ／ — 対象外。
+            同じカテゴリーは何台でも 1 クラス扱いです。
+          </p>
+        </div>
+      )}
+
+      {!closedToday && (
+        <div class="card">
+          <h2>レースパック (RP)</h2>
+          <p style="margin:.2rem 0">{rpSummary(state)}</p>
+          <div class="rp-strip">
+            {state.rp.slots.map((s) => (
+              <span class:list={['rp-slot', s.accepting ? (s.groups > 0 ? 'part' : 'free') : 'full']}
+                    title={s.message}>{s.time}</span>
+            ))}
+          </div>
+          <p class="tiny muted" style="margin:.5rem 0 0">
+            {state.rp.min_party} 名以上・30 分刻み。{state.rp.last_start} 以降の開始は要相談です。
+          </p>
+        </div>
+      )}
+
+      {publicBlocks.length > 0 && (
+        <div class="card">
+          <h2>本日の予定</h2>
+          <ul class="plain">
+            {publicBlocks.map((b) => (
+              <li>
+                <span class="badge info">{BLOCK_KIND_LABELS[b.kind] ?? b.kind}</span>
+                {' '}{b.public_label}
+                {b.start_time && <span class="tiny muted"> ({b.start_time}〜{b.end_time ?? ''})</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div class="cta">
+        <a class="btn primary" href="/reserve/sport">スポーツ走行を予約</a>
+        <a class="btn" href="/reserve/rp">レースパックを予約</a>
+        <a class="btn" href="/reserve/charter">貸切を申し込む</a>
+        <a class="btn ghost" href="/reserve/night">ナイターを相談する</a>
+      </div>
+
+      {next && (
+        <div class="card">
+          <h2>明日 {jaDate(next.date)}</h2>
+          {next.weather.status !== 'normal' && (
+            <p class="badge warn">{WEATHER_LABELS[next.weather.status]}</p>
+          )}
+          <div class="next-grid">
+            {sessions.map(([key, label]) => (
+              <div>
+                <div class="tiny muted">{label}</div>
+                <div class="row">
+                  {next.sport[key].categories.map((c) => (
+                    <span class="next-cat">
+                      {c.short_name}
+                      <span class:list={['mark', c.status]} style="font-size:1rem">{STATUS_MARK[c.status]}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p class="tiny muted" style="margin:.5rem 0 0">RP: {rpSummary(next)}</p>
+          <p style="margin:.6rem 0 0"><a href="/schedule">今月のスケジュールを見る →</a></p>
+        </div>
+      )}
+    </>
+  )}
+</Base>
+
+<style>
+  .today-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin:.4rem 0 1rem}
+  .weather{display:inline-flex;align-items:center;gap:.4rem;font-weight:800;padding:.4rem .9rem;
+    border-radius:100px;background:var(--green-soft);color:#14724a;border:1px solid #b9e3cf}
+  .weather.rain_caution,.weather.checking,.weather.surface_recovery,.weather.other{
+    background:#fff5e2;color:#8a5a06;border-color:#f2d69b}
+  .weather.cancelled{background:#fdeef0;color:var(--red-deep);border-color:#f2bcc4}
+  .wx-emoji{font-size:1.1rem}
+  .sess+.sess{margin-top:1rem;padding-top:1rem;border-top:1px dashed var(--line)}
+  .sess-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem}
+  .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}
+  .cat{text-align:center;border:1px solid var(--line);border-radius:10px;padding:.5rem .2rem;background:var(--bg-2)}
+  .cat-name{font-size:.78rem;font-weight:700;color:var(--ink-2);margin-bottom:.2rem}
+  .rp-strip{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
+  .rp-slot{font-size:.76rem;font-weight:700;padding:.2rem .5rem;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-2);color:var(--ink-3)}
+  .rp-slot.free{background:var(--green-soft);border-color:#b9e3cf;color:#14724a}
+  .rp-slot.part{background:#fff5e2;border-color:#f2d69b;color:#8a5a06}
+  .rp-slot.full{background:#fdeef0;border-color:#f2bcc4;color:var(--red-deep);text-decoration:line-through}
+  .cta{display:flex;gap:.6rem;flex-wrap:wrap;margin:1.2rem 0}
+  .next-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  .next-cat{display:inline-flex;align-items:center;gap:.2rem;font-size:.8rem;font-weight:700;color:var(--ink-2)}
+  ul.plain{list-style:none;margin:0;padding:0}
+  ul.plain li+li{margin-top:.4rem}
+  @media (max-width:560px){
+    .cats{grid-template-columns:repeat(2,1fr)}
+    .next-grid{grid-template-columns:1fr}
+  }
+</style>

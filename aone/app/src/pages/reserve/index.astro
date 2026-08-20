@@ -1,0 +1,71 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { dayState } from '@lib/queries';
+import { todayJst, jaDate, WEATHER_LABELS } from '@lib/domain';
+
+export const prerender = false;
+
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const state = await dayState(env, today);
+---
+<Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのスポーツ走行・レースパック・貸切・ナイターの予約メニュー">
+  <h1>ご予約</h1>
+
+  {state && state.weather.status !== 'normal' && (
+    <div class="notice warn" style="margin-bottom:1rem">
+      本日 ({jaDate(today)}) は <strong>{WEATHER_LABELS[state.weather.status]}</strong> です。
+      {state.weather.message}
+      <a href="/">本日の走行状況を見る →</a>
+    </div>
+  )}
+
+  <div class="menu">
+    <a class="menu-card" href="/reserve/sport">
+      <div class="menu-title">スポーツ走行</div>
+      <p class="small muted">カート／ミニバイク／キッズカート／その他。午前・午後の枠でお選びいただけます。</p>
+      <span class="btn primary sm">予約する</span>
+    </a>
+
+    <a class="menu-card" href="/reserve/rp">
+      <div class="menu-title">レースパック (RP)</div>
+      <p class="small muted">3 名以上のグループ向け。10:00〜17:00 の 30 分刻みで開始時間をお選びいただけます。代表者 1 名でご予約ください。</p>
+      <span class="btn primary sm">予約する</span>
+    </a>
+
+    <a class="menu-card" href="/reserve/charter">
+      <div class="menu-title">貸切</div>
+      <p class="small muted">コースを貸切でご利用いただけます。他のご予約状況によっては A-ONE より折り返しご連絡します。</p>
+      <span class="btn sm">申し込む</span>
+    </a>
+
+    <a class="menu-card" href="/reserve/night">
+      <div class="menu-title">ナイター走行</div>
+      <p class="small muted">事前予約・要相談です。ご希望の日時をお知らせください。A-ONE より折り返しご連絡します。</p>
+      <span class="btn sm">相談する</span>
+    </a>
+  </div>
+
+  <div class="card">
+    <h2>ご予約にあたって</h2>
+    <ul class="small">
+      <li>お支払いは原則として当日現地でのお支払いです。</li>
+      <li>スポーツ走行は当日でもご連絡いただければキャンセル可能です (キャンセル料なし)。ご連絡のないキャンセルは無断キャンセルとして記録します。</li>
+      <li>レースパック・貸切は、ご利用開始 24 時間前以降のキャンセルは料金 100% を申し受けます。</li>
+      <li>ご予約後は、予約完了メールに記載の専用 URL からいつでも内容の確認・変更・キャンセルができます。</li>
+      <li>お電話でのご予約も承っています ({env.PUBLIC_SITE_TEL || '092-927-1177'})。</li>
+    </ul>
+  </div>
+</Base>
+
+<style>
+  .menu{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:1.2rem}
+  .menu-card{display:block;background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:1rem;text-decoration:none;color:inherit;transition:box-shadow .15s,transform .05s}
+  .menu-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .menu-card:active{transform:scale(.995)}
+  .menu-title{font-weight:800;font-size:1.05rem;margin-bottom:.3rem}
+  .menu-card p{margin:.2rem 0 .7rem}
+  @media (max-width:560px){ .menu{grid-template-columns:1fr} }
+</style>
