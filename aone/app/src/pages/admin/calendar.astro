@@ -94,6 +94,8 @@ const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padS
 // 月曜はじまり。getUTCDay() は 日=0 なので月曜起点に直す
 const firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
 const WD = ['月', '火', '水', '木', '金', '土', '日'];
+// getUTCDay() 順 (日=0)。スマホの縦長表示で日付の横に出す
+const WD_BY_DOW = ['日', '月', '火', '水', '木', '金', '土'];
 const isOpen = (v: string) => v === 'true';
 ---
 <Base title="カレンダー | A-ONE 管理" admin wide>
@@ -138,7 +140,10 @@ const isOpen = (v: string) => v === 'true';
             d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
             d.weather === 'cancelled' && 'closed',
           ]} href={`/admin/day/${d.date}`}>
-            <div class="cal-day">{Number(d.date.slice(8, 10))}</div>
+            <div class="cal-day">
+              {Number(d.date.slice(8, 10))}<span class="dow-label"> ({WD_BY_DOW[d.dow]})</span>
+            </div>
+            <div class="cell-body">
             {d.weather !== 'normal' && <div class="tiny wx">{WEATHER_LABELS[d.weather]}</div>}
             {(d.blocks ?? []).map((b) => (
               <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.title}</div>
@@ -160,6 +165,7 @@ const isOpen = (v: string) => v === 'true';
                 <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>PM {isOpen(d.sport_pm) ? '○' : '✕'}</span>
               </div>
             )}
+            </div>
           </a>
         ))}
       </div>
@@ -373,8 +379,23 @@ const isOpen = (v: string) => v === 'true';
   .mode-btn+.mode-btn{border-left:1px solid var(--line)}
   .mode-btn.on{background:var(--ink);color:#fff}
   .four{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem}
+  .dow-label{display:none}
+  .cell-body{display:flex;flex-direction:column;gap:.12rem;min-width:0;width:100%}
+
   @media (max-width:900px){
     .four{grid-template-columns:1fr 1fr}
     .wk{grid-template-columns:repeat(2,1fr)}
+  }
+  /* スマホでは 7 列だと 1 セルが狭すぎるので「1 日 = 1 行」の縦長に切り替える */
+  @media (max-width:640px){
+    .cal{grid-template-columns:1fr;gap:0}
+    .cal-head{display:none}
+    .cal-cell.empty{display:none}
+    .cal-cell{flex-direction:row;align-items:flex-start;gap:.6rem;min-height:0;
+      padding:.5rem .6rem;border-bottom:1px solid var(--line)}
+    .cal-day{flex:0 0 3.6rem;font-size:.9rem}
+    .dow-label{display:inline;font-size:.8em}
+    .res{white-space:normal}
+    .sl{margin-top:.15rem}
   }
 </style>

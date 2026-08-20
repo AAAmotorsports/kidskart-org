@@ -83,6 +83,8 @@ const WIDGET_JS = String.raw`
     '.aone-cal td.past{background:#f7fafc}',
     '.aone-cal td.past .aone-d{color:#a8b8c5}',
     '.aone-cell{display:block;height:100%;text-decoration:none;color:inherit}',
+    '.aone-body{display:block}',
+    '.aone-dow{display:none}',
     '.aone-cal td.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--aone-red)}',
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
@@ -101,8 +103,19 @@ const WIDGET_JS = String.raw`
     '  color:var(--aone-ink)}',
     '.aone-nav b{font-size:1.05em}',
     '.aone-load{color:var(--aone-ink3);font-size:.9em;padding:10px 0}',
+    // スマホでは 7 列だと狭すぎて読めないので、旧スケジュール表と同じ
+    // 「1 日 = 1 行、AM / PM は左右」の縦長レイアウトに切り替える
     '@media(max-width:560px){.aone-cats{grid-template-columns:repeat(2,1fr)}',
-    '  .aone-cal td{height:60px;font-size:.95em}}'
+    '  .aone-cal thead{display:none}',
+    '  .aone-cal,.aone-cal tbody,.aone-cal tr,.aone-cal td{display:block;width:auto}',
+    '  .aone-cal td{height:auto;border:none;border-bottom:1px solid var(--aone-line);padding:6px 8px}',
+    '  .aone-cal td.pad{display:none}',
+    '  .aone-cell{display:flex;gap:8px;align-items:flex-start}',
+    '  .aone-body{flex:1;min-width:0}',
+    '  .aone-d{flex:0 0 3.6em}',
+    '  .aone-dow{display:inline;font-size:.86em}',
+    '  .aone-ss{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:0}',
+    '  .aone-e,.aone-bk{white-space:normal}}'
   ].join('');
 
   function injectCss() {
@@ -221,6 +234,8 @@ const WIDGET_JS = String.raw`
   function renderMonth(el, d) {
     // 月曜はじまり (公開スケジュール・管理カレンダーと揃える)
     var WD = ['月', '火', '水', '木', '金', '土', '日'];
+    // getUTCDay() 順 (日=0)。スマホの縦長表示で日付の横に出す
+    var WDOW = ['日', '月', '火', '水', '木', '金', '土'];
     var html = '<div class="aone-nav">'
       + '<button type="button" data-mv="prev">← 前の月</button>'
       + '<b>' + d.year + '年' + d.month + '月</b>'
@@ -254,7 +269,8 @@ const WIDGET_JS = String.raw`
       } else {
         html += '<div class="aone-cell">';
       }
-      html += '<div class="aone-d">' + day.day + '</div>';
+      html += '<div class="aone-d">' + day.day +
+        '<span class="aone-dow"> (' + WDOW[day.dow] + ')</span></div><div class="aone-body">';
       if (day.weather_label) html += '<div class="aone-wxs">' + esc(day.weather_label) + '</div>';
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
@@ -273,7 +289,7 @@ const WIDGET_JS = String.raw`
           + sessionLine('PM', day.pm_categories, day.pm_open)
           + '</div>';
       }
-      html += linkable ? '</a></td>' : '</div></td>';
+      html += '</div>' + (linkable ? '</a></td>' : '</div></td>');
       col++;
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
