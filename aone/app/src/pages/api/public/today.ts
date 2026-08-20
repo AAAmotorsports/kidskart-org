@@ -81,8 +81,8 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       openSlots.length === 0
         ? '本日は満枠です'
         : openSlots.length === state.rp.slots.length
-          ? `${openSlots[0].time}〜${openSlots[openSlots.length - 1].time} すべて空きあり`
-          : `${openSlots[0].time}〜 空きあり (残り ${openSlots.length} 枠)`,
+          ? `${openSlots[0].time}〜${openSlots[openSlots.length - 1].time} 空きあり`
+          : `${openSlots[0].time}〜 空きあり`,
     slots: state.rp.slots.map((s) => ({ time: s.time, accepting: s.accepting })),
   };
 

@@ -19,8 +19,8 @@ const rpSummary = !state
   : rpOpen.length === 0
     ? '本日は満枠です（別の日はご予約いただけます）'
     : rpOpen.length === state.rp.slots.length
-      ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} すべて空きあり`
-      : `本日は ${rpOpen[0].time}〜 空きあり（残り ${rpOpen.length} 枠）`;
+      ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} 空きあり`
+      : `本日は ${rpOpen[0].time}〜 空きあり`;
 ---
 <Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのレースパック・スポーツ走行・貸切・ナイターの予約メニュー">
   <h1>ご予約</h1>

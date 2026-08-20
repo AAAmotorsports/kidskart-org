@@ -30,6 +30,8 @@ export interface DayState {
       running: boolean;
       /** 事前予約が必要なカテゴリーか (false = 飛び込みでも走れる) */
       requires_reservation: boolean;
+      /** 顧客向け予約フォームに出さないカテゴリーか */
+      admin_only: boolean;
       /** 予約なしで来場してそのまま走れるか */
       walk_in_ok: boolean;
       reason: string; message: string;
@@ -96,6 +98,8 @@ export interface Category {
   is_active: boolean;
   /** true = 事前予約が必要 / false = 飛び込みでも走れる */
   requires_reservation: boolean;
+  /** true = 顧客向け予約フォームに出さない (管理画面からの代理入力のみ) */
+  admin_only: boolean;
 }
 
 export async function categories(env: Env): Promise<Category[]> {

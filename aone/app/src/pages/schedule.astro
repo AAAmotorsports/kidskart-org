@@ -63,7 +63,6 @@ const isOpen = (v: string) => v === 'true';
                 <div class="tiny day-slots">
                   <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>午前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
                   <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>午後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
-                  {d.rp_free > 0 && <span class="ok">RP {d.rp_free}枠</span>}
                 </div>
               )}
               {d.date >= today && (
@@ -76,7 +75,6 @@ const isOpen = (v: string) => v === 'true';
 
       <p class="tiny muted" style="margin-top:.6rem">
         ○ = スポーツ走行の受付可、✕ = 受付停止 (レース・イベント・貸切・満枠など)。
-        RP の枠数は 30 分刻みの空き開始時間の数です。
         当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
       </p>
 

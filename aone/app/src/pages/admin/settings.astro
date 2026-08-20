@@ -76,18 +76,23 @@ const TIME = [
       <div class="card">
         <h2>カテゴリー</h2>
         <p class="tiny muted">
-          「要予約」に✔があるカテゴリーは、事前予約が無いと走行できないものとして
-          「今日走れる？」に <strong>要予約</strong> と表示します。✔が無いカテゴリーは
-          <strong>走れます</strong>（予約なしの飛び込みOK）と表示されます。
+          <strong>要予約</strong>: ✔があると事前予約が無いと走行できない扱いになり、
+          「今日走れる？」には予約が入っている日だけ表示されます。✔が無ければ
+          「走れます」（予約なしの飛び込みOK）と常時表示されます。<br />
+          <strong>管理のみ</strong>: ✔があると顧客向けの予約フォームに出しません
+          （電話で相談を受けてスタッフが代理入力する運用）。管理画面の代理入力には出ます。
         </p>
         <table>
-          <thead><tr><th>カテゴリー</th><th>要予約</th><th>受付する</th></tr></thead>
+          <thead><tr><th>カテゴリー</th><th>要予約</th><th>管理のみ</th><th>受付する</th></tr></thead>
           <tbody>
             {cats.map((c) => (
               <tr>
                 <td>{c.name}</td>
                 <td>
                   <input type="checkbox" class="cat-req" data-code={c.code} checked={c.requires_reservation} />
+                </td>
+                <td>
+                  <input type="checkbox" class="cat-admin" data-code={c.code} checked={c.admin_only} />
                 </td>
                 <td>
                   <input type="checkbox" class="cat-active" data-code={c.code} checked={c.is_active} />
@@ -116,6 +121,10 @@ const TIME = [
       document.querySelectorAll('.cat-req').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
         byCode[el.dataset.code].requires_reservation = el.checked;
+      });
+      document.querySelectorAll('.cat-admin').forEach((el) => {
+        byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
+        byCode[el.dataset.code].admin_only = el.checked;
       });
       document.querySelectorAll('.cat-active').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };

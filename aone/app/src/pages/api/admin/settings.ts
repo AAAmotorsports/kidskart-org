@@ -64,6 +64,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (!code) continue;
       const cpatch: Record<string, unknown> = {};
       if (typeof c?.requires_reservation === 'boolean') cpatch.requires_reservation = c.requires_reservation;
+      if (typeof c?.admin_only === 'boolean') cpatch.admin_only = c.admin_only;
       if (typeof c?.is_active === 'boolean') cpatch.is_active = c.is_active;
       if (Object.keys(cpatch).length === 0) continue;
       const { error: cerr } = await supabase.from('aone_categories').update(cpatch).eq('code', code);
