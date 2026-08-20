@@ -3,12 +3,12 @@
 # 新しいマイグレーションを足したら、このスクリプトの FILES に追記して実行する。
 set -eu
 cd "$(dirname "$0")"
-FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql"
+FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql 0006_category_walkin.sql"
 
 {
   cat <<'HDR'
 -- =============================================================================
--- A-ONE 予約システム v1 — 初回インストール用 (0001〜0005 を 1 ファイルに結合)
+-- A-ONE 予約システム v1 — 初回インストール用 (連番マイグレーションを結合)
 -- =============================================================================
 -- ★ 新規 Supabase プロジェクトへの初回適用専用です。
 --    Supabase Dashboard → SQL Editor に全文を貼り付けて Run を 1 回押すだけ。
