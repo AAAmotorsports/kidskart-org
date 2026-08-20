@@ -51,7 +51,7 @@ const WIDGET_JS = String.raw`
     '.aone-sess-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:.9em}',
     '.aone-sess-h b{font-size:1.05em}',
     '.aone-sess-h span{color:var(--aone-ink3)}',
-    '.aone-cats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}',
+    '.aone-cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}',
     '.aone-cat{text-align:center;border:1px solid var(--aone-line);border-radius:9px;padding:7px 3px;',
     '  background:#f7fafc}',
     '.aone-cat.ok{background:var(--aone-green-bg);border-color:#b9e3cf}',
@@ -148,6 +148,17 @@ const WIDGET_JS = String.raw`
         html += '</div></div>';
       });
 
+      var hidden = [];
+      d.sessions.forEach(function (s) {
+        (s.hidden_categories || []).forEach(function (h) {
+          if (hidden.indexOf(h.name) === -1) hidden.push(h.name);
+        });
+      });
+      if (hidden.length) {
+        html += '<p class="aone-note">' + esc(hidden.join('・'))
+          + ' は事前予約制です（ご予約のある日のみ表示しています）。</p>';
+      }
+
       html += '<div class="aone-rp"><b>レースパック (RP)</b>' + esc(d.rp.summary)
         + '<span class="aone-note"> ／ ' + d.rp.min_party + ' 名以上・30 分刻み</span></div>';
     }
@@ -163,8 +174,8 @@ const WIDGET_JS = String.raw`
       + '<a class="aone-btn" href="' + d.links.rp + '">レースパックを予約</a>'
       + '<a class="aone-btn" href="' + d.links.charter + '">貸切を申し込む</a>'
       + '<a class="aone-btn" href="' + d.links.night + '">ナイターを相談</a></div>';
-    html += '<p class="aone-note">○ 走れます（ご予約なしでも可） ／ 要予約 = 事前予約が必要 ／ '
-      + '✕ 受付停止 ／ — 対象外</p>';
+    html += '<p class="aone-note">○ 走れます（ご予約なしでもお越しいただけます） ／ '
+      + '△ 残りわずか ／ ✕ 受付停止</p>';
     html += '</div>';
 
     el.innerHTML = html;

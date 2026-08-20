@@ -30,6 +30,17 @@ function rpSummary(s: DayState | null): string {
 }
 
 const sessions: Array<['am' | 'pm', string]> = [['am', '午前'], ['pm', '午後']];
+
+// 「今日走れる？」に出すカテゴリーの絞り込み。
+//
+// カート・ミニバイクは予約なしで走れるので常に表示する。
+// キッズカート・その他 (大型バイク等) は事前予約制で、普段は走っていない。
+// 毎日「要予約」と並べても利用者の判断材料にならないので、
+// **その日に予約が入っているときだけ**出す (= その日は実際に走っている)。
+// 予約したい人は予約フォームからいつでも申し込める。
+function visibleCats<T extends { requires_reservation: boolean; running: boolean }>(list: T[]): T[] {
+  return list.filter((c) => !c.requires_reservation || c.running);
+}
 const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
 const closedToday = state?.weather.status === 'cancelled';
 ---
@@ -87,7 +98,7 @@ const closedToday = state?.weather.status === 'cancelled';
                   <span class="badge">{sess.used_classes} / {sess.max_classes} クラス</span>
                 </div>
                 <div class="cats">
-                  {sess.categories.map((c) => (
+                  {visibleCats(sess.categories).map((c) => (
                     <div class:list={['cat', c.walk_in_ok && 'walkin']} title={c.message}>
                       <div class="cat-name">{c.short_name}</div>
                       <div class:list={['mark', c.status]}>{STATUS_MARK[c.status]}</div>
@@ -101,10 +112,10 @@ const closedToday = state?.weather.status === 'cancelled';
             );
           })}
           <p class="tiny muted" style="margin:.4rem 0 0">
-            <strong>「走れます」</strong>= ご予約なしでお越しいただけます。
-            <strong>「要予約」</strong>= 事前のご予約が必要です
-            （キッズカート・その他は準備が必要なため、当日飛び込みでは走行できません）。<br />
-            ✕ 受付停止 ／ — 対象外。同じカテゴリーは何台でも 1 クラス扱いです。
+            <strong>「走れます」</strong>= ご予約なしでお越しいただけます（○ 受付可 ／ △ 残りわずか ／ ✕ 受付停止）。<br />
+            キッズカート・その他（大型バイク等）は<strong>事前予約制</strong>のため、
+            ご予約が入っている日のみ表示しています。ご希望の方は
+            <a href="/reserve/sport">こちらからご予約</a>ください。
           </p>
         </div>
       )}
@@ -158,7 +169,7 @@ const closedToday = state?.weather.status === 'cancelled';
               <div>
                 <div class="tiny muted">{label}</div>
                 <div class="row">
-                  {next.sport[key].categories.map((c) => (
+                  {visibleCats(next.sport[key].categories).map((c) => (
                     <span class="next-cat" title={categoryText(c)}>
                       {c.short_name}
                       <span class:list={['mark', c.status]} style="font-size:1rem">{STATUS_MARK[c.status]}</span>
@@ -187,7 +198,7 @@ const closedToday = state?.weather.status === 'cancelled';
   .wx-emoji{font-size:1.1rem}
   .sess+.sess{margin-top:1rem;padding-top:1rem;border-top:1px dashed var(--line)}
   .sess-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem}
-  .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}
+  .cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.5rem}
   .cat{text-align:center;border:1px solid var(--line);border-radius:10px;padding:.5rem .2rem;background:var(--bg-2)}
   .cat.walkin{background:var(--green-soft);border-color:#b9e3cf}
   .walkin-txt{color:#14724a;font-weight:700}
