@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { dayState, reservationsOfDay, pendingReservations } from '@lib/queries';
 import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
-  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, STATUS_MARK,
+  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, WEATHER_EMOJI, STATUS_MARK,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -25,12 +25,19 @@ const people = live.reduce((a, r) => a + (r.party_size ?? 0), 0);
 const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 const weekStates = await Promise.all(week.map((d) => dayState(env, d)));
 const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
+
+// 雨が降った瞬間に 1 タップで営業状態を変えられるようにする。
+// ここを押すと「今日走れる？」と公開スケジュールに即反映される。
+const WEATHER_ORDER = ['normal', 'rain_caution', 'checking', 'surface_recovery', 'cancelled', 'other'] as const;
+const currentWeather = state?.weather.status ?? 'normal';
+const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
 ---
 <Base title="A-ONE 管理" admin wide>
   <div class="spread" style="margin-bottom:.8rem">
     <h1 style="margin:0">{jaDate(today)}</h1>
     <div class="row">
       <a class="btn primary sm" href={`/admin/day/${today}`}>今日の運営画面</a>
+      <a class="btn sm" href={`/admin/sheet?date=${today}`}>受付シート</a>
       <a class="btn sm" href="/admin/calendar">カレンダー</a>
     </div>
   </div>
@@ -44,6 +51,46 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
       <div class="n small">{WEATHER_LABELS[state?.weather.status ?? 'normal']}</div>
       <div class="l">営業状態</div>
     </div>
+  </div>
+
+  <!-- ============ 天候ワンタップ ============ -->
+  <div class="card wx-card">
+    <div class="spread" style="margin-bottom:.5rem">
+      <h2 style="margin:0">本日の営業状態</h2>
+      <span class="tiny muted">押すとすぐ公開ページに反映されます</span>
+    </div>
+    <div class="wx-buttons">
+      {WEATHER_ORDER.map((code) => (
+        <button type="button" class:list={['wx-btn', code, currentWeather === code && 'on']}
+                data-wx={code}>
+          <span class="wx-emoji">{WEATHER_EMOJI[code]}</span>
+          {WEATHER_LABELS[code]}
+        </button>
+      ))}
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <input type="text" id="wx-msg" placeholder="公開メッセージ (例: 11 時に再判断します)"
+             value={state?.weather.message ?? ''} style="max-width:26rem" />
+      <button class="btn sm" id="wx-msg-save">メッセージだけ保存</button>
+      <span id="wx-out" class="small"></span>
+    </div>
+
+    <details style="margin-top:.7rem">
+      <summary class="small">
+        本日の予約者に一括連絡する（メールのある {mailTargets} 件）
+      </summary>
+      <div class="field" style="margin-top:.5rem">
+        <label for="bc-subject">件名</label>
+        <input type="text" id="bc-subject"
+               value={`【A-ONE】${today.slice(5).replace('-', '/')} の営業について`} />
+      </div>
+      <div class="field">
+        <label for="bc-body">本文</label>
+        <textarea id="bc-body" placeholder="本日は雨天のため走行を中止いたします。&#10;振替をご希望の方はお電話ください。"></textarea>
+      </div>
+      <button class="btn sm" id="bc-send" disabled={mailTargets === 0}>一括送信する</button>
+      <span id="bc-out" class="small"></span>
+    </details>
   </div>
 
   {pending.length > 0 && (
@@ -126,7 +173,77 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
   </div>
 </Base>
 
+<script is:inline define:vars={{ today }}>
+  const $ = (id) => document.getElementById(id);
+
+  async function post(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '失敗しました');
+    return data;
+  }
+
+  async function saveWeather(status) {
+    const out = $('wx-out');
+    out.textContent = ' 保存中…';
+    try {
+      await post('/api/admin/day', {
+        date: today,
+        weather_status: status,
+        status_message: $('wx-msg').value,
+      });
+      out.textContent = ' 保存しました';
+      setTimeout(() => location.reload(), 500);
+    } catch (e) {
+      out.textContent = ' ' + e.message;
+    }
+  }
+
+  document.querySelectorAll('[data-wx]').forEach((b) => {
+    b.addEventListener('click', () => saveWeather(b.dataset.wx));
+  });
+
+  $('wx-msg-save').addEventListener('click', () => {
+    const on = document.querySelector('.wx-btn.on');
+    saveWeather(on ? on.dataset.wx : 'normal');
+  });
+
+  const bc = $('bc-send');
+  if (bc) bc.addEventListener('click', async () => {
+    if (!confirm('本日の予約者全員にメールを送信します。よろしいですか？')) return;
+    bc.disabled = true;
+    try {
+      const r = await post('/api/admin/broadcast', {
+        date: today, subject: $('bc-subject').value, body: $('bc-body').value,
+      });
+      $('bc-out').textContent = ` ${r.recipients} 件に送信しました`;
+    } catch (e) {
+      $('bc-out').textContent = ' ' + e.message;
+    }
+    bc.disabled = false;
+  });
+</script>
+
 <style>
+  /* 天候ワンタップ: 雨が降った瞬間に押せることが最優先なので、
+     ボタンを大きく・色で状態が分かるようにする */
+  .wx-card{border-left:4px solid var(--amber)}
+  .wx-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem}
+  .wx-btn{display:flex;align-items:center;justify-content:center;gap:.35rem;
+    padding:.7rem .5rem;border:1px solid var(--line-2);border-radius:10px;background:#fff;
+    font-family:var(--jp);font-size:.9rem;font-weight:700;color:var(--ink);cursor:pointer;
+    transition:transform .05s,box-shadow .15s}
+  .wx-btn:hover{box-shadow:0 3px 10px rgba(0,0,0,.1)}
+  .wx-btn:active{transform:scale(.98)}
+  .wx-emoji{font-size:1.1rem}
+  .wx-btn.on{color:#fff;border-color:transparent}
+  .wx-btn.on.normal{background:var(--green)}
+  .wx-btn.on.rain_caution,.wx-btn.on.checking,.wx-btn.on.surface_recovery,.wx-btn.on.other{background:var(--amber);color:var(--ink)}
+  .wx-btn.on.cancelled{background:var(--red)}
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;margin-bottom:1rem}
   .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem;text-align:center}
   .kpi .n{font-size:1.6rem;font-weight:800;line-height:1.1}

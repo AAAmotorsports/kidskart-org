@@ -14,6 +14,10 @@ const pricePerPerson: number = cfg?.rp_price_per_person ?? 6600;
 const today = todayJst();
 const maxDate = addDays(today, 180);
 const initialDate = Astro.url.searchParams.get('date') ?? today;
+// 「今日走れる？」の RP 枠から飛んできたときは、その時間を選択済みにする
+const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{2}$/)
+  ? Astro.url.searchParams.get('time')!
+  : '';
 ---
 <Base title="レースパックのご予約 | A-ONE サーキット">
   <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
@@ -110,10 +114,12 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
   </form>
 </Base>
 
-<script is:inline define:vars={{ PRICE_PER_PERSON: pricePerPerson }}>
+<script is:inline define:vars={{ PRICE_PER_PERSON: pricePerPerson, INITIAL_TIME: initialTime }}>
   const $ = (id) => document.getElementById(id);
   let state = null;
   let picked = null;
+  // URL で指定された開始時間 (最初の 1 回だけ自動選択する)
+  let pendingPick = INITIAL_TIME || null;
 
   async function loadBooked(date) {
     const box = $('rp-booked');
@@ -151,6 +157,7 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
     picked = null;
     $('picked-label').textContent = '開始時間を選んでください';
     render();
+    pendingPick = null;   // 自動選択は最初の 1 回だけ
   }
 
   function render() {
@@ -186,6 +193,11 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
         $('slot-hint').textContent = s.message ? ' ／ ' + s.message : '';
       });
       wrap.appendChild(b);
+      // 「今日走れる？」から時間指定で来た場合は、その枠を選択済みにする
+      if (pendingPick === s.time && s.accepting) {
+        b.click();
+        b.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
     });
     $('party').min = String(state.rp.min_party || 3);
   }
