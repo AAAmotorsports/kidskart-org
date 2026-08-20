@@ -25,11 +25,11 @@
   },
   "vars": {
     // Supabase (A-ONE 用に新規プロジェクトを作成して差し替える)
-    "PUBLIC_SUPABASE_URL": "",
-    "PUBLIC_SUPABASE_ANON_KEY": "",
+    "PUBLIC_SUPABASE_URL": "https://owdtmtkvravihqonoykk.supabase.co",
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_jEEuSqPX1RjMWcYkPxF20w_xDGTOGsY",
     // 管理画面の Basic 認証
     "ADMIN_USERNAME": "aone",
-    "ADMIN_PASSWORD_HASH": "",
+    "ADMIN_PASSWORD_HASH": "80b7b5ae9b7568db0956157c7a8a88f426b2a0f06834abd9a7a879f5057067fa",
     // 送信メール
     "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
     "MAIL_FROM_NAME": "A-ONE サーキット",
