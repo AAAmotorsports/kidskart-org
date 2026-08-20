@@ -60,7 +60,7 @@ const isOpen = (v: string) => v === 'true';
                 <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.public_label}</div>
               ))}
               {!closed && (
-                <div class="tiny slots">
+                <div class="tiny day-slots">
                   <span class={isOpen(d.sport_am) ? 'ok' : 'ng'}>午前 {isOpen(d.sport_am) ? '○' : '✕'}</span>
                   <span class={isOpen(d.sport_pm) ? 'ok' : 'ng'}>午後 {isOpen(d.sport_pm) ? '○' : '✕'}</span>
                   {d.rp_free > 0 && <span class="ok">RP {d.rp_free}枠</span>}
@@ -113,8 +113,9 @@ const isOpen = (v: string) => v === 'true';
   .wx{color:#8a5a06;font-weight:700}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .slots{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:auto}
-  .slots .ok{color:#14724a} .slots .ng{color:var(--ink-4)}
+  /* カレンダーセル内の ○✕ 行 (Base の .slots とは別物なので名前を分ける) */
+  .day-slots{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:auto}
+  .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
   .book{margin-top:.1rem;text-decoration:none;font-weight:800;color:var(--red)}
   @media (max-width:640px){
     .cal-cell{min-height:74px;font-size:.72rem}

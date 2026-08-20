@@ -273,12 +273,5 @@ const isSport = r?.kind === 'sport';
 )}
 
 <style>
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
-  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:.4rem}
-  .slot{padding:.4rem .2rem;border:1px solid var(--line-2);border-radius:9px;background:#fff;
-    font-weight:700;font-size:.84rem;font-family:var(--jp);color:var(--ink);cursor:pointer}
-  .slot.free{border-color:#b9e3cf;background:var(--green-soft);color:#14724a}
-  .slot.full{background:var(--bg-3);color:var(--ink-4);cursor:not-allowed;text-decoration:line-through}
-  .slot.picked{outline:3px solid var(--red);outline-offset:1px}
-  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+  /* スロット等のスタイルは Base.astro のグローバル側 (JS 生成要素のため) */
 </style>
