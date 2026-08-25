@@ -357,6 +357,19 @@
   .b2b-cta:hover .arrow{transform:translateX(3px)}
   @media(max-width:600px){.b2b-credit-line{flex-direction:column;gap:.4rem;text-align:center}.b2b-credit-line{border-left:none;border-top:3px solid var(--sun)}}
 
+  /* USED KART INQUIRY (subtle bottom note) */
+  .usedkart{background:#f4f9fc;margin:0;max-width:none;color:var(--ink)}
+  .usedkart-inner{max-width:720px;margin:0 auto;padding:2.5rem 1.5rem;text-align:center}
+  .usedkart-tag{display:inline-block;font-family:var(--mono);font-size:.68rem;letter-spacing:.25em;font-weight:700;color:var(--sky-deep);text-transform:uppercase;margin-bottom:.7rem}
+  .usedkart-h{font-family:var(--jp);font-weight:800;font-size:clamp(1.05rem,2.2vw,1.35rem);line-height:1.5;color:var(--ink);margin:0 0 .8rem}
+  .usedkart-h .hl{color:var(--sky-deep);position:relative;display:inline-block}
+  .usedkart-h .hl::after{content:'';position:absolute;bottom:-2px;left:0;right:0;height:5px;background:var(--sky);opacity:.25;border-radius:4px;z-index:-1}
+  .usedkart-text{font-size:.85rem;color:var(--ink-2);line-height:1.75;max-width:560px;margin:0 auto 1.3rem}
+  .usedkart-cta{display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.5rem;background:var(--sky);color:#fff;border:1.5px solid var(--sky);border-radius:999px;font-size:.85rem;font-weight:800;text-decoration:none;transition:all .2s}
+  .usedkart-cta:hover{background:var(--sky-deep);border-color:var(--sky-deep);transform:translateY(-2px);box-shadow:0 6px 16px rgba(58,169,232,.35)}
+  .usedkart-cta .arrow{transition:transform .2s}
+  .usedkart-cta:hover .arrow{transform:translateX(3px)}
+
   /* FOOTER */
   footer{background:var(--ink);color:rgba(255,255,255,.75);padding:0 0 1.5rem}
   .footer-mainspons{background:rgba(255,255,255,.04);padding:1.2rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -882,6 +895,20 @@
       <span class="b2b-credit-text">福岡トヨペット様 / HIT住宅展示場様 / 建築マニア様 / 道の駅むなかた様 ほか</span>
     </div>
     <a href="https://events.aaa-ms.com" target="_blank" class="b2b-cta">イベント開催の詳細・お問い合わせ <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<!-- USED KART INQUIRY (subtle, redirect to AAA Motor Sports) -->
+<section id="used-kart" class="usedkart">
+  <div class="usedkart-inner">
+    <span class="usedkart-tag">中古カート</span>
+    <h3 class="usedkart-h">中古キッズカートの<span class="hl">販売・買取査定</span>もお気軽に</h3>
+    <p class="usedkart-text">
+      成長でサイズが合わなくなったカートの売却や、次のステップアップに向けた中古車情報など、姉妹サイト <strong>AAA Motor Sports</strong> にてお取扱いしております。在庫状況・出物・価格帯もお気軽にお問い合わせください。
+    </p>
+    <a href="https://aaa-ms.com" target="_blank" rel="noopener" class="usedkart-cta">
+      AAA Motor Sports で詳しく見る <span class="arrow">→</span>
+    </a>
   </div>
 </section>
 
