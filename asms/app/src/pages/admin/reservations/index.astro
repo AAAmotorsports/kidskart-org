@@ -147,9 +147,10 @@ if (dateFilter) {
   }));
 }
 
-// Build calendar cells
+// Build calendar cells (月曜始まり)
 const firstDay = new Date(calYear, calMonth - 1, 1);
-const startPad = firstDay.getDay();
+// getDay() は Sun=0..Sat=6。(+6)%7 で Mon=0..Sun=6 にシフト。
+const startPad = (firstDay.getDay() + 6) % 7;
 const daysInMonth = new Date(calYear, calMonth, 0).getDate();
 type CalCell = {
   date: string | null;
@@ -254,13 +255,13 @@ const statusColor: Record<string, string> = {
         <a class="cal-nav" href={`/admin/reservations?ym=${nextYm}`}>{nextYm} →</a>
       </div>
       <div class="cal-grid">
-        <div class="cal-dow dow-sun">日</div>
         <div class="cal-dow">月</div>
         <div class="cal-dow">火</div>
         <div class="cal-dow">水</div>
         <div class="cal-dow">木</div>
         <div class="cal-dow">金</div>
         <div class="cal-dow dow-sat">土</div>
+        <div class="cal-dow dow-sun">日</div>
         {cells.map((c) => {
           if (!c.date) return <div class="cal-cell empty"></div>;
           const s = c.summary;

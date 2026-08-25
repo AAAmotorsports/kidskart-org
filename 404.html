@@ -12,12 +12,12 @@
     var target = null;
     if (/^\/archives\//i.test(p)) target = '/stories/';
     else if (/^\/wp-content\//i.test(p)) target = '/';
-    else if (/(reserve|reservation|予約|受付)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(reserve|reservation|予約|受付)/i.test(p)) target = 'https://reserve.kidskart.org/reserve/';
     else if (/(access|アクセス|方面から)/i.test(p)) target = '/#access';
-    else if (/(schedule|スケジュール|calendar|カレンダー)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(schedule|スケジュール|calendar|カレンダー)/i.test(p)) target = 'https://reserve.kidskart.org/reserve/';
     else if (/(体験|教室|レッスン|lesson|program|コース)/i.test(p)) target = '/#what';
     else if (/(price|料金|fee|cost)/i.test(p)) target = '/#pricing';
-    else if (/(contact|問い合わせ|お問い合わせ)/i.test(p)) target = 'https://reserva.be/kidskart/reserve';
+    else if (/(contact|問い合わせ|お問い合わせ)/i.test(p)) target = 'https://reserve.kidskart.org/reserve/';
     else if (/(sponsor|協賛|toyopet|トヨペット)/i.test(p)) target = '/';
     if (target) {
       var meta = document.createElement('meta');
@@ -84,7 +84,7 @@
     <div class="links">
       <a class="btn btn-primary" href="/">🏠 トップページへ戻る</a>
       <a class="btn btn-ghost" href="/stories/">📖 記事アーカイブ（2013–2019）</a>
-      <a class="btn btn-ghost" href="https://reserva.be/kidskart/reserve">🏎️ 体験会を予約する</a>
+      <a class="btn btn-ghost" href="https://reserve.kidskart.org/reserve/">🏎️ 体験会を予約する</a>
     </div>
     <div class="foot">福岡キッズカートアカデミー · FUKUOKA KIDS KART ACADEMY</div>
   </div>

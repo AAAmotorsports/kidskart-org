@@ -123,11 +123,14 @@ function courseHref(code: string): string {
   return activeCourse?.code === code ? '/reserve/#dates' : `/reserve/?course=${code}#dates`;
 }
 
-// Calendar cells: leading blanks then day entries. Sunday-start (JS default).
+// Calendar cells: leading blanks then day entries. Monday-start (ISO 8601)
+// を採用。JS の getDay() は Sun=0..Sat=6 なので (+6)%7 で Mon=0..Sun=6 に
+// シフトして padding 個数として使う。
 // `count` = number of slots on this day with at least 1 seat remaining
 // (fully-booked slots are excluded so the cell reflects real availability).
 type Cell = { date: string; dayNum: number; count: number; dow: number } | null;
-const firstDow = new Date(visYear, visMonth - 1, 1).getDay();
+const jsFirstDow = new Date(visYear, visMonth - 1, 1).getDay();
+const firstDow = (jsFirstDow + 6) % 7; // Monday-start padding
 const cells: Cell[] = [];
 for (let i = 0; i < firstDow; i++) cells.push(null);
 for (let dnum = 1; dnum <= daysInMonth; dnum++) {
@@ -157,8 +160,12 @@ const scheduleNotice = day < 25
   : `${monthAfterNext}月分のスケジュールは ${nextMonthNum}/25 頃に公開予定です。`;
 const scheduleNoticeEn = `The schedule for ${new Date(2000, scheduleNoticeMonth - 1).toLocaleString('en-US', { month: 'long' })} will be released around the 25th of ${new Date(2000, scheduleNoticeReleaseMonth - 1).toLocaleString('en-US', { month: 'long' })}.`;
 
+// getDay() (Sun=0..Sat=6) から曜日名を引くための配列
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
 const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// カレンダーグリッドのヘッダーは月曜始まり
+const calHeaderJa = ['月', '火', '水', '木', '金', '土', '日'];
+const calHeaderEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   if (isEn) {
@@ -393,8 +400,8 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
               : '緑の日をタップ → 下に時間帯一覧が表示されます'}
           </p>
           <div class="cal-grid">
-            {(isEn ? weekdayEn : weekdayJa).map((w, i) => (
-              <div class={`cal-dow ${i === 0 ? 'sun' : ''} ${i === 6 ? 'sat' : ''}`}>{w}</div>
+            {(isEn ? calHeaderEn : calHeaderJa).map((w, i) => (
+              <div class={`cal-dow ${i === 6 ? 'sun' : ''} ${i === 5 ? 'sat' : ''}`}>{w}</div>
             ))}
             {cells.map((cell) => (
               cell === null
