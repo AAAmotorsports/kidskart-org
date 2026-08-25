@@ -529,15 +529,17 @@ const addDefaultDate = monthStart;
 
 // -----------------------------------------------------------------------
 // 「まとめて追加」のカレンダーグリッド用データ
-// 選択中の年月について: 週始まりの日曜〜土曜配置で 7 x 6 行のセルを組む。
-// 各日は date-string を data-date として、クリック時に client-side JS が
-// selected トグルする (hidden input <bulkDates> にカンマ区切りで反映)。
+// 選択中の年月について: 月曜〜日曜配置 (ISO 8601 / 日本の一般的な月曜始まり)
+// で 7 x 6 行のセルを組む。各日は date-string を data-date として、
+// クリック時に client-side JS が selected トグルする (hidden input <bulkDates>
+// にカンマ区切りで反映)。
 // -----------------------------------------------------------------------
 const closureDatesInMonth = new Set<string>(
   (exceptions ?? []).filter((e: any) => e.type === 'closure').map((e: any) => e.date)
 );
 const firstOfMonth = new Date(year, month - 1, 1);
-const firstDayOfWeek = firstOfMonth.getDay(); // 0 = Sunday
+// getDay() は Sun=0..Sat=6。(+6)%7 で Mon=0..Sun=6 にシフトして padding 個数化。
+const firstDayOfWeek = (firstOfMonth.getDay() + 6) % 7;
 const daysInMonth = new Date(year, month, 0).getDate();
 const todayStr = (() => {
   const d = new Date();
@@ -631,13 +633,13 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
             <span class="bulk-count" id="datesCount">未選択</span>
           </div>
           <div class="cal-grid" id="calGrid">
-            <div class="cal-wd cal-wd-sun">日</div>
             <div class="cal-wd">月</div>
             <div class="cal-wd">火</div>
             <div class="cal-wd">水</div>
             <div class="cal-wd">木</div>
             <div class="cal-wd">金</div>
             <div class="cal-wd cal-wd-sat">土</div>
+            <div class="cal-wd cal-wd-sun">日</div>
             {calCells.map((c) => (
               c.type === 'empty'
                 ? <div class="cal-empty"></div>
