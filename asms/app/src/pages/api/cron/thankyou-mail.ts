@@ -24,6 +24,16 @@ export const prerender = false;
 //   ・challenge_* × 任意
 //        → チャレンジの継続案内
 //
+// 初回参加後の追加 CTA (保護者単位で 1 回だけ):
+//   ・Google 口コミ CTA (メイン・目立たせる) ← Google Business Profile の
+//      口コミ URL。集客に直接効くので優先。「満足者だけ Google に振り分け」
+//      は Google ポリシー違反なので全員に同じ導線を出す。
+//   ・内部アンケート (Google Form・従属的に小さく) ← 改善点収集。
+//      Google 口コミよりも目立たせない。
+//   両方とも「その保護者の過去参加数 == 0」かつ
+//   guardians.google_review_asked_at IS NULL の場合のみ表示。
+//   将来的にアンケート表示条件は独立して変更可能な設計。
+//
 // レスポンス: { total, sent, skipped, failed, details }
 
 type SkillLevel =
@@ -72,6 +82,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const origin = env.PUBLIC_APP_URL || `${urlObj.protocol}//${urlObj.host}`;
   const surveyUrl = (env.PUBLIC_SURVEY_URL ?? '').trim();
+  const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
 
   // --- Fetch today's slots (not cancelled) -------------------------------
   const { data: slots, error: slotsErr } = await supabase
@@ -98,8 +109,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const { data: reservations, error: rErr } = await supabase
     .from('reservations')
     .select(`
-      id, slot_id, status, thankyou_email_sent_at,
-      guardians(id, name, email),
+      id, slot_id, status, guardian_id, thankyou_email_sent_at,
+      guardians(id, name, email, google_review_asked_at),
       reservation_participants(
         id, name_snapshot, attendance_status,
         customers(id, current_skill_level)
@@ -110,6 +121,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .is('thankyou_email_sent_at', null);
   if (rErr) {
     return json({ error: `failed to fetch reservations: ${rErr.message}` }, 500);
+  }
+
+  // --- 「初回参加か」を判定するため、対象保護者たちの過去のサンキュー
+  //     メール送信回数 (=過去に参加してメール送信済みだった件数) を先に
+  //     まとめて数えておく (N+1 クエリを回避)。
+  //     過去件数 == 0 なら「今回が初回参加」とみなす。
+  const guardianIds = new Set<string>();
+  for (const r of (reservations ?? []) as any[]) {
+    if (r.guardian_id) guardianIds.add(r.guardian_id);
+  }
+  const priorAttendCount = new Map<string, number>();
+  if (guardianIds.size > 0) {
+    const { data: pastRows } = await supabase
+      .from('reservations')
+      .select('guardian_id')
+      .in('guardian_id', [...guardianIds])
+      .not('thankyou_email_sent_at', 'is', null);
+    for (const row of (pastRows ?? []) as any[]) {
+      if (!row.guardian_id) continue;
+      priorAttendCount.set(row.guardian_id, (priorAttendCount.get(row.guardian_id) ?? 0) + 1);
+    }
   }
 
   const total = (reservations ?? []).length;
@@ -155,12 +187,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
         };
       });
 
+      // 初回参加 & まだ Google 口コミ依頼を送っていない場合のみ、
+      // Google 口コミ CTA + 内部アンケートを出す。
+      // アンケートの表示条件を将来変更する場合は showSurveyCta を独立に。
+      const isFirstVisit = (priorAttendCount.get(r.guardian_id) ?? 0) === 0;
+      const alreadyAsked = !!guardian.google_review_asked_at;
+      const showReviewCta = isFirstVisit && !alreadyAsked && !!googleReviewUrl;
+      const showSurveyCta = isFirstVisit && !!surveyUrl; // 現状は初回のみ
+
       await sendThankyouEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
         courseName: slotInfo.courseName,
         participants,
-        surveyUrl,
+        surveyUrl: showSurveyCta ? surveyUrl : '',
+        googleReviewUrl: showReviewCta ? googleReviewUrl : '',
         origin,
       });
 
@@ -172,8 +213,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
         console.warn('[thankyou-mail] failed to mark sent for', r.id, updErr.message);
       }
 
+      // Google 口コミ CTA を出したなら保護者に印を付ける (保護者単位で 1 回のみ)。
+      if (showReviewCta && r.guardian_id) {
+        const { error: revErr } = await supabase
+          .from('guardians')
+          .update({ google_review_asked_at: new Date().toISOString() })
+          .eq('id', r.guardian_id);
+        if (revErr) {
+          console.warn('[thankyou-mail] failed to mark review-asked for', r.guardian_id, revErr.message);
+        }
+      }
+
       sent++;
-      details.push({ id: r.id, result: 'sent' });
+      details.push({
+        id: r.id,
+        result: 'sent',
+        note: [
+          isFirstVisit ? 'first' : 'repeat',
+          showReviewCta ? 'review-cta' : null,
+          showSurveyCta ? 'survey-cta' : null,
+        ].filter(Boolean).join(' '),
+      });
     } catch (e: any) {
       failed++;
       details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
@@ -285,7 +345,8 @@ async function sendThankyouEmail(env: Env, args: {
   guardianName: string;
   courseName: string;
   participants: Participant[];
-  surveyUrl: string;
+  surveyUrl: string;         // 空文字なら非表示 (初回参加者のみ)
+  googleReviewUrl: string;   // 空文字なら非表示 (初回参加 & 未依頼者のみ)
   origin: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
@@ -322,12 +383,20 @@ async function sendThankyouEmail(env: Env, args: {
         : []),
     ]),
     '',
-    ...(args.surveyUrl ? [
+    ...(args.googleReviewUrl ? [
       '━━━━━━━━━━━━━━━━━━━━',
-      '▼ ご感想アンケート（1 分で終わります）',
-      `${args.surveyUrl}`,
+      '⭐ Google でご感想をお聞かせください',
+      '━━━━━━━━━━━━━━━━━━━━',
+      'お子さまに楽しんでいただけましたら、',
+      'Google 上でご感想をお聞かせいただけると嬉しいです。',
+      '同じような親御さんのお店選びの助けになります。',
       '',
-      'サービス改善のためにご協力をお願いいたします。',
+      `▶ ${args.googleReviewUrl}`,
+      '',
+    ] : []),
+    ...(args.surveyUrl ? [
+      '（運営への改善ご要望はこちらのフォームから：）',
+      `  ${args.surveyUrl}`,
       '',
     ] : []),
     '━━━━━━━━━━━━━━━━━━━━',
@@ -352,14 +421,29 @@ async function sendThankyouEmail(env: Env, args: {
     </div>
   `).join('');
 
-  const surveyHtml = args.surveyUrl ? `
-    <div style="background:linear-gradient(135deg,rgba(58,169,232,.08),rgba(58,169,232,.02));border:1px solid #cae7f7;border-radius:10px;padding:1rem;margin:1.2rem 0;text-align:center">
-      <div style="font-weight:800;color:#1a7fb8;font-size:.95rem;margin-bottom:.4rem">📝 ご感想アンケート</div>
-      <p style="font-size:.8rem;color:#3d556f;margin:0 0 .7rem">1 分で終わります。サービス改善のためご協力をお願いします。</p>
+  // 初回参加者向け Google 口コミ CTA (メイン)。集客に直接効くので優先。
+  // Google ポリシー準拠: 全員に同じ導線 (満足者だけ振り分けをしない)。
+  const reviewHtml = args.googleReviewUrl ? `
+    <div style="background:linear-gradient(135deg,rgba(255,201,67,.15),rgba(255,138,61,.08));border:2px solid #ffc943;border-radius:12px;padding:1.15rem 1rem;margin:1.3rem 0 .3rem;text-align:center">
+      <div style="font-size:1.4rem;margin-bottom:.2rem">⭐️⭐️⭐️⭐️⭐️</div>
+      <div style="font-weight:800;color:#163048;font-size:1.02rem;margin-bottom:.4rem">Google でご感想をお聞かせください</div>
+      <p style="font-size:.82rem;color:#3d556f;margin:0 0 .9rem;line-height:1.65">
+        お子さまに楽しんでいただけましたら、<br>
+        Google 上でひとことご感想をお願いします。<br>
+        <span style="font-size:.72rem;color:#7d8fa0">同じ年頃のお子さまをお持ちの親御さんの<br>お店選びの助けになります</span>
+      </p>
       <p style="margin:0">
-        <a href="${escapeAttr(args.surveyUrl)}" style="display:inline-block;padding:.55rem 1.1rem;background:#1a7fb8;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">アンケートに回答する</a>
+        <a href="${escapeAttr(args.googleReviewUrl)}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#4285f4,#1a73e8);color:#fff;text-decoration:none;border-radius:8px;font-weight:800;font-size:.9rem;box-shadow:0 3px 10px rgba(66,133,244,.35)">Google に口コミを書く</a>
       </p>
     </div>
+  ` : '';
+
+  // 内部アンケート (Google Form) は Google 口コミより控えめに表示。
+  // 「改善点収集」用で、集客より運営品質のフィードバック目的。
+  const surveyHtml = args.surveyUrl ? `
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:.2rem 0 1.3rem;line-height:1.6">
+      運営への改善ご要望は<a href="${escapeAttr(args.surveyUrl)}" style="color:#1a7fb8;text-decoration:underline;font-weight:700">こちらのフォーム</a>からお寄せください
+    </p>
   ` : '';
 
   const html = `<!DOCTYPE html>
@@ -381,6 +465,7 @@ async function sendThankyouEmail(env: Env, args: {
 
     ${participantsHtml}
 
+    ${reviewHtml}
     ${surveyHtml}
 
     <div style="background:linear-gradient(135deg,rgba(6,199,85,.06),rgba(6,199,85,.02));border:1px solid #06c755;border-radius:10px;padding:.9rem;margin:1rem 0;text-align:center">

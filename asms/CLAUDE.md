@@ -187,6 +187,37 @@ reserve.kidskart.org (ASMS) を **同一データストリーム** で計測す�
 price_tier / participants 人数 / total_amount (¥) のみ送る。保護者名・
 メール・電話は絶対送らない。
 
+### サンキューメールの CTA 出し分けポリシー
+
+`/api/cron/thankyou-mail` は毎日 18:00 JST に GitHub Actions cron から
+叩かれ、当日参加者の保護者にサンキューメールを送る。
+**「毎回同じお願い」で疲弊させないため、CTA は初回参加時のみに絞る**
+(オーナー承認済み・2026-08-25 判断)。
+
+| CTA | 表示条件 | 目立たせ方 |
+|-----|---------|-----------|
+| 次回予約リンク | **毎回** (参加者ごとに skill_level で分岐) | メイン |
+| Google 口コミ CTA | **初回参加 & guardians.google_review_asked_at IS NULL** | プロミネント (青ボタン) |
+| 内部アンケート (Google Form) | 初回参加のみ (現状) | 従属的な小さいテキストリンク |
+
+**判定ロジック**:
+- `isFirstVisit` = その保護者の過去 `thankyou_email_sent_at` 送信済み予約数 == 0
+- 送信時に `guardians.google_review_asked_at` を更新し、二度と自動送信しない
+  (保護者単位で 1 回だけ)
+- 内部アンケートの表示条件は Google 口コミとは**独立**な `showSurveyCta`
+  変数で管理。将来「3 回目 / 5 回目 / チャレンジ初回」で別 Form に出し
+  分ける拡張が可能な設計
+
+**Google 口コミ URL**: `PUBLIC_GOOGLE_REVIEW_URL` に格納。
+現状 `https://g.page/r/CfMucc5k_k0vEBM/review` (エーワンサーキット
+の Google Business Profile 短縮 URL)。
+
+**Google ポリシー準拠**: 「満足者だけ Google に、不満は内部に」の振り
+分けは絶対にしない。全員に同じ導線を出す (口コミゲート禁止)。
+
+**カラム追加**: `db/0027_guardians_google_review_asked_at.sql` を
+Supabase SQL Editor で実行して有効化。
+
 ### Cloudflare 設定のバックアップ
 Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
 - Secret 値は 1Password 等の別レイヤに保管

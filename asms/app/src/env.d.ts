@@ -37,6 +37,11 @@ interface Env {
   // 空文字 / 未設定なら計測タグを一切吐かない。
   PUBLIC_GA4_MEASUREMENT_ID?: string;
 
+  // Google Business Profile の口コミ投稿 URL。サンキューメールで
+  // 「初回参加 & 未依頼」の保護者に 1 度だけ CTA として出す。
+  // 空文字なら口コミセクションを省略。
+  PUBLIC_GOOGLE_REVIEW_URL?: string;
+
   // Simple admin gate for MVP — will be replaced by Supabase Auth later.
   // Password is stored as a SHA-256 hex digest so the plain value never
   // leaves the operator's machine.

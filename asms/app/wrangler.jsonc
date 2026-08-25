@@ -72,7 +72,11 @@
     // GA4 測定 ID。kidskart.org (静的サイト) と同一のデータストリームで
     // 計測し、集客 → 予約完了までの単一ファネルとして測る。空文字なら
     // タグを一切吐かない (dev / preview 用)。
-    "PUBLIC_GA4_MEASUREMENT_ID": "G-W3HB0DT0Y3"
+    "PUBLIC_GA4_MEASUREMENT_ID": "G-W3HB0DT0Y3",
+    // Google Business Profile の口コミ投稿 URL。サンキューメールで
+    // 「初回参加 & 未依頼」の保護者に 1 度だけ CTA として出す。
+    // 空文字なら口コミセクションを丸ごと省略。
+    "PUBLIC_GOOGLE_REVIEW_URL": "https://g.page/r/CfMucc5k_k0vEBM/review"
   }
   //
   // Secrets (stay in Cloudflare Dashboard, encrypted):
