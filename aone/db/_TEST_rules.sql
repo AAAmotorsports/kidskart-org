@@ -422,9 +422,10 @@ begin
   assert (select amount from aone_reservations where id = id1) = 30000,
     '16-3 手入力の金額が上書きされてしまう';
 
-  -- 0016 より前にズレたまま残っている行 (手入力フラグは立っていない) を再現し、
+  -- ズレたまま残っている行 (手入力フラグは立っていない) を再現し、
   -- 次の変更で自動計算に戻ることを確かめる。
-  -- トリガーを外して作るのは、通常の UPDATE では手入力扱いになってしまうため
+  -- 12,345 円は自動計算と違う額なので、通常の UPDATE では手入力扱いになる。
+  -- 「0016 以前からズレていた」状況を作るためトリガーを外して用意する
   alter table aone_reservations disable trigger aone_res_recalc_amount;
   update aone_reservations set amount = 12345, amount_manual = false where id = id1;
   alter table aone_reservations enable trigger aone_res_recalc_amount;
@@ -434,6 +435,16 @@ begin
   assert (select amount from aone_reservations where id = id1) = 46200,
     '16-3b ズレていた金額が自動計算に戻らない: '
       || (select amount from aone_reservations where id = id1)::text;
+
+  -- 自動計算と同じ額を入れ直しても手入力扱いにしない
+  -- (0017 の一括修正がトリガーを踏んで、直した行を全部手入力にしてしまった)
+  update aone_reservations set amount = 46200 where id = id1;
+  assert not (select amount_manual from aone_reservations where id = id1),
+    '16-3c 自動計算と同じ額を入れただけで手入力扱いになる';
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'party_size', 8,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 52800,
+    '16-3d 一度自動計算に揃えたあと追従しなくなる';
 
   -- 貸切 5 台 (66,000 円) → 8 台 (99,000 円)
   r := t_book(jsonb_build_object('kind','charter','date', aone_today()+27, 'start_time','09:00',
