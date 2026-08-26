@@ -88,8 +88,14 @@ Magic Link を足す。**電話番号だけをキーにした顧客検索 API �
 > **全削除**する (ASMS で 3 回事故)。常に全キー入りで維持すること。
 
 **Cloudflare Dashboard「変数とシークレット」(シークレット型のみ)**:
-`SUPABASE_SERVICE_ROLE_KEY` / `RESEND_API_KEY` / `CRON_SECRET`。
-追加後は「デプロイ タブ → 現バージョン再展開」で bind し直す。
+`SUPABASE_SERVICE_ROLE_KEY` / `RESEND_API_KEY` / `CRON_SECRET` /
+`ADMIN_PASSWORD_HASH`。追加後は「デプロイ タブ → 現バージョン再展開」で
+bind し直す。
+
+> ⚠️ **このリポジトリは公開 (public)**。`wrangler.jsonc` に書いたものは
+> 誰でも読める。管理画面のパスワードハッシュを vars に置くと、オフラインで
+> 総当たりできてしまうのでシークレット型に置く。`PUBLIC_SUPABASE_ANON_KEY`
+> は公開前提のキーなので vars で問題ない (RLS で守る)。
 
 ## 商品構成と料金 (2026-08 オーナー確認)
 

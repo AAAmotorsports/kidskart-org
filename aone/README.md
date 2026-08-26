@@ -109,6 +109,7 @@ npx wrangler deploy
 | `SUPABASE_SERVICE_ROLE_KEY` | 予約の書き込み・管理画面の読み取り |
 | `RESEND_API_KEY` | メール送信 |
 | `CRON_SECRET` | `/api/cron/mails` を GitHub Actions から叩く共有鍵 |
+| `ADMIN_PASSWORD_HASH` | 管理画面のパスワード (SHA-256 hex) |
 
 > ⚠️ `wrangler.jsonc` の `vars` ブロックを空にしたり削除したりすると、
 > deploy 時に Dashboard 側の非機密変数が全削除されます (ASMS で 3 回発生)。
@@ -118,8 +119,12 @@ npx wrangler deploy
 
 ```bash
 printf 'あたらしいパスワード' | sha256sum
-# → ADMIN_PASSWORD_HASH に貼る
+# → Dashboard の ADMIN_PASSWORD_HASH (シークレット型) に貼る
 ```
+
+> ⚠️ **このリポジトリは公開 (public)** なので、`ADMIN_PASSWORD_HASH` を
+> `wrangler.jsonc` に書かないこと。ハッシュが公開されると、短いパスワードは
+> オフラインの総当たりで破られます。シークレット型なら公開されません。
 
 ### 3. 自動メールの cron
 
