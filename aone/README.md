@@ -133,6 +133,10 @@ printf 'あたらしいパスワード' | sha256sum
 
 ### 3. 自動メールの cron
 
+> curl で手動確認するときは `-H "Content-Type: application/json"` を付けること。
+> 付けないと Astro の CSRF 対策 (`security.checkOrigin`) が 403 を返す。
+> `AONE_API_BASE` は独自ドメイン (`https://reserve.rk-a1.com`) を設定する。
+
 `.github/workflows/aone-mails.yml` が 1 日 2 回 `/api/cron/mails` を叩きます。
 GitHub Secrets に `AONE_API_BASE` と `AONE_CRON_SECRET` を設定してください。
 

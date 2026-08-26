@@ -63,6 +63,16 @@ jobs:
             exit 0
           fi
 
+          # 宛先が正しいかを先に確かめる。ここが 404 なら AONE_API_BASE の値が
+          # 間違っているか、Worker が生きていない (メールの問題ではない)
+          BASE="${AONE_API_BASE%/}"
+          PING=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/public/today" || echo 000)
+          echo "疎通確認 /api/public/today → HTTP $PING"
+          if [ "$PING" != "200" ]; then
+            echo "::error::予約システムに届きません (HTTP $PING)。AONE_API_BASE の値を確認してください。https://reserve.rk-a1.com のように、スキーム付き・末尾スラッシュ無しで設定します" >&2
+            exit 1
+          fi
+
           # 朝の回はリマインド + フォロー、夕の回はお礼。手動実行は入力を優先。
           if [ -n "${INPUT_TYPE:-}" ]; then
             TYPES="$INPUT_TYPE"
@@ -75,7 +85,7 @@ jobs:
 
           FAILED=0
           for T in $TYPES; do
-            URL="${AONE_API_BASE%/}/api/cron/mails?type=${T}"
+            URL="$BASE/api/cron/mails?type=${T}"
             if [ -n "${INPUT_DATE:-}" ]; then
               URL="${URL}&date=${INPUT_DATE}"
             fi
