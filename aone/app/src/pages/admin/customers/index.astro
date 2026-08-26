@@ -17,6 +17,7 @@ const rows = await customerStats(env, q || undefined, 200);
   <form class="card row" method="get">
     <input type="text" name="q" value={q} placeholder="お名前・フリガナ・電話・メールで検索" style="max-width:24rem" />
     <button class="btn primary" type="submit">検索</button>
+    <a class="btn sm dark" href="/api/admin/export?type=customers">全件を CSV (バックアップ)</a>
   </form>
 
   <p class="small muted">{rows.length} 名</p>

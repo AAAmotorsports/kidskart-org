@@ -166,6 +166,21 @@ curl -X POST "<BASE>/api/cron/mails?type=callbacks&hours=0" \
 
 ---
 
+## 12-2. バックアップ
+
+- [ ] `/admin/reservations` の **「全件を CSV (バックアップ)」** で CSV が落ちる
+- [ ] Excel / Numbers で開いて**日本語が化けない**
+- [ ] `/admin/customers` の顧客名簿も同様
+- [ ] 月次メールを手動で確認:
+
+```bash
+curl -X POST "<BASE>/api/cron/backup" -H "x-cron-secret: <CRON_SECRET>"
+```
+
+- [ ] `info@rk-a1.com` に **【控え】A-ONE 予約台帳・顧客名簿** が届き、
+      CSV が 2 つ添付されている
+- [ ] GitHub Actions の **A-ONE Monthly Backup** を手動実行しても届く
+
 ## 13. 後片付け
 
 テストで作った予約・顧客を消す。Supabase → SQL Editor:

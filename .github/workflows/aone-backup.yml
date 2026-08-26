@@ -1,0 +1,58 @@
+# ==============================================================================
+# A-ONE 予約台帳・顧客名簿の月次バックアップ (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# /api/cron/backup を叩き、予約台帳と顧客名簿の CSV を管理者宛にメールで送る。
+#
+# Supabase の無料プランには自動バックアップが無い。誰かが毎月思い出して
+# 手で書き出す運用は必ず途切れるので、受信箱に自動で控えが積まれるようにする。
+#
+# 毎月 1 日 00:00 UTC = 09:00 JST
+#
+# 必要な GitHub Actions Secrets (自動メールと同じもの):
+#   AONE_API_BASE     - 例: https://reserve.rk-a1.com
+#   AONE_CRON_SECRET  - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから「Run workflow」でいつでも取れる。
+# ==============================================================================
+
+name: A-ONE Monthly Backup
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/cron/backup
+        env:
+          AONE_API_BASE: ${{ secrets.AONE_API_BASE }}
+          AONE_CRON_SECRET: ${{ secrets.AONE_CRON_SECRET }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Secrets が未設定 = まだ運用開始前。定時実行では「何もせず成功」にする
+          if [ -z "${AONE_API_BASE:-}" ] || [ -z "${AONE_CRON_SECRET:-}" ]; then
+            if [ "${EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
+              exit 1
+            fi
+            echo "::notice::Secrets が未設定のためスキップしました (運用開始前は正常)"
+            exit 0
+          fi
+
+          HTTP_CODE=$(curl -sS -X POST "${AONE_API_BASE%/}/api/cron/backup" \
+            -H "x-cron-secret: $AONE_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::バックアップメールの送信が HTTP $HTTP_CODE で失敗しました" >&2
+            exit 1
+          fi
