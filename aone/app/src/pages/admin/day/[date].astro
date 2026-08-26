@@ -188,6 +188,60 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
               <button class="btn sm act-noshow" data-id={r.id}>無断キャンセル</button>
               <a class="btn sm ghost" href={`/r/${r.access_token}`} target="_blank">予約者ページ</a>
             </div>
+
+            <!-- 日時・人数の変更 (電話で「やっぱり来週に」と言われたときに使う) -->
+            <details class="edit">
+              <summary class="small">✏️ 日時・人数を変更</summary>
+              <div class="editbox" data-id={r.id}>
+                <div class="grid4">
+                  <label class="fld">日付
+                    <input type="date" class="e-date" value={r.date} />
+                  </label>
+                  {r.kind === 'sport' ? (
+                    <label class="fld">時間帯
+                      <select class="e-session">
+                        <option value="am" selected={r.session === 'am'}>AM</option>
+                        <option value="pm" selected={r.session === 'pm'}>PM</option>
+                      </select>
+                    </label>
+                  ) : (
+                    <label class="fld">開始
+                      <input type="time" class="e-start" step="1800" value={hhmm(r.start_time)} />
+                    </label>
+                  )}
+                  {r.kind === 'sport' ? (
+                    <label class="fld">カテゴリー
+                      <select class="e-cat">
+                        {cats.map((c) => (
+                          <option value={c.code} selected={r.category_code === c.code}>{c.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <label class="fld">終了
+                      <input type="time" class="e-end" step="1800" value={r.end_time ? hhmm(r.end_time) : ''} />
+                    </label>
+                  )}
+                  <label class="fld">人数
+                    <input type="number" class="e-party" min="1" max="200" value={r.party_size} />
+                  </label>
+                  {(r.kind === 'charter' || r.night_kind === 'charter') && (
+                    <label class="fld">カート台数
+                      <input type="number" class="e-karts" min="1" max="30" value={r.vehicle_count ?? ''} />
+                    </label>
+                  )}
+                </div>
+                <label class="small mailchk">
+                  <input type="checkbox" class="e-mail" checked={!!r.contact_email} disabled={!r.contact_email} />
+                  変更内容をお客様にメールで知らせる
+                  {!r.contact_email && ' (メールアドレスの登録がありません)'}
+                </label>
+                <div class="row">
+                  <button class="btn sm primary act-save" data-id={r.id}>この内容に変更する</button>
+                  <span class="tiny muted">受付ルールは無視して保存します (管理者の強制受付)</span>
+                </div>
+              </div>
+            </details>
           </div>
         ))}
 
@@ -484,6 +538,37 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     } catch (e) { alert(e.message); }
   }));
 
+  // 日時・人数の変更。管理画面からは受付ルールを無視して保存する (forced)
+  document.querySelectorAll('.act-save').forEach((b) => b.addEventListener('click', async () => {
+    const box = b.closest('.editbox');
+    const pick = (cls) => box.querySelector('.' + cls);
+    const val = (cls) => { const el = pick(cls); return el && el.value !== '' ? el.value : undefined; };
+
+    const payload = {
+      action: 'update',
+      id: b.dataset.id,
+      date: val('e-date'),
+      session: val('e-session'),
+      category_code: val('e-cat'),
+      start_time: val('e-start'),
+      end_time: val('e-end'),
+      party_size: val('e-party'),
+      vehicle_count: val('e-karts'),
+      send_mail: !!(pick('e-mail') && pick('e-mail').checked && !pick('e-mail').disabled),
+    };
+
+    b.disabled = true;
+    b.textContent = '保存中…';
+    try {
+      await post('/api/admin/reservation', payload);
+      location.reload();
+    } catch (e) {
+      alert(e.message);
+      b.disabled = false;
+      b.textContent = 'この内容に変更する';
+    }
+  }));
+
   document.querySelectorAll('.act-paid').forEach((b) => b.addEventListener('click', async () => {
     try {
       await post('/api/admin/reservation', {
@@ -701,5 +786,14 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
   .blk{padding:.3rem 0;border-bottom:1px dashed var(--line)}
   .forecast{margin-top:.8rem;padding:.6rem;border:1px dashed var(--line-2);border-radius:9px;background:var(--bg-2)}
   .forecast .row{margin:.3rem 0}
+  /* 日時・人数の変更フォーム (普段は畳んでおく) */
+  .res .edit{margin-top:.4rem;border-top:1px dashed var(--line);padding-top:.4rem}
+  .res .edit summary{cursor:pointer;color:var(--ink-2)}
+  .editbox{margin-top:.5rem}
+  .grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem}
+  .fld{display:flex;flex-direction:column;gap:.15rem;font-size:.8rem;color:var(--ink-2)}
+  .fld input,.fld select{padding:.35rem .5rem;font-size:.85rem}
+  .mailchk{display:flex;align-items:center;gap:.35rem;margin:.5rem 0}
+  .mailchk input{width:auto;margin:0}
   @media (max-width:900px){ .cols{grid-template-columns:1fr} }
 </style>

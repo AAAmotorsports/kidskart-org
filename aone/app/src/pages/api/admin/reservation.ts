@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, mapRpcError, notConfigured } from '@lib/api';
-import { sendMail, confirmMail, cancelMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
+import { sendMail, confirmMail, cancelMail, changeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
 
 export const prerender = false;
 
@@ -110,6 +110,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
       actor,
     });
     if (response) return response;
+
+    // スタッフが変更したときは、お客様に知らせるかどうかを画面で選べる
+    if (body?.send_mail === true) {
+      const { data: rawRow } = await supabase
+        .from('aone_reservations')
+        .select(MAIL_COLUMNS)
+        .eq('id', data.id)
+        .maybeSingle();
+      const row = rawRow as unknown as ReservationForMail | null;
+      if (row?.contact_email) {
+        const m = changeMail(env, row, originOf(request));
+        keepAlive(locals, sendMail(env, {
+          to: row.contact_email, subject: m.subject, text: m.text,
+          kind: 'confirm', reservationId: data.id,
+        }));
+      }
+    }
     return json({ ok: true, ...data });
   }
 

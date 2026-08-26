@@ -323,6 +323,37 @@ export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee:
  * 受付直後の通知を見落としたときの最後の砦なので、経過時間と電話番号を
  * 目立つ形で並べる。
  */
+/**
+ * 予約内容が変わったときのお知らせ (仕様 10)
+ *
+ * お客様が専用ページで変更した場合と、スタッフが管理画面で変更した場合の
+ * 両方で使う。「誰が変えたか」ではなく「今どうなっているか」を伝える。
+ */
+export function changeMail(env: Env, r: ReservationForMail, origin: string) {
+  const pending = r.status !== 'confirmed';
+  return {
+    subject: `【ご予約内容の変更】${jaDate(r.date)} — ${r.reservation_number}`,
+    text: [
+      `${r.contact_name} 様`,
+      '',
+      'ご予約の内容を変更しました。下記のとおりお受けしています。',
+      '',
+      '▼ 変更後のご予約内容',
+      ...detailLines(r),
+      `状態: ${pending ? STATUS_LABELS[r.status] ?? r.status : '確定'}`,
+      '',
+      ...(pending
+        ? ['この内容はまだ確定していません。A-ONE より折り返しご連絡いたします。', '']
+        : []),
+      '▼ ご予約内容の確認・変更・キャンセル',
+      myPageUrl(origin, r),
+      '',
+      'お心当たりのない変更の場合は、お手数ですがご連絡ください。',
+      ...footer(env),
+    ].join('\n'),
+  };
+}
+
 export function pendingCallbackAlertMail(
   env: Env,
   rows: Array<{
