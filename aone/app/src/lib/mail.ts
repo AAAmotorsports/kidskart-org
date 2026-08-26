@@ -11,7 +11,7 @@
 // ログだけ残す (graceful degradation)。
 
 import { getSupabaseAdmin } from './supabase';
-import { jaDate, timeRangeLabel, KIND_LABELS, hhmm } from './domain';
+import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, hhmm } from './domain';
 
 export type MailKind = 'confirm' | 'reminder' | 'thanks' | 'followup' | 'broadcast' | 'cancel' | 'admin';
 
@@ -25,13 +25,29 @@ export interface ReservationForMail {
   start_time?: string | null;
   end_time?: string | null;
   category_code?: string | null;
+  /** ナイターの内訳 (rp / charter) */
+  night_kind?: string | null;
   party_size: number;
+  /** 貸切で使うカートの台数 */
+  vehicle_count?: number | null;
+  /** お客様が入力したご要望・ご相談内容 */
+  request_note?: string | null;
   contact_name: string;
   contact_email?: string | null;
   contact_phone?: string | null;
   access_token: string;
   amount?: number | null;
 }
+
+/**
+ * メール文面に必要な列。予約作成・キャンセル・cron のどこから送っても
+ * 同じ情報が載るように、SELECT はこの 1 か所にまとめる
+ * (台数や要望が片方のメールにだけ載らない、という事故を防ぐため)。
+ */
+export const MAIL_COLUMNS =
+  'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
+  'night_kind,party_size,vehicle_count,request_note,contact_name,contact_email,contact_phone,' +
+  'access_token,amount';
 
 export interface SendArgs {
   to: string;
@@ -116,15 +132,34 @@ function footer(env: Env): string[] {
   ];
 }
 
+/**
+ * 折り返しの電話が必要な状態か。
+ * 連絡待ち (貸切で他予約あり) と 確認中 (ナイター / 17:00 以降の RP) は、
+ * A-ONE から連絡しない限り話が進まない。見落とすと機会損失に直結するので、
+ * 管理者宛メールの件名で目立たせ、お客様には未確定であることを明示する。
+ */
+function needsCallback(status: string): boolean {
+  return status === 'contact_wait' || status === 'checking';
+}
+
+/** お客様への折り返し期限 (時間)。過ぎたら電話してくださいとご案内する */
+const CALLBACK_HOURS = 48;
+
 function detailLines(r: ReservationForMail): string[] {
   const lines = [
     `予約番号: ${r.reservation_number}`,
-    `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}`,
+    `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}` +
+      (r.kind === 'night' && r.night_kind
+        ? ` (${KIND_LABELS[r.night_kind as keyof typeof KIND_LABELS] ?? r.night_kind})`
+        : ''),
     `日付: ${jaDate(r.date)}`,
     `時間: ${timeRangeLabel(r)}`,
     `人数: ${r.party_size} 名`,
   ];
+  // 貸切 (ナイターの貸切を含む) は台数で料金が変わるので必ず出す
+  if (r.vehicle_count != null) lines.push(`カート: ${r.vehicle_count} 台`);
   if (r.amount != null) lines.push(`料金: ¥${r.amount.toLocaleString('ja-JP')} (現地でのお支払い)`);
+  if ((r.request_note ?? '').trim()) lines.push(`ご要望: ${r.request_note!.trim()}`);
   return lines;
 }
 
@@ -148,19 +183,32 @@ const CANCEL_POLICY_SPORT = [
 /** 予約直後の完了メール (仕様 11) */
 export function confirmMail(env: Env, r: ReservationForMail, origin: string) {
   const pending = r.status !== 'confirmed';
+  const tel = env.PUBLIC_SITE_TEL || '092-919-7186';
   const subject = pending
-    ? `【受付】ご予約を承りました — ${r.reservation_number}`
+    ? `【まだ確定していません】ご予約の申込みを承りました — ${r.reservation_number}`
     : `【予約確定】${jaDate(r.date)} ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS]} — ${r.reservation_number}`;
 
   const text = [
     `${r.contact_name} 様`,
     '',
-    pending
-      ? 'ご予約の申込みを受付けました。内容を確認のうえ、A-ONE より折り返しご連絡いたします。'
-      : 'ご予約が確定しました。当日のご来場をお待ちしております。',
+    ...(pending
+      ? [
+          'ご予約の申込みを受付けました。',
+          '',
+          '■━━━━━━━━━━━━━━━━━━■',
+          '  このご予約はまだ確定していません',
+          '■━━━━━━━━━━━━━━━━━━■',
+          '',
+          `内容を確認のうえ、A-ONE より ${CALLBACK_HOURS} 時間以内に折り返しご連絡いたします。`,
+          'ご連絡をもって確定となりますので、それまでご来場のご準備はお待ちください。',
+          '',
+          `※ ${CALLBACK_HOURS} 時間を過ぎても連絡がない場合は、お手数ですがお電話ください (${tel})。`,
+        ]
+      : ['ご予約が確定しました。当日のご来場をお待ちしております。']),
     '',
     '▼ ご予約内容',
     ...detailLines(r),
+    `状態: ${pending ? STATUS_LABELS[r.status] ?? r.status : '確定'}`,
     '',
     '▼ ご予約内容の確認・変更・キャンセル',
     myPageUrl(origin, r),
@@ -268,14 +316,71 @@ export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee:
 }
 
 /** 管理者宛ての新規予約通知 */
-export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string) {
+/**
+ * 折り返し待ちのまま放置されている予約の一覧 (管理者宛・1 日 1 通)
+ *
+ * 「連絡待ち」「確認中」は A-ONE から連絡しないと確定しない。
+ * 受付直後の通知を見落としたときの最後の砦なので、経過時間と電話番号を
+ * 目立つ形で並べる。
+ */
+export function pendingCallbackAlertMail(
+  env: Env,
+  rows: Array<{
+    reservation_number: string; kind: string; status: string; date: string;
+    start_time?: string | null; end_time?: string | null; party_size: number;
+    contact_name: string; contact_phone?: string | null; contact_email?: string | null;
+    request_note?: string | null; hours_waiting: number;
+  }>,
+  origin: string,
+) {
+  const worst = Math.max(...rows.map((r) => r.hours_waiting));
   return {
-    subject: `[A-ONE] 新規${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様 (${r.status})`,
+    subject: `🔴要折り返し ${rows.length} 件 (最長 ${worst} 時間経過) — A-ONE`,
     text: [
-      '新しい予約が入りました。',
+      `折り返しのご連絡がまだの予約が ${rows.length} 件あります。`,
+      'いずれも A-ONE から連絡しないと確定しません。',
       '',
+      ...rows.flatMap((r) => [
+        '━━━━━━━━━━━━━━━━━━━━',
+        `【${r.hours_waiting} 時間経過】${STATUS_LABELS[r.status] ?? r.status}`,
+        `${r.contact_name} 様  📞 ${r.contact_phone ?? '電話なし'}`,
+        `${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind} / ${jaDate(r.date)} ` +
+          `${hhmm(r.start_time)}${r.end_time ? '〜' + hhmm(r.end_time) : ''} / ${r.party_size} 名`,
+        `予約番号: ${r.reservation_number}`,
+        ...(r.contact_email ? [`メール: ${r.contact_email}`] : []),
+        ...(r.request_note ? [`要望: ${r.request_note}`] : []),
+        `${origin}/admin/day/${r.date}`,
+      ]),
+      '━━━━━━━━━━━━━━━━━━━━',
+      '',
+      '対応したら、管理画面の「📞 電話で対応済」ボタンを押してください。',
+      'このお知らせに出なくなります。',
+      ...footer(env),
+    ].join('\n'),
+  };
+}
+
+export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string) {
+  const callback = needsCallback(r.status);
+  const label = KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind;
+  const statusJa = STATUS_LABELS[r.status] ?? r.status;
+
+  return {
+    // 件名の頭で「折り返しが要るか」が分かるようにする (受信箱で見落とさないため)
+    subject: callback
+      ? `🔴要折り返し [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様 (${statusJa})`
+      : `✅確定 [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様`,
+    text: [
+      ...(callback
+        ? [
+            '🔴 このご予約は【要折り返し】です。A-ONE から連絡しないと確定しません。',
+            `   お客様には「${CALLBACK_HOURS} 時間以内に折り返す」とご案内しています。`,
+            `   お電話: ${r.contact_phone ?? '—'}`,
+            '',
+          ]
+        : ['✅ 新しい予約が入りました (確定済み)。', '']),
       ...detailLines(r),
-      `状態: ${r.status}`,
+      `状態: ${statusJa}`,
       `お名前: ${r.contact_name}`,
       `電話: ${r.contact_phone ?? '—'}`,
       `メール: ${r.contact_email ?? '—'}`,

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, isEmail, notConfigured } from '@lib/api';
-import { sendMail, confirmMail, adminNoticeMail, type ReservationForMail } from '@lib/mail';
+import { sendMail, confirmMail, adminNoticeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
 
 export const prerender = false;
 
@@ -73,7 +73,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   // ---- メール送信 (レスポンス後も Worker を生かして送る) ----
   const origin = originOf(request);
-  const forMail: ReservationForMail = {
+
+  // 金額はトリガーで入るため RPC の戻り値には無い。台数・要望も含めて
+  // 保存後の行をそのまま読む (メールに載る内容を 1 か所に揃えるため)。
+  const { data: saved } = await supabase
+    .from('aone_reservations')
+    .select(MAIL_COLUMNS)
+    .eq('id', data.id)
+    .maybeSingle();
+
+  const forMail: ReservationForMail = (saved as unknown as ReservationForMail) ?? {
     id: data.id,
     reservation_number: data.reservation_number,
     kind: data.kind,

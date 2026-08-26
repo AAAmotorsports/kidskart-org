@@ -1,7 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { dayState, reservationsOfDay, pendingReservations } from '@lib/queries';
+import { dayState, reservationsOfDay, pendingReservations, pendingCallbacks } from '@lib/queries';
 import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, WEATHER_EMOJI, STATUS_MARK,
@@ -14,10 +14,12 @@ export const prerender = false;
 const env = envFrom(Astro.locals);
 const today = todayJst();
 
-const [state, rows, pending] = await Promise.all([
+const [state, rows, pending, stale] = await Promise.all([
   dayState(env, today),
   reservationsOfDay(env, today),
   pendingReservations(env, today),
+  // 受付から 24 時間たっても折り返していないもの。放置すると失注する
+  pendingCallbacks(env, 24),
 ]);
 
 const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
@@ -92,6 +94,30 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
       <span id="bc-out" class="small"></span>
     </details>
   </div>
+
+  {stale.length > 0 && (
+    <div class="notice ng" style="margin-bottom:1rem">
+      <strong>🔴 24 時間以上、折り返していない予約が {stale.length} 件あります</strong>
+      <div class="table-scroll" style="margin-top:.5rem">
+        <table>
+          <thead><tr><th>経過</th><th>受付日</th><th>種別</th><th>希望日</th><th>お名前</th><th>電話</th><th></th></tr></thead>
+          <tbody>
+            {stale.map((r) => (
+              <tr>
+                <td><strong>{r.hours_waiting} 時間</strong></td>
+                <td class="tiny">{jaDateShort(r.created_at.slice(0, 10))}</td>
+                <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
+                <td>{jaDateShort(r.date)} {timeRangeLabel(r)}</td>
+                <td>{r.contact_name} 様 ({r.party_size}名)</td>
+                <td><a href={`tel:${(r.contact_phone ?? '').replace(/[^0-9+]/g, '')}`}>{r.contact_phone ?? '—'}</a></td>
+                <td><a class="btn sm" href={`/admin/day/${r.date}`}>開く</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )}
 
   {pending.length > 0 && (
     <div class="card">

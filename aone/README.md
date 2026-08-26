@@ -217,6 +217,7 @@ npm run build
 | 利用当日 | お礼 | cron `type=thanks` |
 | 2 週間後 | 再来場のご案内 (再予約リンク) | cron `type=followup` |
 | 随時 | 天候等の一括連絡 | `/admin/day/[date]` |
+| 毎朝 | 折り返し未対応 24 時間超の督促 (管理者宛) | cron `type=callbacks` |
 
 二重送信は `aone_reservations.*_mail_sent_at` で防いでいます。
 
