@@ -58,6 +58,11 @@ aone/
 | 同一開始時刻は 2 グループまで | `rp_max_groups_per_start` |
 | RP が同時 3 組以上ならスポーツ停止 | `aone_rp_peak_groups()` + `rp_groups_block_sport` |
 | 17:00 以降の RP は要相談 | `rp_last_start_time` → status `checking` |
+| 当日の RP は 17:00 以降不可 | `rp_same_day_last_start` |
+| 当日の RP は 2 時間後以降のみ | `rp_same_day_lead_minutes` |
+| 貸切はカート 5 台以上から | `charter_min_karts` (レンタルカート付きのみ) |
+| コース貸切のみは金額を出さず必ず折り返す | `charter_type = 'course_only'` → status `checking` |
+| 貸切は当日不可 (前日まで) | `charter_min_lead_days` |
 | 貸切は他予約が無ければ確定、あれば連絡待ち | `aone_check_availability('charter', ...)` |
 | 確定した貸切はその時間帯を全停止 | 同上 |
 | ナイターは常に要相談 | `aone_check_availability('night', ...)` |

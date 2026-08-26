@@ -11,7 +11,9 @@
 // ログだけ残す (graceful degradation)。
 
 import { getSupabaseAdmin } from './supabase';
-import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, hhmm } from './domain';
+import {
+  jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
+} from './domain';
 
 export type MailKind = 'confirm' | 'reminder' | 'thanks' | 'followup' | 'broadcast' | 'cancel' | 'admin';
 
@@ -27,6 +29,8 @@ export interface ReservationForMail {
   category_code?: string | null;
   /** ナイターの内訳 (rp / charter) */
   night_kind?: string | null;
+  /** 貸切の種別 (with_karts / course_only) */
+  charter_type?: string | null;
   party_size: number;
   /** 貸切で使うカートの台数 */
   vehicle_count?: number | null;
@@ -46,7 +50,7 @@ export interface ReservationForMail {
  */
 export const MAIL_COLUMNS =
   'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
-  'night_kind,party_size,vehicle_count,request_note,contact_name,contact_email,contact_phone,' +
+  'night_kind,charter_type,party_size,vehicle_count,request_note,contact_name,contact_email,contact_phone,' +
   'access_token,amount';
 
 export interface SendArgs {
@@ -151,7 +155,8 @@ function detailLines(r: ReservationForMail): string[] {
     `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}` +
       (r.kind === 'night' && r.night_kind
         ? ` (${KIND_LABELS[r.night_kind as keyof typeof KIND_LABELS] ?? r.night_kind})`
-        : ''),
+        : '') +
+      (r.charter_type ? ` (${CHARTER_TYPE_LABELS[r.charter_type] ?? r.charter_type})` : ''),
     `日付: ${jaDate(r.date)}`,
     `時間: ${timeRangeLabel(r)}`,
     `人数: ${r.party_size} 名`,

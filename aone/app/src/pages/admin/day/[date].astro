@@ -7,7 +7,7 @@ import {
   jaDate, todayJst, addDays, hhmm, timeRangeLabel,
   KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
   WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
-  CONTACT_METHOD_LABELS, jaDateTime,
+  CONTACT_METHOD_LABELS, CHARTER_TYPE_LABELS, jaDateTime,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -142,6 +142,8 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
               <div class="row">
                 <span class:list={['badge', r.status === 'confirmed' ? 'ok' : 'warn']}>{STATUS_LABELS[r.status]}</span>
                 <span class="badge">{SOURCE_LABELS[r.source] ?? r.source}</span>
+                {r.charter_type && <span class="badge">{CHARTER_TYPE_LABELS[r.charter_type] ?? r.charter_type}</span>}
+                {r.amount_manual && <span class="badge">金額を手入力</span>}
                 {r.forced && <span class="badge ng">強制</span>}
                 {r.is_paid && <span class="badge ok">会計済</span>}
                 {['contact_wait', 'checking'].includes(r.status) && (

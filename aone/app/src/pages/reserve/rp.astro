@@ -46,7 +46,7 @@ const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{
       <div id="rp-booked" class="booked" hidden></div>
       <div class="hint">
         <span id="picked-label" class="picked-label">開始時間を選んでください</span>
-        <span id="slot-hint"> ／ △ = 残り 1 グループ ／ ✕ = 満枠</span>
+        <span id="slot-hint"> ／ △ = 残り 1 グループ ／ ✕ = 満枠 ／ — = 受付時間外</span>
       </div>
     </div>
 
@@ -180,11 +180,13 @@ const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{
     (state.rp.slots || []).forEach((s) => {
       const b = document.createElement('button');
       b.type = 'button';
+      // 満枠 (✕) と、当日の受付時間外など枠以外の理由 (—) を区別する
+      const closed = !s.accepting && s.reason !== 'rp_start_full';
       b.className = 'slot ' + (s.accepting ? (s.groups >= s.max_groups - 1 ? 'limited' : 'free') : 'full');
       b.disabled = !s.accepting;
       b.title = s.message || '';
       b.innerHTML = s.time + '<span class="tiny">' +
-        (s.accepting ? (s.status === 'checking' ? '要相談' : (s.groups >= s.max_groups - 1 ? '△' : '○')) : '✕') +
+        (s.accepting ? (s.status === 'checking' ? '要相談' : (s.groups >= s.max_groups - 1 ? '△' : '○')) : (closed ? '—' : '✕')) +
         '</span>';
       b.addEventListener('click', () => {
         picked = s.time;
