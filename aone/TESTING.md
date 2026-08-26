@@ -8,7 +8,8 @@ v1 を A-ONE で使い始める前に、**自分たちで一度ぜんぶ触る**
   (1 つは「お客様役」、1 つは `MAIL_ADMIN_TO` = 管理者通知の受信用)
 * 本番の Supabase をそのまま使う。最後に **§13 後片付け**でテスト予約を消す。
 
-URL は本番 Worker (`https://aone-booking.kidskart1177.workers.dev`) を `<BASE>` と書く。
+URL は `https://reserve.rk-a1.com` を `<BASE>` と書く
+(`https://aone-booking.kidskart1177.workers.dev` も同じものを指す)。
 
 ---
 

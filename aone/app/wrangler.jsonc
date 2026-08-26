@@ -23,6 +23,12 @@
   "observability": {
     "enabled": true
   },
+  // 独自ドメイン。rk-a1.com のゾーンが Cloudflare にあることが前提で、
+  // deploy 時に DNS レコードと証明書が自動で作られる。
+  // workers.dev の URL (aone-booking.kidskart1177.workers.dev) も併存する。
+  "routes": [
+    { "pattern": "reserve.rk-a1.com", "custom_domain": true }
+  ],
   "vars": {
     // Supabase (A-ONE 用に新規プロジェクトを作成して差し替える)
     "PUBLIC_SUPABASE_URL": "https://owdtmtkvravihqonoykk.supabase.co",

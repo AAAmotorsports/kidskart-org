@@ -1,5 +1,9 @@
 # rk-a1.com (WordPress) との連携
 
+予約システムの URL は **`https://reserve.rk-a1.com`**。
+`https://aone-booking.kidskart1177.workers.dev` も同じものを指し続けるので、
+すでに配ったメールの専用 URL は切れません。
+
 ## 役割分担
 
 | WordPress (rk-a1.com) | A-ONE 予約システム (Cloudflare) |
@@ -50,7 +54,7 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 
 ```html
 <div data-aone="today"></div>
-<script src="https://aone-booking.kidskart1177.workers.dev/embed/aone.js" async></script>
+<script src="https://reserve.rk-a1.com/embed/aone.js" async></script>
 ```
 
 表示されるもの:
@@ -69,7 +73,7 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 
 ```html
 <div data-aone="month"></div>
-<script src="https://aone-booking.kidskart1177.workers.dev/embed/aone.js" async></script>
+<script src="https://reserve.rk-a1.com/embed/aone.js" async></script>
 ```
 
 * 前月・翌月ボタン付きのカレンダー
@@ -128,7 +132,7 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 <?php
 // [aone_today] : A-ONE 予約システムの「今日走れる？」をサーバー側で描画する
 add_shortcode('aone_today', function () {
-    $base = 'https://aone-booking.kidskart1177.workers.dev';
+    $base = 'https://reserve.rk-a1.com';
     $data = get_transient('aone_today');           // 60 秒キャッシュ
     if ($data === false) {
         $res = wp_remote_get($base . '/api/public/today', ['timeout' => 5]);
