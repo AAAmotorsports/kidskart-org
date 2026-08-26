@@ -216,7 +216,9 @@ npm run build
 | 前日 | リマインド | cron `type=reminder` |
 | 利用当日 | お礼 | cron `type=thanks` |
 | 2 週間後 | 再来場のご案内 (再予約リンク) | cron `type=followup` |
-| 変更時 | ご予約内容の変更 | `/api/reserve/update` / 管理画面 (送信は任意) |
+| 変更時 | ご予約内容の変更 (お客様) | `/api/reserve/update` / 管理画面 (送信は任意) |
+| 変更時 | 変更の通知 (管理者・変更点の差分付き) | `/api/reserve/update` |
+| キャンセル時 | キャンセルの通知 (管理者) | `/api/reserve/cancel` |
 | 随時 | 天候等の一括連絡 | `/admin/day/[date]` |
 | 毎朝 | 折り返し未対応 24 時間超の督促 (管理者宛) | cron `type=callbacks` |
 
