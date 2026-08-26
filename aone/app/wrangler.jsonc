@@ -28,8 +28,11 @@
     "PUBLIC_SUPABASE_URL": "https://owdtmtkvravihqonoykk.supabase.co",
     "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_jEEuSqPX1RjMWcYkPxF20w_xDGTOGsY",
     // 管理画面の Basic 認証
+    // ★ ADMIN_PASSWORD_HASH はここには置かない。
+    //    このリポジトリは公開 (public) なので、ハッシュを載せると総当たりの
+    //    的になる。Dashboard の「シークレット」型に入れること
+    //    (シークレットは deploy でも消えない)。
     "ADMIN_USERNAME": "aone",
-    "ADMIN_PASSWORD_HASH": "80b7b5ae9b7568db0956157c7a8a88f426b2a0f06834abd9a7a879f5057067fa",
     // 送信メール
     "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
     "MAIL_FROM_NAME": "A-ONE サーキット",
@@ -49,4 +52,5 @@
   //   SUPABASE_SERVICE_ROLE_KEY
   //   RESEND_API_KEY
   //   CRON_SECRET          ← /api/cron/mails を GitHub Actions から叩く共有鍵
+  //   ADMIN_PASSWORD_HASH  ← 管理画面のパスワード (SHA-256 hex)
 }

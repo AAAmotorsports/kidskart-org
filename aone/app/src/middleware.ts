@@ -23,8 +23,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
       [
         '管理画面の認証情報が設定されていません。',
         '',
-        'wrangler.jsonc の vars に ADMIN_USERNAME と ADMIN_PASSWORD_HASH',
-        '(SHA-256 hex) を設定してデプロイしてください。',
+        'ADMIN_USERNAME は wrangler.jsonc の vars に、',
+        'ADMIN_PASSWORD_HASH (SHA-256 hex) は Cloudflare Dashboard の',
+        'シークレット型に設定してください。',
         "  printf '<newpass>' | sha256sum",
       ].join('\n'),
       { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
