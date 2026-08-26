@@ -45,7 +45,7 @@ export async function sendMail(env: Env, args: SendArgs): Promise<boolean> {
   const to = (args.to ?? '').trim();
   if (!to) return false;
 
-  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@rk-a1.com';
   const fromName = env.MAIL_FROM_NAME || 'A-ONE サーキット';
   const replyTo = env.MAIL_REPLY_TO || undefined;
 
@@ -111,7 +111,7 @@ function footer(env: Env): string[] {
     '━━━━━━━━━━━━━━━━━━━━',
     env.PUBLIC_SITE_NAME || 'A-ONE サーキット',
     `📞 ${env.PUBLIC_SITE_TEL || '092-919-7186'}`,
-    `✉️ ${env.MAIL_REPLY_TO || 'info@kidskart.org'}`,
+    `✉️ ${env.MAIL_REPLY_TO || 'info@rk-a1.com'}`,
     '━━━━━━━━━━━━━━━━━━━━',
   ];
 }

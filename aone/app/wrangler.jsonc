@@ -39,11 +39,11 @@
     //    的になる。Dashboard の「シークレット」型に入れること
     //    (シークレットは deploy でも消えない)。
     "ADMIN_USERNAME": "aone",
-    // 送信メール
-    "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
+    // 送信メール (rk-a1.com は Resend でドメイン認証済みであること)
+    "MAIL_FROM_ADDRESS": "noreply@rk-a1.com",
     "MAIL_FROM_NAME": "A-ONE サーキット",
-    "MAIL_REPLY_TO": "info@kidskart.org",
-    "MAIL_ADMIN_TO": "info@kidskart.org",
+    "MAIL_REPLY_TO": "info@rk-a1.com",
+    "MAIL_ADMIN_TO": "info@rk-a1.com",
     // 施設情報 (メール文面・トップページに使う)
     "PUBLIC_SITE_NAME": "A-ONE サーキット",
     "PUBLIC_SITE_TEL": "092-919-7186",
