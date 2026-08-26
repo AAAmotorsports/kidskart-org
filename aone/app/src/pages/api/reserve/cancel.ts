@@ -7,8 +7,9 @@ export const prerender = false;
 
 // POST /api/reserve/cancel
 // 予約者専用ページからのキャンセル (仕様 9 / 10)。
-//   スポーツ走行: 当日でも連絡があればキャンセル可・キャンセル料なし
-//   RP / 貸切  : 24 時間前以降は料金 100% (DB が cancel_fee を返す)
+//   連絡さえあれば、当日でも・種別を問わずキャンセル料なし。
+//   当日・連絡のないキャンセル (無断キャンセル) のみ料金 100%。
+//   このページからのキャンセルは「連絡あり」なので cancel_fee は常に false になる。
 export const POST: APIRoute = async ({ request, locals }) => {
   const env = envFrom(locals);
   const unconfigured = notConfigured(env);

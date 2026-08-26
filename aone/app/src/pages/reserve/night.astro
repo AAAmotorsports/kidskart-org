@@ -16,8 +16,8 @@ export const prerender = false;
 const env = envFrom(Astro.locals);
 const cfg = await settings(env);
 const rpPrice: number = cfg?.rp_price_per_person ?? 6600;
-const charterBase: number = cfg?.charter_base_price ?? 10000;
-const charterPerKart: number = cfg?.charter_price_per_kart ?? 10000;
+const charterBase: number = cfg?.charter_base_price ?? 11000;
+const charterPerKart: number = cfg?.charter_price_per_kart ?? 11000;
 const charterMinKarts: number = cfg?.charter_min_karts ?? 5;
 const rpMinParty: number = cfg?.rp_min_party ?? 3;
 

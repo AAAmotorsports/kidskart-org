@@ -117,16 +117,10 @@ const isSport = r?.kind === 'sport';
 
           <div class="card">
             <h2>キャンセル</h2>
-            {r.kind === 'sport' ? (
-              <p class="small">
-                当日でもご連絡いただければキャンセル可能です (キャンセル料はいただきません)。
-                ご連絡のないキャンセルは無断キャンセルとして記録させていただきます。
-              </p>
-            ) : (
-              <p class="small">
-                ご利用開始 24 時間前以降のキャンセルは、規定により料金 100% を申し受けます。
-              </p>
-            )}
+            <p class="small">
+              ご連絡いただければ、当日でもキャンセル料はいただきません。
+              当日ご連絡のないキャンセル (無断キャンセル) は、規定により料金 100% を申し受けます。
+            </p>
             <div class="field">
               <label for="reason">キャンセル理由 (任意)</label>
               <input type="text" id="reason" placeholder="都合が悪くなったため など" />

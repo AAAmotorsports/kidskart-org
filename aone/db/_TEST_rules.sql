@@ -259,11 +259,19 @@ begin
            where id = (select customer_id from aone_reservations where contact_name = 'カートB')) = 1,
     '9-4 顧客統計に無断キャンセルが反映されない';
 
-  -- RP の 24 時間以内キャンセルは料金 100% フラグが立つ
+  -- キャンセル規定 (2026-08 改定): 当日でも連絡があればキャンセル料なし
   r := t_book(jsonb_build_object('kind','rp','date', aone_today(), 'start_time','16:00',
                                  'party_size',3,'who','RP当日'));
   r := aone_cancel_reservation(jsonb_build_object('id', (r->>'id')::uuid, 'actor','customer'));
-  assert (r->>'cancel_fee')::boolean, '9-5 24 時間以内キャンセルの料金フラグが立たない';
+  assert not (r->>'cancel_fee')::boolean, '9-5 連絡ありの当日キャンセルで料金フラグが立ってしまう';
+
+  -- 当日・連絡なし (無断キャンセル) だけ料金 100%
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today(), 'start_time','16:30',
+                                 'party_size',3,'who','RP無断'));
+  r := aone_cancel_reservation(jsonb_build_object('id', (r->>'id')::uuid,
+                                                 'no_show', true, 'actor','admin'));
+  assert (r->>'cancel_fee')::boolean, '9-6 無断キャンセルの料金フラグが立たない';
+  assert (r->>'status') = 'no_show', '9-7 無断キャンセルが no_show にならない';
 
   -- =========================================================================
   raise notice '--- 10. 管理者の強制受付 (仕様 15)';
@@ -330,6 +338,28 @@ begin
   perform aone_set_reservation_status(jsonb_build_object('id', id1, 'status','confirmed','actor','admin'));
   r := aone_check_availability('rp', aone_today()+7, null, null, '10:00', null, 4);
   assert (r->>'reason') = 'charter_confirmed', '13-3 確定貸切が RP を止めていない';
+
+  -- =========================================================================
+  raise notice '--- 14. 料金の自動計算 (2026-08 改定)';
+  -- =========================================================================
+  -- RP = 6,600 円 x 人数
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today()+21, 'start_time','10:00',
+                                 'party_size',3,'who','料金RP'));
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 19800,
+    '14-1 RP の金額が 6,600 x 3 にならない';
+
+  -- 貸切 = 11,000 + 11,000 x 台数 (最小 5 台) → 台数未指定なら 66,000 円
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+22, 'start_time','09:00',
+                                 'end_time','12:00','party_size',10,'who','料金貸切'));
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 66000,
+    '14-2 貸切の金額が 11,000 + 11,000 x 5 にならない: '
+      || (select amount from aone_reservations where id = (r->>'id')::uuid)::text;
+
+  -- 台数を指定した貸切 (8 台) → 11,000 + 11,000 x 8 = 99,000 円
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+23, 'start_time','09:00',
+                                 'end_time','12:00','party_size',16,'vehicle_count',8,'who','料金貸切8'));
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 99000,
+    '14-3 台数指定の貸切の金額が合わない';
 
   raise notice 'ALL TESTS PASSED';
 end;

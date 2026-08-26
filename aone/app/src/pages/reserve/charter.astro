@@ -7,8 +7,8 @@ import { todayJst, addDays } from '@lib/domain';
 export const prerender = false;
 
 const cfg = await settings(envFrom(Astro.locals));
-const basePrice: number = cfg?.charter_base_price ?? 10000;
-const perKart: number = cfg?.charter_price_per_kart ?? 10000;
+const basePrice: number = cfg?.charter_base_price ?? 11000;
+const perKart: number = cfg?.charter_price_per_kart ?? 11000;
 const minKarts: number = cfg?.charter_min_karts ?? 5;
 
 // 貸切の申込フォーム (仕様 5)。
@@ -101,7 +101,8 @@ const maxDate = addDays(today, 365);
 
     <div class="notice warn small" style="margin-bottom:1rem">
       <strong>キャンセル規定</strong><br />
-      ご利用開始 24 時間前以降のキャンセルは、料金 100% を申し受けます。
+      ご連絡いただければ、当日でもキャンセル料はいただきません。<br />
+      当日ご連絡のないキャンセル (無断キャンセル) は、料金 100% を申し受けます。
     </div>
 
     <div class="field">
