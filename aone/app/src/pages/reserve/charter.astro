@@ -160,6 +160,9 @@ const maxDate = addDays(today, 365);
   loadDay();
   window.aoneTrack && window.aoneTrack('reserve_start', { kind: 'charter' });
 
+  // 入力し直したらエラー表示を消す (直したのにエラーが残って見えるのを防ぐ)
+  $('form').addEventListener('input', () => { $('error').hidden = true; });
+
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('error');
