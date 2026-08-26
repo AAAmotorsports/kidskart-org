@@ -47,11 +47,19 @@ jobs:
           INPUT_TYPE: ${{ github.event.inputs.type }}
           INPUT_DATE: ${{ github.event.inputs.date }}
           SCHEDULE: ${{ github.event.schedule }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Secrets が未設定 = まだ運用開始前。定時実行では「何もせず成功」にする。
+          # (毎回 failure にすると 1 日 2 通のエラーメールが届き続けるため)
+          # 手動実行のときだけ、設定漏れとして失敗させる。
           if [ -z "${AONE_API_BASE:-}" ] || [ -z "${AONE_CRON_SECRET:-}" ]; then
-            echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
-            exit 1
+            if [ "${EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
+              exit 1
+            fi
+            echo "::notice::AONE_API_BASE / AONE_CRON_SECRET が未設定のため送信をスキップしました (運用開始前は正常)"
+            exit 0
           fi
 
           # 朝の回はリマインド + フォロー、夕の回はお礼。手動実行は入力を優先。
