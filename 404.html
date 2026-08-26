@@ -74,6 +74,20 @@
   .btn-ghost:hover{background:#e8f1f8}
   .foot{margin-top:1.8rem;font-size:.78rem;color:#7d8fa0}
 </style>
+<!-- Google Analytics 4 (kidskart.org - GA4)
+     404 ヒット数の把握用。旧 WP 時代の URL からの流入が本当に
+     404 に落ちているかもこれで測定できる。 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-W3HB0DT0Y3"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-W3HB0DT0Y3', {
+    cookie_domain: 'kidskart.org',
+    cookie_flags: 'SameSite=None;Secure',
+    send_page_view: true
+  });
+</script>
 </head>
 <body>
   <div class="card">
