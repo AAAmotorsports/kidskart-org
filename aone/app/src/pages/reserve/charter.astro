@@ -35,6 +35,23 @@ const minDate = addDays(today, leadDays);
   </div>
 
   <form id="form" class="card" novalidate>
+    <fieldset>
+      <legend>ご利用内容</legend>
+      <div class="choice" id="charter-type">
+        <label>
+          <input type="radio" name="ct" value="with_karts" checked />
+          <span>レンタルカート付き</span>
+          <small>コースとレンタルカートをまとめて貸切ります</small>
+        </label>
+        <label>
+          <input type="radio" name="ct" value="course_only" />
+          <span>コース貸切のみ</span>
+          <small>お持ち込みの車両でご利用いただけます。料金は内容により変わるため、
+            お申し込み後に A-ONE より折り返しご連絡いたします</small>
+        </label>
+      </div>
+    </fieldset>
+
     <div class="field">
       <label for="date">ご希望日</label>
       <input type="date" id="date" name="date" min={minDate} max={maxDate} value={minDate} required />
@@ -62,7 +79,7 @@ const minDate = addDays(today, leadDays);
         <label for="party">ご参加人数 (概算)</label>
         <input type="number" id="party" min="1" max="200" value="10" required />
       </div>
-      <div class="field">
+      <div class="field" id="wrap-karts">
         <label for="karts">カート台数</label>
         <input type="number" id="karts" min={minKarts} max="30" value={minKarts} required />
         <div class="hint">最小 {minKarts} 台から承ります。</div>
@@ -126,12 +143,32 @@ const minDate = addDays(today, leadDays);
 <script is:inline define:vars={{ BASE: basePrice, PER_KART: perKart, MIN_KARTS: minKarts }}>
   const $ = (id) => document.getElementById(id);
 
+  function charterType() {
+    const el = document.querySelector('input[name=ct]:checked');
+    return el ? el.value : 'with_karts';
+  }
+
   function renderPrice() {
+    // コースのみは内容で料金が変わるため、ここでは金額を出さない
+    if (charterType() === 'course_only') {
+      $('price').textContent = 'お申し込み後にご連絡します';
+      return;
+    }
     const k = Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS);
     $('price').textContent = '¥' + (BASE + PER_KART * k).toLocaleString('ja-JP') +
       ' （基本料 ¥' + BASE.toLocaleString('ja-JP') + ' ＋ ' + k + '台 × ¥' +
       PER_KART.toLocaleString('ja-JP') + '）';
   }
+
+  function syncType() {
+    const courseOnly = charterType() === 'course_only';
+    $('wrap-karts').hidden = courseOnly;
+    $('karts').required = !courseOnly;
+    renderPrice();
+  }
+
+  document.querySelectorAll('input[name=ct]').forEach((el) =>
+    el.addEventListener('change', syncType));
 
   async function loadDay() {
     const date = $('date').value;
@@ -162,7 +199,7 @@ const minDate = addDays(today, leadDays);
   }
 
   $('karts').addEventListener('input', renderPrice);
-  renderPrice();
+  syncType();
 
   $('date').addEventListener('change', loadDay);
   loadDay();
@@ -195,7 +232,10 @@ const minDate = addDays(today, leadDays);
           start_time: $('start').value,
           end_time: $('end').value,
           party_size: Number($('party').value || 1),
-          vehicle_count: Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS),
+          charter_type: charterType(),
+          vehicle_count: charterType() === 'course_only'
+            ? undefined
+            : Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS),
           preferred_contact: $('contact-method').value,
           name: $('name').value,
           kana: $('kana').value,

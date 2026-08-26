@@ -510,6 +510,52 @@ begin
   r := aone_check_availability('rp', aone_today()+2, null, null, '17:00', null, 3);
   assert (r->>'ok')::boolean, '17-9 翌日以降の 17:00 の RP が受け付けられない: ' || r::text;
 
+  -- =========================================================================
+  raise notice '--- 18. コース貸切のみ (要見積り)';
+  -- =========================================================================
+  -- 台数が無くても受け付ける。ただし必ず確認中 (折り返し) になる
+  r := aone_check_availability('charter', aone_today()+32, null, null, '09:00', '12:00',
+                               8, null, null, 'course_only');
+  assert (r->>'ok')::boolean and (r->>'status') = 'checking',
+    '18-1 コースのみの貸切が確認中にならない: ' || r::text;
+
+  -- 他の予約があっても、連絡待ちではなく確認中のまま (必ず折り返す)
+  perform t_book(jsonb_build_object('kind','sport','date', aone_today()+33, 'session','am',
+                                    'category_code','kart','party_size',1,'who','先客18'));
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+33,
+                                 'start_time','09:00','end_time','12:00','party_size',20,
+                                 'charter_type','course_only','who','コース貸切'));
+  assert (r->>'status') = 'checking', '18-2 コースのみの貸切の状態が違う: ' || r::text;
+  id1 := (r->>'id')::uuid;
+
+  -- 金額は入れない (都度見積り)
+  assert (select amount from aone_reservations where id = id1) is null,
+    '18-3 コースのみの貸切に金額が入ってしまう';
+  assert (select charter_type from aone_reservations where id = id1) = 'course_only',
+    '18-4 貸切の種別が保存されない';
+
+  -- スタッフが金額を入れたら、以後は自動計算に触られない
+  update aone_reservations set amount = 80000 where id = id1;
+  assert (select amount_manual from aone_reservations where id = id1),
+    '18-5 見積り金額が手入力として記録されない';
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'party_size', 30,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 80000,
+    '18-6 見積り金額が上書きされてしまう';
+
+  -- レンタルカート付きは従来どおり自動計算
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+34,
+                                 'start_time','09:00','end_time','12:00','party_size',10,
+                                 'vehicle_count',6,'charter_type','with_karts','who','カート付き'));
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 77000,
+    '18-7 レンタルカート付きの金額が違う';
+
+  -- 台数不足はコースのみでも当日不可は効く
+  r := aone_check_availability('charter', aone_today(), null, null, '09:00', '12:00',
+                               8, null, null, 'course_only');
+  assert not (r->>'ok')::boolean and (r->>'reason') = 'charter_lead_time',
+    '18-8 当日のコース貸切が受け付けられてしまう';
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

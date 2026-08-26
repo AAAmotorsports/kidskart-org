@@ -182,6 +182,8 @@ export interface Reservation {
   category_code: string | null;
   /** ナイターの内訳 (rp / charter)。ナイター以外は null */
   night_kind: string | null;
+  /** 貸切の種別 (with_karts / course_only)。貸切以外は null */
+  charter_type: string | null;
   party_size: number;
   vehicle_count: number | null;
   customer_id: string | null;
@@ -195,6 +197,8 @@ export interface Reservation {
   staff_memo: string | null;
   tags: string[];
   amount: number | null;
+  /** 金額を手で入力したか。true の間は人数・台数を変えても自動計算で上書きしない */
+  amount_manual: boolean;
   is_paid: boolean;
   forced: boolean;
   forced_reason: string | null;
@@ -211,9 +215,10 @@ export interface Reservation {
 
 export const RESERVATION_COLUMNS =
   'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
-  'night_kind,party_size,vehicle_count,customer_id,contact_name,contact_kana,contact_phone,contact_email,' +
+  'night_kind,charter_type,party_size,vehicle_count,customer_id,contact_name,contact_kana,contact_phone,contact_email,' +
   'preferred_contact,source,request_note,staff_memo,tags,amount,is_paid,forced,forced_reason,' +
-  'access_token,cancelled_at,cancel_reason,contacted_at,contacted_by,contact_method,contact_result,created_at';
+  'access_token,cancelled_at,cancel_reason,contacted_at,contacted_by,contact_method,contact_result,' +
+  'amount_manual,created_at';
 
 export async function reservationsOfDay(env: Env, date: string) {
   try {

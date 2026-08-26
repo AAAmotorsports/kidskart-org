@@ -39,6 +39,11 @@ export const CONTACT_METHOD_LABELS: Record<string, string> = {
   other: 'その他',
 };
 
+export const CHARTER_TYPE_LABELS: Record<string, string> = {
+  with_karts: 'レンタルカート付き',
+  course_only: 'コースのみ',
+};
+
 export const SOURCE_LABELS: Record<string, string> = {
   web: 'Web',
   phone: '電話',

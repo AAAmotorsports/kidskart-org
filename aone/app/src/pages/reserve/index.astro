@@ -70,18 +70,23 @@ const rpSummary = !state
     <a class="menu-card" href="/reserve/sport">
       <div class="menu-title">スポーツ走行 <span class="tag">持ち込み</span></div>
       <p class="small muted">
-        マイマシンでの走行です。カート／ミニバイクは<strong>ご予約なし</strong>でもお越しいただけます。
-        キッズカートのご予約はお電話で承ります。
+        マイマシンでの走行です。<strong>前日までに走行枠のご予約</strong>をされてご来場ください。
+        当日、走行枠に空きがあればご予約なしでの走行も可能です。
       </p>
       <span class="btn sm">予約する</span>
     </a>
 
     <a class="menu-card" href="/reserve/charter">
       <div class="menu-title">貸切</div>
-      <div class="card-price">{yen(charterBase)} ＋ {yen(charterPerKart)} × カート台数<br />
+      <div class="card-price">レンタルカート付き<br />
+        {yen(charterBase)} ＋ {yen(charterPerKart)} × カート台数<br />
         <span class="muted">（最小 {charterMinKarts} 台 = {yen(charterBase + charterPerKart * charterMinKarts)}）</span>
       </div>
-      <p class="small muted">コースを貸切でご利用いただけます。他のご予約状況によっては A-ONE より折り返しご連絡します。</p>
+      <p class="small muted">
+        <strong>コース貸切のみ</strong>もお選びいただけます (お持ち込み車両でのご利用)。
+        料金は内容により変わるため、お申し込み後に A-ONE より折り返しご連絡します。<br />
+        前日までのお申し込みとなります。
+      </p>
       <span class="btn sm">申し込む</span>
     </a>
 
