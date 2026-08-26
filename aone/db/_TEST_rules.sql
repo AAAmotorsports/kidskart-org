@@ -399,6 +399,44 @@ begin
   assert not exists (select 1 from aone_pending_callbacks(0) p where p.id = id1),
     '15-8 確定済みが放置リストに残っている';
 
+  -- =========================================================================
+  raise notice '--- 16. 人数・台数を変えたら金額も追従する';
+  -- =========================================================================
+  -- RP 3 名 (19,800 円) → 5 名 (33,000 円)
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today()+26, 'start_time','10:00',
+                                 'party_size',3,'who','金額追従RP'));
+  id1 := (r->>'id')::uuid;
+  assert (select amount from aone_reservations where id = id1) = 19800, '16-1 初期金額が違う';
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'party_size', 5,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 33000,
+    '16-2 人数変更で金額が追従しない: '
+      || (select amount from aone_reservations where id = id1)::text;
+
+  -- 手入力で値引きした金額は上書きしない
+  update aone_reservations set amount = 30000 where id = id1;
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'party_size', 6,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 30000,
+    '16-3 手入力の金額が上書きされてしまう';
+
+  -- 貸切 5 台 (66,000 円) → 8 台 (99,000 円)
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+27, 'start_time','09:00',
+                                 'end_time','12:00','party_size',10,'who','金額追従貸切'));
+  id1 := (r->>'id')::uuid;
+  assert (select amount from aone_reservations where id = id1) = 66000, '16-4 貸切の初期金額が違う';
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'vehicle_count', 8,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 99000,
+    '16-5 台数変更で金額が追従しない';
+
+  -- 会計済みは触らない
+  update aone_reservations set is_paid = true where id = id1;
+  perform aone_update_reservation(jsonb_build_object('id', id1, 'vehicle_count', 10,
+                                                     'forced', true, 'actor','admin'));
+  assert (select amount from aone_reservations where id = id1) = 99000,
+    '16-6 会計済みの金額が変わってしまう';
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;
