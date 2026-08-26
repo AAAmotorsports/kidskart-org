@@ -74,6 +74,26 @@ export const BLOCK_KIND_LABELS: Record<string, string> = {
   other: 'その他',
 };
 
+/**
+ * 種別ラベルを頭に付ける予定の種類。
+ *
+ * レース・イベントは「何のイベントか」が伝わる方がよいので付ける。
+ * 臨時休業・メンテナンス・貸切は、付けた名前だけで意味が通るうえ、
+ * 付けると「臨時休業 休業日」のように二重になるので付けない。
+ */
+const BLOCK_PREFIXED_KINDS = new Set(['race', 'event', 'kids_event']);
+
+/** 予定 (レース・イベント・臨時休業など) の表示名 */
+export function blockLabel(kind: string, label?: string | null): string {
+  const name = (label ?? '').trim();
+  const kindLabel = BLOCK_KIND_LABELS[kind] ?? kind;
+
+  if (!name) return kindLabel;
+  // 名前が種別を含んでいれば、付けても二重になるだけ
+  if (!BLOCK_PREFIXED_KINDS.has(kind) || name.includes(kindLabel)) return name;
+  return `${kindLabel} ${name}`;
+}
+
 export const BLOCK_SCOPE_LABELS: Record<string, string> = {
   all: '終日すべて停止',
   am: '午前のみ停止',

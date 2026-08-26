@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { monthState, rentalBookings } from '@lib/queries';
-import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS } from '@lib/domain';
+import { todayJst, WEATHER_LABELS, blockLabel } from '@lib/domain';
 
 export const prerender = false;
 
@@ -134,7 +134,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                 <div class="tiny wx">{WEATHER_LABELS[d.weather] ?? d.weather}</div>
               )}
               {publicBlocks.map((b) => (
-                <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.public_label}</div>
+                <div class="tiny ev">{blockLabel(b.kind, b.public_label)}</div>
               ))}
               {isPast ? null : (
                 <div class="tiny sessions">

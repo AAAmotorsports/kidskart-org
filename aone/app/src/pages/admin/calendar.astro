@@ -7,7 +7,7 @@ import {
 } from '@lib/queries';
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel,
-  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS,
+  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, blockLabel,
   nameWithHonorific,
 } from '@lib/domain';
 
@@ -146,7 +146,7 @@ const isOpen = (v: string) => v === 'true';
             <div class="cell-body">
             {d.weather !== 'normal' && <div class="tiny wx">{WEATHER_LABELS[d.weather]}</div>}
             {(d.blocks ?? []).map((b) => (
-              <div class="tiny ev">{BLOCK_KIND_LABELS[b.kind] ?? ''} {b.title}</div>
+              <div class="tiny ev">{blockLabel(b.kind, b.title)}</div>
             ))}
             {(byDate.get(d.date) ?? []).map((r) => (
               <div class:list={['tiny', 'res', r.kind, r.status !== 'confirmed' && 'pending']}

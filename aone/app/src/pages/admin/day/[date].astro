@@ -6,7 +6,7 @@ import { fetchTodayForecast } from '@lib/weather';
 import {
   jaDate, todayJst, addDays, hhmm, timeRangeLabel,
   KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
-  WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK,
+  WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
   CONTACT_METHOD_LABELS, jaDateTime,
 } from '@lib/domain';
 
@@ -397,7 +397,7 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
         {(state?.blocks ?? []).map((b) => (
           <div class="spread blk">
             <div>
-              <span class="badge">{BLOCK_KIND_LABELS[b.kind] ?? b.kind}</span> {b.title}
+              <span class="badge">{blockLabel(b.kind, b.title)}</span>
               <div class="tiny muted">{BLOCK_SCOPE_LABELS[b.scope] ?? b.scope}
                 {b.start_time && ` ${b.start_time}〜${b.end_time ?? ''}`}
                 {b.category_code && ` / ${b.category_code}`}

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
 import { monthState, rentalBookings } from '@lib/queries';
-import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS } from '@lib/domain';
+import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS, blockLabel } from '@lib/domain';
 
 export const prerender = false;
 
@@ -60,7 +60,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       events: (d.blocks ?? [])
         .filter((b) => b.is_public)
         .map((b) => ({
-          label: b.public_label || b.title,
+          label: blockLabel(b.kind, b.public_label || b.title),
           kind: b.kind,
           kind_label: BLOCK_KIND_LABELS[b.kind] ?? b.kind,
         })),
