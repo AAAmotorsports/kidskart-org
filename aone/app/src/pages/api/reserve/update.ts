@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, notConfigured } from '@lib/api';
-import { sendMail, changeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
+import { sendMail, changeMail, adminChangeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
 
 export const prerender = false;
 
@@ -24,6 +24,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!token) return json({ error: '予約を特定できませんでした' }, 400);
 
   const supabase = getSupabaseAdmin(env);
+
+  // 変更前の内容を控えておく (管理者宛に「何がどう変わったか」を出すため)
+  const { data: rawBefore } = await supabase
+    .from('aone_reservations')
+    .select(MAIL_COLUMNS)
+    .eq('access_token', token)
+    .maybeSingle();
+  const before = rawBefore as unknown as ReservationForMail | null;
+
   const { data, response } = await callRpc(supabase, 'aone_update_reservation', {
     access_token: token,
     date: str(body?.date),
@@ -51,11 +60,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .maybeSingle();
   const row = rawRow as unknown as ReservationForMail | null;
 
+  const origin = originOf(request);
+
   if (row?.contact_email) {
-    const m = changeMail(env, row, originOf(request));
+    const m = changeMail(env, row, origin);
     keepAlive(locals, sendMail(env, {
       to: row.contact_email, subject: m.subject, text: m.text,
       kind: 'confirm', reservationId: data.id,
+    }));
+  }
+
+  // 管理者にも知らせる。席の空きや用意する台数が変わるため
+  const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO;
+  if (adminTo && before && row) {
+    const a = adminChangeMail(env, before, row, origin);
+    keepAlive(locals, sendMail(env, {
+      to: adminTo, subject: a.subject, text: a.text,
+      kind: 'admin', reservationId: data.id,
     }));
   }
 

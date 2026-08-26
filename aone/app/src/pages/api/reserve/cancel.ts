@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, notConfigured } from '@lib/api';
-import { sendMail, cancelMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
+import { sendMail, cancelMail, adminCancelMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
 
 export const prerender = false;
 
@@ -41,8 +41,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .single();
   const row = rawRow as unknown as ReservationForMail | null;
 
+  const origin = originOf(request);
+
   if (row?.contact_email) {
-    const m = cancelMail(env, row, originOf(request), !!data.cancel_fee);
+    const m = cancelMail(env, row, origin, !!data.cancel_fee);
     keepAlive(
       locals,
       sendMail(env, {
@@ -50,6 +52,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
         kind: 'cancel', reservationId: data.id,
       }),
     );
+  }
+
+  // 管理者にも知らせる。枠が空くので、待っているお客様に回せる
+  const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO;
+  if (adminTo && row) {
+    const a = adminCancelMail(env, row, origin);
+    keepAlive(locals, sendMail(env, {
+      to: adminTo, subject: a.subject, text: a.text,
+      kind: 'admin', reservationId: data.id,
+    }));
   }
 
   return json({ ok: true, ...data });

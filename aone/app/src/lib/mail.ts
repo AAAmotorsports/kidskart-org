@@ -354,6 +354,75 @@ export function changeMail(env: Env, r: ReservationForMail, origin: string) {
   };
 }
 
+/**
+ * お客様が予約者ページから内容を変更したときの管理者宛通知
+ *
+ * 「何がどう変わったか」が分からないと、席の空き・用意する台数の判断ができない。
+ * 変更前と変更後を並べて出す。
+ */
+export function adminChangeMail(
+  env: Env,
+  before: ReservationForMail,
+  after: ReservationForMail,
+  origin: string,
+) {
+  const label = KIND_LABELS[after.kind as keyof typeof KIND_LABELS] ?? after.kind;
+
+  const diffs: string[] = [];
+  const add = (name: string, a: unknown, b: unknown) => {
+    if (String(a ?? '—') !== String(b ?? '—')) diffs.push(`${name}: ${a ?? '—'} → ${b ?? '—'}`);
+  };
+  add('日付', jaDate(before.date), jaDate(after.date));
+  add('時間', timeRangeLabel(before), timeRangeLabel(after));
+  add('人数', `${before.party_size} 名`, `${after.party_size} 名`);
+  add('カート台数', before.vehicle_count ? `${before.vehicle_count} 台` : null,
+      after.vehicle_count ? `${after.vehicle_count} 台` : null);
+  add('カテゴリー', before.category_code, after.category_code);
+  add('金額', before.amount != null ? `¥${before.amount.toLocaleString('ja-JP')}` : null,
+      after.amount != null ? `¥${after.amount.toLocaleString('ja-JP')}` : null);
+  add('状態', STATUS_LABELS[before.status] ?? before.status, STATUS_LABELS[after.status] ?? after.status);
+
+  return {
+    subject: `✏️変更 [A-ONE] ${label} ${after.date} ${hhmm(after.start_time)} ${after.contact_name} 様`,
+    text: [
+      'お客様が予約者ページからご予約内容を変更しました。',
+      '',
+      '▼ 変更点',
+      ...(diffs.length ? diffs.map((d) => `・${d}`) : ['・(内容の変更はありません)']),
+      '',
+      '▼ 変更後のご予約内容',
+      ...detailLines(after),
+      `状態: ${STATUS_LABELS[after.status] ?? after.status}`,
+      `お名前: ${after.contact_name}`,
+      `電話: ${after.contact_phone ?? '—'}`,
+      `メール: ${after.contact_email ?? '—'}`,
+      '',
+      '▼ 管理画面',
+      `${origin}/admin/day/${after.date}`,
+      ...(before.date !== after.date ? [`(変更前の日: ${origin}/admin/day/${before.date})`] : []),
+    ].join('\n'),
+  };
+}
+
+/** お客様が予約者ページからキャンセルしたときの管理者宛通知 */
+export function adminCancelMail(env: Env, r: ReservationForMail, origin: string) {
+  const label = KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind;
+  return {
+    subject: `❌キャンセル [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様`,
+    text: [
+      'お客様が予約者ページからキャンセルしました。枠が空きます。',
+      '',
+      ...detailLines(r),
+      `お名前: ${r.contact_name}`,
+      `電話: ${r.contact_phone ?? '—'}`,
+      `メール: ${r.contact_email ?? '—'}`,
+      '',
+      '▼ 管理画面',
+      `${origin}/admin/day/${r.date}`,
+    ].join('\n'),
+  };
+}
+
 export function pendingCallbackAlertMail(
   env: Env,
   rows: Array<{
