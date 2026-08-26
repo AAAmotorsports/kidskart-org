@@ -361,6 +361,44 @@ begin
   assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 99000,
     '14-3 台数指定の貸切の金額が合わない';
 
+  -- =========================================================================
+  raise notice '--- 15. 折り返し対応の記録と放置の検知';
+  -- =========================================================================
+  perform t_book(jsonb_build_object('kind','sport','date', aone_today()+25, 'session','am',
+                                    'category_code','kart','party_size',1,'who','先客15'));
+  r := t_book(jsonb_build_object('kind','charter','date', aone_today()+25, 'start_time','09:00',
+                                 'end_time','12:00','party_size',8,'who','折り返し待ち'));
+  assert (r->>'status') = 'contact_wait', '15-1 貸切が連絡待ちにならない';
+  id1 := (r->>'id')::uuid;
+
+  assert exists (select 1 from aone_pending_callbacks(0) p where p.id = id1),
+    '15-2 未対応の連絡待ちが放置リストに出ない';
+
+  -- 対応済みにすると消える
+  perform aone_mark_contacted(jsonb_build_object('id', id1, 'method','phone',
+                                                 'result','留守電','actor','staff'));
+  assert not exists (select 1 from aone_pending_callbacks(0) p where p.id = id1),
+    '15-3 対応済みなのに放置リストに残っている';
+  assert (select contact_method from aone_reservations where id = id1) = 'phone',
+    '15-4 対応手段が記録されない';
+  assert (select count(*) from aone_reservation_events
+           where reservation_id = id1 and event = 'contacted') = 1,
+    '15-5 対応が監査ログに残らない';
+
+  -- 取り消すと戻る
+  perform aone_mark_contacted(jsonb_build_object('id', id1, 'undo', true, 'actor','staff'));
+  assert exists (select 1 from aone_pending_callbacks(0) p where p.id = id1),
+    '15-6 対応記録を取り消しても放置リストに戻らない';
+
+  -- 24 時間しきい値: 作ったばかりのものは出ない
+  assert not exists (select 1 from aone_pending_callbacks(24) p where p.id = id1),
+    '15-7 受付直後なのに 24 時間の放置リストに出てしまう';
+
+  -- 確定させれば対象外
+  perform aone_set_reservation_status(jsonb_build_object('id', id1, 'status','confirmed','actor','admin'));
+  assert not exists (select 1 from aone_pending_callbacks(0) p where p.id = id1),
+    '15-8 確定済みが放置リストに残っている';
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

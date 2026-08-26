@@ -5,8 +5,9 @@
 #   reminder … 翌日のご予約へのリマインド
 #   thanks   … 当日ご利用の方へのお礼
 #   followup … 2 週間前にご利用の方への再来場案内
+#   callbacks… 折り返し未対応のまま 24 時間たった予約を管理者に通知
 #
-# 朝の回 (23:00 UTC = 08:00 JST) : reminder + followup
+# 朝の回 (23:00 UTC = 08:00 JST) : reminder + followup + callbacks
 # 夕の回 (09:00 UTC = 18:00 JST) : thanks
 #
 # 二重送信は API 側 (aone_reservations.*_mail_sent_at) で担保。
@@ -27,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       type:
-        description: '送信種別 (all / reminder / thanks / followup)'
+        description: '送信種別 (all / reminder / thanks / followup / callbacks)'
         required: false
         default: 'all'
       date:
@@ -68,7 +69,8 @@ jobs:
           elif [ "${SCHEDULE:-}" = "0 9 * * *" ]; then
             TYPES="thanks"
           else
-            TYPES="reminder followup"
+            # 朝の回で折り返し未対応の督促も送る (管理者宛・1 日 1 通)
+            TYPES="reminder followup callbacks"
           fi
 
           FAILED=0

@@ -7,6 +7,7 @@ import {
   jaDate, todayJst, addDays, hhmm, timeRangeLabel,
   KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
   WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK,
+  CONTACT_METHOD_LABELS, jaDateTime,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -35,6 +36,9 @@ const forecast = date === today ? await fetchTodayForecast(env.JMA_AREA_CODE || 
 const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
 const dead = rows.filter((r) => ['cancelled', 'no_show'].includes(r.status));
 const needsAction = live.filter((r) => ['contact_wait', 'checking'].includes(r.status));
+// 折り返しが要るもののうち、まだ誰も対応していないものを最優先で出す
+const waitingCallback = needsAction.filter((r) => !r.contacted_at);
+const contacted = needsAction.filter((r) => r.contacted_at);
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
 const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 ---
@@ -50,10 +54,16 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     </div>
   </div>
 
-  {needsAction.length > 0 && (
+  {waitingCallback.length > 0 && (
+    <div class="notice ng" style="margin-bottom:1rem">
+      <strong>🔴 折り返し未対応 {waitingCallback.length} 件</strong> —
+      {waitingCallback.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]} / ${r.contact_phone ?? '電話なし'})`).join(' /')}
+    </div>
+  )}
+  {contacted.length > 0 && (
     <div class="notice warn" style="margin-bottom:1rem">
-      <strong>要対応 {needsAction.length} 件</strong> —
-      {needsAction.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]})`).join(' /')}
+      <strong>対応済み・返事待ち {contacted.length} 件</strong> —
+      {contacted.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]})`).join(' /')}
     </div>
   )}
 
@@ -134,12 +144,25 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
                 <span class="badge">{SOURCE_LABELS[r.source] ?? r.source}</span>
                 {r.forced && <span class="badge ng">強制</span>}
                 {r.is_paid && <span class="badge ok">会計済</span>}
+                {['contact_wait', 'checking'].includes(r.status) && (
+                  r.contacted_at
+                    ? <span class="badge ok">対応済</span>
+                    : <span class="badge ng">要折り返し</span>
+                )}
               </div>
             </div>
             <div class="tiny muted">
               {r.reservation_number} ／ {r.contact_phone ?? '電話なし'} ／ {r.contact_email ?? 'メールなし'}
               {r.preferred_contact && ` ／ 希望連絡: ${r.preferred_contact === 'phone' ? '電話' : 'メール'}`}
             </div>
+            {r.contacted_at && (
+              <div class="tiny memo">
+                対応済み: {jaDateTime(r.contacted_at)}
+                {r.contact_method ? ` / ${CONTACT_METHOD_LABELS[r.contact_method] ?? r.contact_method}` : ''}
+                {r.contacted_by ? ` / ${r.contacted_by}` : ''}
+                {r.contact_result ? ` / ${r.contact_result}` : ''}
+              </div>
+            )}
             {r.request_note && <div class="tiny note">要望: {r.request_note}</div>}
             {r.staff_memo && <div class="tiny memo">メモ: {r.staff_memo}</div>}
             <div class="row acts">
@@ -152,6 +175,14 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
               <button class="btn sm act-paid" data-id={r.id} data-paid={String(!r.is_paid)}>
                 {r.is_paid ? '会計を取消' : '会計済にする'}
               </button>
+              {['contact_wait', 'checking'].includes(r.status) && (
+                r.contacted_at
+                  ? <button class="btn sm act-uncontact" data-id={r.id}>対応済を取消</button>
+                  : <>
+                      <button class="btn sm primary act-contact" data-id={r.id} data-method="phone">📞 電話で対応済</button>
+                      <button class="btn sm act-contact" data-id={r.id} data-method="email">✉️ メールで対応済</button>
+                    </>
+              )}
               <button class="btn sm act-memo" data-id={r.id}>メモ</button>
               <button class="btn sm act-cancel" data-id={r.id}>キャンセル</button>
               <button class="btn sm act-noshow" data-id={r.id}>無断キャンセル</button>
@@ -424,6 +455,31 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     const sel = document.querySelector('select.st[data-id="' + id + '"]');
     try {
       await post('/api/admin/reservation', { action: 'status', id, status: sel.value });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  // 折り返し対応の記録。ステータスは変えない (電話済みだが返事待ち、があるため)
+  document.querySelectorAll('.act-contact').forEach((b) => b.addEventListener('click', async () => {
+    const method = b.dataset.method;
+    const result = prompt(
+      (method === 'phone' ? '電話' : 'メール') + 'で対応しました。内容をメモできます (空欄可)',
+      '',
+    );
+    if (result === null) return;
+    b.disabled = true;
+    try {
+      await post('/api/admin/reservation', {
+        action: 'contacted', id: b.dataset.id, method, result,
+      });
+      location.reload();
+    } catch (e) { alert(e.message); b.disabled = false; }
+  }));
+
+  document.querySelectorAll('.act-uncontact').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('対応済みの記録を取り消します。よろしいですか？')) return;
+    try {
+      await post('/api/admin/reservation', { action: 'contacted', id: b.dataset.id, undo: true });
       location.reload();
     } catch (e) { alert(e.message); }
   }));

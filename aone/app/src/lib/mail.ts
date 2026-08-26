@@ -294,6 +294,50 @@ export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee:
 }
 
 /** 管理者宛ての新規予約通知 */
+/**
+ * 折り返し待ちのまま放置されている予約の一覧 (管理者宛・1 日 1 通)
+ *
+ * 「連絡待ち」「確認中」は A-ONE から連絡しないと確定しない。
+ * 受付直後の通知を見落としたときの最後の砦なので、経過時間と電話番号を
+ * 目立つ形で並べる。
+ */
+export function pendingCallbackAlertMail(
+  env: Env,
+  rows: Array<{
+    reservation_number: string; kind: string; status: string; date: string;
+    start_time?: string | null; end_time?: string | null; party_size: number;
+    contact_name: string; contact_phone?: string | null; contact_email?: string | null;
+    request_note?: string | null; hours_waiting: number;
+  }>,
+  origin: string,
+) {
+  const worst = Math.max(...rows.map((r) => r.hours_waiting));
+  return {
+    subject: `🔴要折り返し ${rows.length} 件 (最長 ${worst} 時間経過) — A-ONE`,
+    text: [
+      `折り返しのご連絡がまだの予約が ${rows.length} 件あります。`,
+      'いずれも A-ONE から連絡しないと確定しません。',
+      '',
+      ...rows.flatMap((r) => [
+        '━━━━━━━━━━━━━━━━━━━━',
+        `【${r.hours_waiting} 時間経過】${STATUS_LABELS[r.status] ?? r.status}`,
+        `${r.contact_name} 様  📞 ${r.contact_phone ?? '電話なし'}`,
+        `${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind} / ${jaDate(r.date)} ` +
+          `${hhmm(r.start_time)}${r.end_time ? '〜' + hhmm(r.end_time) : ''} / ${r.party_size} 名`,
+        `予約番号: ${r.reservation_number}`,
+        ...(r.contact_email ? [`メール: ${r.contact_email}`] : []),
+        ...(r.request_note ? [`要望: ${r.request_note}`] : []),
+        `${origin}/admin/day/${r.date}`,
+      ]),
+      '━━━━━━━━━━━━━━━━━━━━',
+      '',
+      '対応したら、管理画面の「📞 電話で対応済」ボタンを押してください。',
+      'このお知らせに出なくなります。',
+      ...footer(env),
+    ].join('\n'),
+  };
+}
+
 export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string) {
   const callback = needsCallback(r.status);
   const label = KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind;

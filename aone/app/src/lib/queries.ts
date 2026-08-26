@@ -201,6 +201,11 @@ export interface Reservation {
   access_token: string;
   cancelled_at: string | null;
   cancel_reason: string | null;
+  /** 折り返し対応をした日時。null = まだ折り返していない */
+  contacted_at: string | null;
+  contacted_by: string | null;
+  contact_method: string | null;
+  contact_result: string | null;
   created_at: string;
 }
 
@@ -208,7 +213,7 @@ export const RESERVATION_COLUMNS =
   'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
   'night_kind,party_size,vehicle_count,customer_id,contact_name,contact_kana,contact_phone,contact_email,' +
   'preferred_contact,source,request_note,staff_memo,tags,amount,is_paid,forced,forced_reason,' +
-  'access_token,cancelled_at,cancel_reason,created_at';
+  'access_token,cancelled_at,cancel_reason,contacted_at,contacted_by,contact_method,contact_result,created_at';
 
 export async function reservationsOfDay(env: Env, date: string) {
   try {
@@ -222,6 +227,40 @@ export async function reservationsOfDay(env: Env, date: string) {
     return (data ?? []) as unknown as Reservation[];
   } catch (e) {
     console.warn('[queries] reservationsOfDay 失敗', e);
+    return [];
+  }
+}
+
+/** 折り返し待ちのまま放置されている予約 (連絡待ち / 確認中 かつ 未対応) */
+export interface PendingCallback {
+  id: string;
+  reservation_number: string;
+  kind: string;
+  status: string;
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  party_size: number;
+  contact_name: string;
+  contact_phone: string | null;
+  contact_email: string | null;
+  request_note: string | null;
+  created_at: string;
+  hours_waiting: number;
+}
+
+/**
+ * p_hours 時間以上たっても折り返していない予約を古い順に返す。
+ * 管理画面の警告と、毎朝の cron メールの両方がこれを使う。
+ */
+export async function pendingCallbacks(env: Env, hours = 24) {
+  try {
+    const { data, error } = await getSupabaseAdmin(env)
+      .rpc('aone_pending_callbacks', { p_hours: hours });
+    if (error) throw error;
+    return (data ?? []) as unknown as PendingCallback[];
+  } catch (e) {
+    console.warn('[queries] pendingCallbacks 失敗', e);
     return [];
   }
 }

@@ -13,6 +13,7 @@ export const prerender = false;
 //            'cancel'  キャンセル / 無断キャンセル記録
 //            'status'  受付 → 連絡待ち → 確認中 → 確定 → 完了 の遷移
 //            'memo'    スタッフメモ・タグ・料金・入金の更新
+//            'contacted' 折り返し対応の記録 (undo: true で取り消し)
 export const POST: APIRoute = async ({ request, locals }) => {
   const env = envFrom(locals);
   const unconfigured = notConfigured(env);
@@ -161,6 +162,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const { error } = await supabase.from('aone_reservations').update(patch).eq('id', str(body?.id));
     if (error) return mapRpcError(error);
     return json({ ok: true });
+  }
+
+  if (action === 'contacted') {
+    // 連絡待ち・確認中の予約に「対応した」印を付ける。
+    // ステータスは変えない (電話はしたが返事待ち、という状態があるため)。
+    const { data, response } = await callRpc(supabase, 'aone_mark_contacted', {
+      id: str(body?.id),
+      method: str(body?.method),
+      result: str(body?.result),
+      actor,
+      undo: body?.undo === true,
+    });
+    if (response) return response;
+    return json({ ok: true, ...data });
   }
 
   return json({ error: '不明な操作です' }, 400);

@@ -31,6 +31,14 @@ export const STATUS_LABELS: Record<string, string> = {
   no_show: '無断キャンセル',
 };
 
+export const CONTACT_METHOD_LABELS: Record<string, string> = {
+  phone: '電話',
+  email: 'メール',
+  line: 'LINE',
+  counter: '店頭',
+  other: 'その他',
+};
+
 export const SOURCE_LABELS: Record<string, string> = {
   web: 'Web',
   phone: '電話',
@@ -134,6 +142,16 @@ export function nameWithHonorific(name: string | null | undefined): string {
 export function jaDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return `${y}年${m}月${d}日 (${WD[dowOf(iso)]})`;
+}
+
+/** 2026-08-26T06:21:50Z → 8/26 15:21 (JST)。管理画面の対応履歴などに使う */
+export function jaDateTime(iso: string): string {
+  const d = new Date(iso);
+  const p = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }).format(d);
+  return p;
 }
 
 export function jaDateShort(iso: string): string {

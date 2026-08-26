@@ -134,6 +134,25 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 - [ ] `type=thanks` / `type=followup` も同様に確認
 - [ ] GitHub Actions の `aone-mails` を手動実行 → 成功する
 
+## 11-2. 折り返し対応と督促
+
+- [ ] 貸切を「他の予約がある日」に申し込む → **連絡待ち**になる
+- [ ] 管理者宛メールの件名が **🔴要折り返し** で始まる
+- [ ] お客様宛メールの件名が **【まだ確定していません】** で、
+      48 時間以内に折り返す旨と電話番号が書かれている
+- [ ] `/admin` と `/admin/day/<日付>` に「折り返し未対応」の赤い警告が出る
+- [ ] **「📞 電話で対応済」** を押す → 「対応済」バッジに変わり、警告から消える
+- [ ] 「対応済を取消」で元に戻る
+- [ ] 督促メールを手動で確認 (`hours=0` なら受付直後のものも対象になる):
+
+```bash
+curl -X POST "<BASE>/api/cron/mails?type=callbacks&hours=0" \
+  -H "x-cron-secret: <CRON_SECRET>"
+```
+
+- [ ] `info@rk-a1.com` に「🔴要折り返し N 件」が届く
+- [ ] 対応済みにしてからもう一度叩くと、その予約が一覧から消える
+
 ## 12. 管理者の強制受付
 
 - [ ] 満員の日に `/admin/day/<日付>` から **強制受付**で 1 件入れる
