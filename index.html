@@ -454,6 +454,24 @@
   ]
 }
 </script>
+
+<!-- Google Analytics 4 (kidskart.org - GA4)
+     reserve.kidskart.org (ASMS) と同一データストリームで計測、
+     cookie_domain=kidskart.org で subdomain 跨ぎ session を継続。
+     5/12 の WordPress → 静的サイト移行時に GA タグが引き継がれず、
+     3ヶ月半にわたって kidskart.org 側の計測が空白になっていた。
+     2026-08-25 復旧。 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-W3HB0DT0Y3"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-W3HB0DT0Y3', {
+    cookie_domain: 'kidskart.org',
+    cookie_flags: 'SameSite=None;Secure',
+    send_page_view: true
+  });
+</script>
 </head>
 <body>
 
