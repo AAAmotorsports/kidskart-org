@@ -4,7 +4,7 @@ import { originOf, notConfigured } from '@lib/api';
 import { addDays, todayJst } from '@lib/domain';
 import {
   sendMail, reminderMail, thanksMail, followupMail, pendingCallbackAlertMail,
-  type ReservationForMail,
+  MAIL_COLUMNS, type ReservationForMail,
 } from '@lib/mail';
 
 export const prerender = false;
@@ -22,9 +22,7 @@ export const prerender = false;
 // 管理画面から該当列をクリアする (または date パラメータで日付指定)。
 const LIVE = ['confirmed', 'completed', 'checking'];
 
-const SELECT =
-  'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,party_size,' +
-  'contact_name,contact_email,contact_phone,access_token,amount';
+const SELECT = MAIL_COLUMNS;
 
 export const POST: APIRoute = async ({ request, url, locals }) => {
   const env = envFrom(locals);

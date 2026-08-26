@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, mapRpcError, notConfigured } from '@lib/api';
-import { sendMail, confirmMail, cancelMail, type ReservationForMail } from '@lib/mail';
+import { sendMail, confirmMail, cancelMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
 
 export const prerender = false;
 
@@ -123,15 +123,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (response) return response;
 
     if (body?.send_mail === true && !data.already) {
-      const { data: row } = await supabase
+      // MAIL_COLUMNS は定数なので supabase-js の型推論が効かない。1 か所で受け直す
+      const { data: rawRow } = await supabase
         .from('aone_reservations')
-        .select('id,reservation_number,kind,status,date,session,start_time,end_time,party_size,contact_name,contact_email,access_token,amount')
+        .select(MAIL_COLUMNS)
         .eq('id', data.id)
         .single();
+      const row = rawRow as unknown as ReservationForMail | null;
       if (row?.contact_email) {
-        const m = cancelMail(env, row as unknown as ReservationForMail, originOf(request), !!data.cancel_fee);
+        const m = cancelMail(env, row, originOf(request), !!data.cancel_fee);
         keepAlive(locals, sendMail(env, {
-          to: row.contact_email, subject: m.subject, text: m.text,
+          to: row.contact_email!, subject: m.subject, text: m.text,
           kind: 'cancel', reservationId: data.id,
         }));
       }

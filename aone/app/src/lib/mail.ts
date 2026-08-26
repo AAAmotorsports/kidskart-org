@@ -25,13 +25,29 @@ export interface ReservationForMail {
   start_time?: string | null;
   end_time?: string | null;
   category_code?: string | null;
+  /** ナイターの内訳 (rp / charter) */
+  night_kind?: string | null;
   party_size: number;
+  /** 貸切で使うカートの台数 */
+  vehicle_count?: number | null;
+  /** お客様が入力したご要望・ご相談内容 */
+  request_note?: string | null;
   contact_name: string;
   contact_email?: string | null;
   contact_phone?: string | null;
   access_token: string;
   amount?: number | null;
 }
+
+/**
+ * メール文面に必要な列。予約作成・キャンセル・cron のどこから送っても
+ * 同じ情報が載るように、SELECT はこの 1 か所にまとめる
+ * (台数や要望が片方のメールにだけ載らない、という事故を防ぐため)。
+ */
+export const MAIL_COLUMNS =
+  'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
+  'night_kind,party_size,vehicle_count,request_note,contact_name,contact_email,contact_phone,' +
+  'access_token,amount';
 
 export interface SendArgs {
   to: string;
@@ -132,12 +148,18 @@ const CALLBACK_HOURS = 48;
 function detailLines(r: ReservationForMail): string[] {
   const lines = [
     `予約番号: ${r.reservation_number}`,
-    `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}`,
+    `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}` +
+      (r.kind === 'night' && r.night_kind
+        ? ` (${KIND_LABELS[r.night_kind as keyof typeof KIND_LABELS] ?? r.night_kind})`
+        : ''),
     `日付: ${jaDate(r.date)}`,
     `時間: ${timeRangeLabel(r)}`,
     `人数: ${r.party_size} 名`,
   ];
+  // 貸切 (ナイターの貸切を含む) は台数で料金が変わるので必ず出す
+  if (r.vehicle_count != null) lines.push(`カート: ${r.vehicle_count} 台`);
   if (r.amount != null) lines.push(`料金: ¥${r.amount.toLocaleString('ja-JP')} (現地でのお支払い)`);
+  if ((r.request_note ?? '').trim()) lines.push(`ご要望: ${r.request_note!.trim()}`);
   return lines;
 }
 
