@@ -44,7 +44,16 @@ jobs:
             exit 0
           fi
 
-          HTTP_CODE=$(curl -sS -X POST "${AONE_API_BASE%/}/api/cron/backup" \
+          # 宛先が正しいかを先に確かめる (404 なら URL の問題でメールの問題ではない)
+          BASE="${AONE_API_BASE%/}"
+          PING=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/public/today" || echo 000)
+          echo "疎通確認 /api/public/today → HTTP $PING"
+          if [ "$PING" != "200" ]; then
+            echo "::error::予約システムに届きません (HTTP $PING)。AONE_API_BASE の値を確認してください" >&2
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -sS -X POST "$BASE/api/cron/backup" \
             -H "x-cron-secret: $AONE_CRON_SECRET" \
             -H "Content-Type: application/json" \
             -o response.json \
