@@ -59,6 +59,16 @@ export interface SendArgs {
   text: string;
   kind: MailKind;
   reservationId?: string | null;
+  /** 添付ファイル (月次バックアップの CSV など) */
+  attachments?: Array<{ filename: string; content: string }>;
+}
+
+/** UTF-8 の文字列を base64 に (Workers に Buffer は無い) */
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
 }
 
 export async function sendMail(env: Env, args: SendArgs): Promise<boolean> {
@@ -90,6 +100,11 @@ export async function sendMail(env: Env, args: SendArgs): Promise<boolean> {
           reply_to: replyTo,
           subject: args.subject,
           text: args.text,
+          // Resend は添付を base64 で受け取る
+          attachments: args.attachments?.map((a) => ({
+            filename: a.filename,
+            content: toBase64(a.content),
+          })),
         }),
       });
       if (!res.ok) {

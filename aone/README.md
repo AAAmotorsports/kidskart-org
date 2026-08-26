@@ -226,6 +226,7 @@ npm run build
 | キャンセル時 | キャンセルの通知 (管理者) | `/api/reserve/cancel` |
 | 随時 | 天候等の一括連絡 | `/admin/day/[date]` |
 | 毎朝 | 折り返し未対応 24 時間超の督促 (管理者宛) | cron `type=callbacks` |
+| 毎月 1 日 | 予約台帳・顧客名簿の CSV (管理者宛・添付) | `/api/cron/backup` |
 
 二重送信は `aone_reservations.*_mail_sent_at` で防いでいます。
 

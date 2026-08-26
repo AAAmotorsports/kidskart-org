@@ -24,7 +24,18 @@ const people = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status))
                    .reduce((a, r) => a + (r.party_size ?? 0), 0);
 ---
 <Base title="予約一覧 | A-ONE 管理" admin wide>
-  <h1>予約一覧</h1>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">予約一覧</h1>
+    <div class="row">
+      <a class="btn sm" href={`/api/admin/export?type=reservations&from=${from}&to=${to}`}>
+        この期間を CSV
+      </a>
+      <a class="btn sm dark" href="/api/admin/export?type=reservations">全件を CSV (バックアップ)</a>
+    </div>
+  </div>
+  <p class="small muted" style="margin:-.4rem 0 1rem">
+    月に 1 回、「全件を CSV」を保存しておくと、万一のときに予約台帳を復元できます。
+  </p>
 
   <form class="card filters" method="get">
     <div class="field"><label for="from">開始日</label><input type="date" id="from" name="from" value={from} /></div>
