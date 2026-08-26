@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { dayState, type DayState } from '@lib/queries';
 import {
   STATUS_MARK, WEATHER_LABELS, WEATHER_EMOJI, categoryText,
-  jaDate, todayJst, addDays, BLOCK_KIND_LABELS,
+  jaDate, todayJst, addDays, blockLabel,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -149,8 +149,7 @@ const closedToday = state?.weather.status === 'cancelled';
           <ul class="plain">
             {publicBlocks.map((b) => (
               <li>
-                <span class="badge info">{BLOCK_KIND_LABELS[b.kind] ?? b.kind}</span>
-                {' '}{b.public_label}
+                <span class="badge info">{blockLabel(b.kind, b.public_label)}</span>
                 {b.start_time && <span class="tiny muted"> ({b.start_time}〜{b.end_time ?? ''})</span>}
               </li>
             ))}
