@@ -223,6 +223,20 @@ Cloudflare Dashboard の Secret を誤って全削除するとメール送信・
 - Secret 値は 1Password 等の別レイヤに保管
 - 削除操作の前に別タブでリストのスクショを撮る
 
+### データベースのバックアップ
+詳細手順は `asms/BACKUP.md` を参照。
+
+- Supabase Free プランのため公式自動バックアップは実質使えない
+- GitHub Actions cron (`.github/workflows/asms-db-backup.yml`) が毎日
+  03:00 JST に `pg_dump` を取り、Cloudflare R2 バケット `kidskart-asms-backup`
+  に保存
+- daily/ は 90 日で lifecycle 自動削除、monthly/ は無期限保存
+- 失敗時は info@kidskart.org にメール通知
+- **四半期に 1 回は BACKUP.md「復元テスト」を実施** (取れてるだけじゃなく
+  復元できることを確認する)
+- 電子署名 (`consents.signature_data_url`) は現状 DB TEXT の base64 なので
+  同じ dump に含まれる。将来 R2 に切り出したら R2 側のバージョニングも別途必要
+
 ### Turnstile (CAPTCHA) の有効化手順
 1. Cloudflare Dashboard → Turnstile → **Add site**
    - Site Name: `kidskart-asms`

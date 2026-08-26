@@ -1,0 +1,125 @@
+# ==============================================================================
+# ASMS Database Backup (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# 毎日 03:00 JST (= 18:00 UTC) に Supabase の pg_dump を取り、
+# Cloudflare R2 にオフサイト保存する。
+#
+# 二層構造:
+#   daily/asms-YYYYMMDD.dump    (R2 lifecycle で 90 日後自動削除)
+#   monthly/asms-YYYY-MM.dump   (毎月 1 日のみ書く、長期保存)
+#
+# 復元手順は asms/BACKUP.md を参照。四半期に 1 回は復元テストすること。
+#
+# 必要な GitHub Actions Secrets:
+#   SUPABASE_DB_URL         Supabase Dashboard → Settings → Database →
+#                           Connection string → URI (postgres://... の DIRECT
+#                           接続用、pooler じゃない方) を貼る
+#   R2_ACCESS_KEY_ID        Cloudflare R2 → Manage R2 API Tokens で発行
+#   R2_SECRET_ACCESS_KEY    同上
+#   R2_ENDPOINT             https://<account_id>.r2.cloudflarestorage.com
+#   R2_BUCKET               バケット名 (例: kidskart-asms-backup)
+#   RESEND_API_KEY          既存のもの (失敗通知メール用)
+#   MAIL_FROM_ADDRESS       既存のもの (通常 noreply@kidskart.org)
+#   MAIL_ADMIN_TO           既存のもの (通常 info@kidskart.org)
+#
+# 手動実行: Actions タブから「Run workflow」で任意タイミングでバックアップ可。
+# ==============================================================================
+
+name: ASMS DB Backup
+
+on:
+  schedule:
+    # GitHub Actions cron は UTC。18:00 UTC = 03:00 JST
+    # 深夜帯なので予約ピークを避け、cron の 5-15 分遅延も許容できる時間帯。
+    - cron: '0 18 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install pg_dump 17 (matches Supabase)
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Install AWS CLI (used for S3-compatible R2 access)
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+          fi
+          aws --version
+
+      - name: Compute date strings
+        id: date
+        run: |
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+          echo "day=$(date -u +%d)" >> "$GITHUB_OUTPUT"
+          echo "human=$(date -u +'%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+
+      - name: pg_dump (custom format, compressed)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # -Fc = custom (binary, compressed), --no-owner --no-acl で
+          # 移行先環境の権限や role に依存しない dump を作る。
+          # 統計情報は復元不要なので --no-statistics ではなく通常。
+          pg_dump \
+            --format=custom \
+            --no-owner \
+            --no-acl \
+            --file="asms-${{ steps.date.outputs.date }}.dump" \
+            "$SUPABASE_DB_URL"
+          ls -lh "asms-${{ steps.date.outputs.date }}.dump"
+
+      - name: Upload to R2 (daily)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp \
+            "asms-${{ steps.date.outputs.date }}.dump" \
+            "s3://${{ secrets.R2_BUCKET }}/daily/asms-${{ steps.date.outputs.date }}.dump" \
+            --endpoint-url "${{ secrets.R2_ENDPOINT }}"
+
+      - name: Upload to R2 (monthly, only on day 01)
+        if: steps.date.outputs.day == '01'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp \
+            "asms-${{ steps.date.outputs.date }}.dump" \
+            "s3://${{ secrets.R2_BUCKET }}/monthly/asms-${{ steps.date.outputs.month }}.dump" \
+            --endpoint-url "${{ secrets.R2_ENDPOINT }}"
+
+      - name: Notify failure via Resend
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM_ADDRESS: ${{ secrets.MAIL_FROM_ADDRESS }}
+          MAIL_ADMIN_TO: ${{ secrets.MAIL_ADMIN_TO }}
+        # 失敗通知自体が失敗しても workflow 全体は failure のまま。
+        # RESEND_API_KEY が未設定の場合は静かにスキップ。
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "RESEND_API_KEY not set, skipping email notification"
+            exit 0
+          fi
+          run_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          subject="[ASMS] DB バックアップ失敗 (${{ steps.date.outputs.date }})"
+          body="ASMS の日次 DB バックアップジョブが失敗しました。\n\n実行時刻: ${{ steps.date.outputs.human }}\n詳細ログ: ${run_url}\n\n・GitHub Secrets (SUPABASE_DB_URL / R2_*) が失効していないか確認\n・Supabase が到達可能か確認\n・R2 バケットが存在するか確認"
+          curl -sS -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"from\":\"ASMS Backup <${MAIL_FROM_ADDRESS:-noreply@kidskart.org}>\",\"to\":[\"${MAIL_ADMIN_TO:-info@kidskart.org}\"],\"subject\":\"${subject}\",\"text\":\"${body}\"}" \
+            || echo "Failed to send failure notification (non-fatal)"
