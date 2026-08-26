@@ -127,11 +127,16 @@ A-ONE のアドレスに変えたい場合は Resend で `rk-a1.com` のドメ�
 
 ## 11. 自動メール (cron)
 
+> ⚠️ curl で叩くときは **`Content-Type: application/json` を必ず付けて**ください。
+> 付けないと Astro の CSRF 対策で 403 (`Cross-site POST form submissions are
+> forbidden`) になります。cron 本体の問題ではありません。
+
 前日リマインド / 当日お礼 / 2 週間後フォロー。手動で叩いて確認する:
 
 ```bash
 curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" \
-  -H "x-cron-secret: <CRON_SECRET>"
+  -H "x-cron-secret: <CRON_SECRET>" \
+  -H "Content-Type: application/json"
 ```
 
 - [ ] `sent` が 1 以上で返る
@@ -153,7 +158,8 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 
 ```bash
 curl -X POST "<BASE>/api/cron/mails?type=callbacks&hours=0" \
-  -H "x-cron-secret: <CRON_SECRET>"
+  -H "x-cron-secret: <CRON_SECRET>" \
+  -H "Content-Type: application/json"
 ```
 
 - [ ] `info@rk-a1.com` に「🔴要折り返し N 件」が届く
@@ -174,7 +180,9 @@ curl -X POST "<BASE>/api/cron/mails?type=callbacks&hours=0" \
 - [ ] 月次メールを手動で確認:
 
 ```bash
-curl -X POST "<BASE>/api/cron/backup" -H "x-cron-secret: <CRON_SECRET>"
+curl -X POST "<BASE>/api/cron/backup" \
+  -H "x-cron-secret: <CRON_SECRET>" \
+  -H "Content-Type: application/json"
 ```
 
 - [ ] `info@rk-a1.com` に **【控え】A-ONE 予約台帳・顧客名簿** が届き、
