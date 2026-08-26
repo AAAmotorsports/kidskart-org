@@ -15,6 +15,9 @@ const minKarts: number = cfg?.charter_min_karts ?? 5;
 // 他予約が無ければそのまま確定、あっても申込は受け付けて「連絡待ち」にする。
 const today = todayJst();
 const maxDate = addDays(today, 365);
+// 貸切は当日不可 (カートの準備が要る)。受付できる最も早い日を初期値にする
+const leadDays: number = cfg?.charter_min_lead_days ?? 1;
+const minDate = addDays(today, leadDays);
 ---
 <Base title="貸切のお申し込み | A-ONE サーキット">
   <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
@@ -27,13 +30,18 @@ const maxDate = addDays(today, 365);
     <strong>料金 {basePrice.toLocaleString('ja-JP')} 円 ＋ カート 1 台につき {perKart.toLocaleString('ja-JP')} 円</strong>
     （最小 {minKarts} 台から）<br />
     例: {minKarts} 台なら {(basePrice + perKart * minKarts).toLocaleString('ja-JP')} 円。
-    お支払いは当日現地でお願いします。
+    お支払いは当日現地でお願いします。<br />
+    <strong>カート {minKarts} 台未満・当日のお申し込みは承れません。</strong>
   </div>
 
   <form id="form" class="card" novalidate>
     <div class="field">
       <label for="date">ご希望日</label>
-      <input type="date" id="date" name="date" min={today} max={maxDate} value={today} required />
+      <input type="date" id="date" name="date" min={minDate} max={maxDate} value={minDate} required />
+      <div class="hint">
+        貸切は{leadDays === 1 ? '前日まで' : `${leadDays} 日前まで`}のお申し込みとなります。
+        当日をご希望の場合はお電話ください。
+      </div>
     </div>
 
     <div id="day-info" class="notice info small" style="margin-bottom:1rem">空き状況を確認しています…</div>

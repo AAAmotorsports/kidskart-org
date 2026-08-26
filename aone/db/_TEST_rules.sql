@@ -259,14 +259,15 @@ begin
            where id = (select customer_id from aone_reservations where contact_name = 'カートB')) = 1,
     '9-4 顧客統計に無断キャンセルが反映されない';
 
-  -- キャンセル規定 (2026-08 改定): 当日でも連絡があればキャンセル料なし
-  r := t_book(jsonb_build_object('kind','rp','date', aone_today(), 'start_time','16:00',
+  -- キャンセル規定 (2026-08 改定): 連絡があればキャンセル料なし
+  -- (当日の RP は受付制限があるので、判定そのものを見るため翌日以降で作る)
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today()+3, 'start_time','16:00',
                                  'party_size',3,'who','RP当日'));
   r := aone_cancel_reservation(jsonb_build_object('id', (r->>'id')::uuid, 'actor','customer'));
   assert not (r->>'cancel_fee')::boolean, '9-5 連絡ありの当日キャンセルで料金フラグが立ってしまう';
 
   -- 当日・連絡なし (無断キャンセル) だけ料金 100%
-  r := t_book(jsonb_build_object('kind','rp','date', aone_today(), 'start_time','16:30',
+  r := t_book(jsonb_build_object('kind','rp','date', aone_today()+3, 'start_time','16:30',
                                  'party_size',3,'who','RP無断'));
   r := aone_cancel_reservation(jsonb_build_object('id', (r->>'id')::uuid,
                                                  'no_show', true, 'actor','admin'));
@@ -462,6 +463,52 @@ begin
                                                      'forced', true, 'actor','admin'));
   assert (select amount from aone_reservations where id = id1) = 99000,
     '16-6 会計済みの金額が変わってしまう';
+
+  -- =========================================================================
+  raise notice '--- 17. 貸切と当日 RP の受付制限';
+  -- =========================================================================
+  -- 貸切: 4 台以下は受け付けない
+  r := aone_check_availability('charter', aone_today()+30, null, null, '09:00', '12:00', 8, null, 4);
+  assert not (r->>'ok')::boolean and (r->>'reason') = 'charter_min_karts',
+    '17-1 貸切 4 台が受け付けられてしまう: ' || r::text;
+  r := aone_check_availability('charter', aone_today()+30, null, null, '09:00', '12:00', 8, null, 5);
+  assert (r->>'ok')::boolean, '17-2 貸切 5 台が受け付けられない: ' || r::text;
+
+  -- 台数の指定が無い申込も受けない (最小台数を満たすか判断できないため通す)
+  r := aone_check_availability('charter', aone_today()+30, null, null, '09:00', '12:00', 8);
+  assert (r->>'ok')::boolean, '17-3 台数未指定の貸切が弾かれる';
+
+  -- 貸切: 当日は受け付けない
+  r := aone_check_availability('charter', aone_today(), null, null, '09:00', '12:00', 8, null, 5);
+  assert not (r->>'ok')::boolean and (r->>'reason') = 'charter_lead_time',
+    '17-4 当日の貸切が受け付けられてしまう: ' || r::text;
+  r := aone_check_availability('charter', aone_today()+1, null, null, '09:00', '12:00', 8, null, 5);
+  assert (r->>'ok')::boolean, '17-5 翌日の貸切が受け付けられない: ' || r::text;
+
+  -- 予約 RPC からも同じ判定になる (台数が渡っているか)
+  begin
+    perform t_book(jsonb_build_object('kind','charter','date', aone_today()+31,
+                                      'start_time','09:00','end_time','12:00',
+                                      'party_size',8,'vehicle_count',4,'who','貸切4台'));
+    assert false, '17-6 貸切 4 台が RPC 経由で登録できてしまう';
+  exception when sqlstate 'AONE1' then null;
+  end;
+
+  -- 当日の RP: 17:00 以降は受け付けない
+  r := aone_check_availability('rp', aone_today(), null, null, '17:00', null, 3);
+  assert not (r->>'ok')::boolean and (r->>'reason') = 'rp_same_day_late',
+    '17-7 当日 17:00 の RP が受け付けられてしまう: ' || r::text;
+
+  -- 当日の RP: 2 時間後以降のみ (10 分後は不可)
+  r := aone_check_availability('rp', aone_today(), null, null,
+                               ((now() at time zone 'Asia/Tokyo')::time + interval '10 min')::time,
+                               null, 3);
+  assert not (r->>'ok')::boolean,
+    '17-8 直近の当日 RP が受け付けられてしまう: ' || r::text;
+
+  -- 翌日以降は 17:00 も 2 時間ルールも関係ない
+  r := aone_check_availability('rp', aone_today()+2, null, null, '17:00', null, 3);
+  assert (r->>'ok')::boolean, '17-9 翌日以降の 17:00 の RP が受け付けられない: ' || r::text;
 
   raise notice 'ALL TESTS PASSED';
 end;
