@@ -14,7 +14,15 @@ export interface DayState {
   is_holiday: boolean;
   is_past: boolean;
   is_today: boolean;
-  weather: { status: string; message: string | null; staff_note: string | null };
+  /** 営業状況 (受付可否に影響する)。source='block' = 臨時休業の予定から自動 */
+  business: {
+    status: string;
+    source: 'manual' | 'block';
+    message: string | null;
+    staff_note: string | null;
+  };
+  /** 路面状況 (表示のみ)。未設定なら status は null */
+  surface: { status: string | null };
   hours: { course_open: string; course_close: string };
   blocks: Array<{
     id: string; title: string; kind: string; scope: string;
@@ -76,7 +84,8 @@ export interface MonthDay {
   date: string;
   dow: number;
   is_holiday: boolean;
-  weather: string;
+  business: string;
+  surface: string | null;
   sport_am: string;
   sport_pm: string;
   am_categories: MonthCategory[];

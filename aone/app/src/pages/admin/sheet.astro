@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { reservationsOfDay, dayState, categories } from '@lib/queries';
 import {
   jaDate, todayJst, addDays, hhmm, nameWithHonorific,
-  KIND_SHORT, STATUS_LABELS, SOURCE_LABELS, WEATHER_LABELS,
+  KIND_SHORT, STATUS_LABELS, SOURCE_LABELS, BUSINESS_LABELS, SURFACE_LABELS,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -67,8 +67,11 @@ function detail(r: any): string {
       <h2 class="sheet-date">{jaDate(date)}</h2>
       <div class="small muted">
         {sorted.length} 件 / 計 {people} 名
-        {state && state.weather.status !== 'normal' && (
-          <strong> ／ {WEATHER_LABELS[state.weather.status]}</strong>
+        {state && state.business.status !== 'open' && (
+          <strong> ／ {BUSINESS_LABELS[state.business.status] ?? state.business.status}</strong>
+        )}
+        {state?.surface.status && (
+          <span> ／ 路面 {SURFACE_LABELS[state.surface.status] ?? state.surface.status}</span>
         )}
       </div>
     </div>

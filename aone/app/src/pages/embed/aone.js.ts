@@ -44,6 +44,10 @@ const WIDGET_JS = String.raw`
     '  border:1px solid #b9e3cf}',
     '.aone-wx.warn{background:#fff5e2;color:#8a5a06;border-color:#f2d69b}',
     '.aone-wx.ng{background:#fdeef0;color:#a81a2d;border-color:#f2bcc4}',
+    // 路面状況は営業状況と別軸なので、色を持たせず控えめに出す
+    '.aone-sf{display:inline-flex;align-items:center;font-weight:700;font-size:.85em;',
+    '  padding:4px 12px;border-radius:99px;background:#eef2f6;color:#42566b;',
+    '  border:1px solid #d5dee7}',
     '.aone-msg{margin:0 0 10px;padding:8px 12px;border-radius:8px;font-size:.9em;',
     '  background:#fff5e2;border:1px solid #f2d69b;color:#8a5a06}',
     '.aone-msg.ng{background:#fdeef0;border-color:#f2bcc4;color:#a81a2d}',
@@ -92,6 +96,7 @@ const WIDGET_JS = String.raw`
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
     '  font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
+    '.aone-sfs{color:#42566b;font-size:.92em}',
     '.aone-bk{font-size:.92em;font-weight:700;line-height:1.3;border-left:3px solid var(--aone-red);',
     '  padding-left:3px;color:#a81a2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
@@ -144,19 +149,21 @@ const WIDGET_JS = String.raw`
 
   // ---- 「今日走れる？」 ----------------------------------------------------
   function renderToday(el, d) {
-    var wxClass = d.weather.status === 'cancelled' ? 'ng'
-      : (d.weather.status === 'normal' ? '' : 'warn');
+    var wxClass = d.business.open ? (d.business.status === 'open' ? '' : 'warn') : 'ng';
 
     var html = '<div class="aone-card">';
     html += '<div class="aone-head"><p class="aone-date">' + esc(d.label) + ' の走行状況</p>';
-    html += '<span class="aone-wx ' + wxClass + '">' + esc(d.weather.label) + '</span></div>';
+    html += '<span class="aone-wx ' + wxClass + '">' + esc(d.business.label) + '</span>';
+    // 路面状況は営業状況とは別軸。出ているときだけ添える
+    if (d.surface) html += '<span class="aone-sf">路面 ' + esc(d.surface.label) + '</span>';
+    html += '</div>';
 
-    if (d.weather.message) {
+    if (d.business.message) {
       html += '<p class="aone-msg ' + (wxClass === 'ng' ? 'ng' : '') + '">'
-        + esc(d.weather.message) + '</p>';
+        + esc(d.business.message) + '</p>';
     }
 
-    if (d.weather.open) {
+    if (d.business.open) {
       d.sessions.forEach(function (s) {
         html += '<div class="aone-sess"><div class="aone-sess-h"><b>' + esc(s.label) + '</b>'
           + '<span>' + esc(s.time) + '</span>'
@@ -280,10 +287,11 @@ const WIDGET_JS = String.raw`
       if (day.dow === 6) cls.push('sat');
       if (day.is_holiday) cls.push('holiday');
       if (day.date === d.today) cls.push('today');
-      if (day.weather === 'cancelled') cls.push('closed');
+      if (day.business === 'cancelled' || day.business === 'closed') cls.push('closed');
       if (day.date < d.today) cls.push('past');
 
-      var linkable = day.date >= d.today && day.weather !== 'cancelled';
+      var linkable = day.date >= d.today
+        && day.business !== 'cancelled' && day.business !== 'closed';
       html += '<td class="' + cls.join(' ') + (linkable ? ' linkable' : '') + '">';
       if (linkable) {
         html += '<a class="aone-cell" href="' + d.links.reserve + '?date=' + day.date +
@@ -293,7 +301,8 @@ const WIDGET_JS = String.raw`
       }
       html += '<div class="aone-d">' + day.day +
         '<span class="aone-dow"> (' + WDOW[day.dow] + ')</span></div><div class="aone-body">';
-      if (day.weather_label) html += '<div class="aone-wxs">' + esc(day.weather_label) + '</div>';
+      if (day.business_label) html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
+      if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
       });
@@ -301,7 +310,7 @@ const WIDGET_JS = String.raw`
       if (day.date >= d.today) {
         // AM / PM ごとに「予約 → 受付状況」の順で並べる
         var books = day.bookings || [];
-        var closedDay = day.weather === 'cancelled';
+        var closedDay = day.business === 'cancelled' || day.business === 'closed';
         html += '<div class="aone-ss">'
           + sessionBlock('AM', day.am_categories, day.am_open,
               books.filter(function (b) { return !isPmBooking(b.time); }), closedDay)

@@ -51,23 +51,54 @@ export const SOURCE_LABELS: Record<string, string> = {
   admin: '管理',
 };
 
-export const WEATHER_LABELS: Record<string, string> = {
-  normal: '通常営業',
-  rain_caution: '雨天注意',
+/**
+ * 営業状況 — 営業しているかどうか。受付可否に影響する。
+ *
+ * 既定は「営業中」。closed / cancelled の日は予約を受け付けない
+ * (判定は aone_check_availability。ここにあるのはラベルだけ)。
+ */
+export const BUSINESS_LABELS: Record<string, string> = {
+  open: '営業中',
   checking: '営業確認中',
-  surface_recovery: '路面回復待ち',
-  cancelled: '雨天中止',
-  other: 'その他',
+  cancelled: '走行中止',
+  closed: '休業',
 };
 
-export const WEATHER_EMOJI: Record<string, string> = {
-  normal: '🏁',
-  rain_caution: '🌦',
+export const BUSINESS_EMOJI: Record<string, string> = {
+  open: '🏁',
   checking: '❓',
-  surface_recovery: '💧',
   cancelled: '🚫',
-  other: '📢',
+  closed: '🈳',
 };
+
+/** 表示順 (管理画面のボタンの並び) */
+export const BUSINESS_ORDER = ['open', 'checking', 'cancelled', 'closed'] as const;
+
+/**
+ * 路面状況 — 営業状況とは別軸。**受付可否には一切影響しない**。
+ * 未設定 (null) のときは何も表示しない (雨の日に「ドライ」と出したら嘘になる)。
+ */
+export const SURFACE_LABELS: Record<string, string> = {
+  dry: 'ドライ',
+  wet: 'ウェット',
+  drying: 'ウェット→ドライ',
+  heavy_wet: 'ヘビーウェット',
+};
+
+export const SURFACE_EMOJI: Record<string, string> = {
+  dry: '☀️',
+  wet: '💧',
+  drying: '🌤',
+  heavy_wet: '🌧',
+};
+
+export const SURFACE_ORDER = ['dry', 'wet', 'drying', 'heavy_wet'] as const;
+
+/** 路面状況の表示文字列 (未設定なら null) */
+export function surfaceText(status?: string | null): string | null {
+  if (!status) return null;
+  return `${SURFACE_EMOJI[status] ?? ''} 路面 ${SURFACE_LABELS[status] ?? status}`.trim();
+}
 
 export const BLOCK_KIND_LABELS: Record<string, string> = {
   race: 'レース',

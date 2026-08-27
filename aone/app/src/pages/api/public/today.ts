@@ -2,7 +2,8 @@ import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
 import { dayState } from '@lib/queries';
 import {
-  todayJst, jaDate, STATUS_MARK, WEATHER_LABELS, categoryText, BLOCK_KIND_LABELS, blockLabel,
+  todayJst, jaDate, STATUS_MARK, BUSINESS_LABELS, SURFACE_LABELS, categoryText,
+  BLOCK_KIND_LABELS, blockLabel,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -91,12 +92,17 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     label: jaDate(state.date),
     is_holiday: state.is_holiday,
     hours: state.hours,
-    weather: {
-      status: state.weather.status,
-      label: WEATHER_LABELS[state.weather.status] ?? state.weather.status,
-      message: state.weather.message,
-      open: state.weather.status !== 'cancelled',
+    // 営業状況 (走れるかどうか) と路面状況 (どんな路面か) は別軸で返す
+    business: {
+      status: state.business.status,
+      label: BUSINESS_LABELS[state.business.status] ?? state.business.status,
+      message: state.business.message,
+      open: !['cancelled', 'closed'].includes(state.business.status),
     },
+    surface: state.surface.status ? {
+      status: state.surface.status,
+      label: SURFACE_LABELS[state.surface.status] ?? state.surface.status,
+    } : null,
     sessions,
     rp,
     blocks: state.blocks

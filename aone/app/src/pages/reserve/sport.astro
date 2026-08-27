@@ -125,13 +125,17 @@ const initialDate = Astro.url.searchParams.get('date') ?? today;
 
   function render() {
     const info = $('day-info');
-    const wx = state.weather && state.weather.status;
-    if (wx === 'cancelled') {
+    const biz = state.business || {};
+    const msg = biz.message || '';
+    if (biz.status === 'closed') {
       info.className = 'notice ng small';
-      info.textContent = '本日は雨天中止です。' + (state.weather.message || '');
-    } else if (wx && wx !== 'normal') {
+      info.textContent = 'この日は休業日です。' + msg;
+    } else if (biz.status === 'cancelled') {
+      info.className = 'notice ng small';
+      info.textContent = 'この日は走行中止となっています。' + msg;
+    } else if (biz.status === 'checking') {
       info.className = 'notice warn small';
-      info.textContent = '営業状態: ' + wx + ' ' + (state.weather.message || '');
+      info.textContent = '営業を確認中です。' + msg;
     } else {
       info.className = 'notice info small';
       const blocks = (state.blocks || []).filter((b) => b.is_public).map((b) => b.public_label);

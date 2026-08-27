@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { dayState, settings } from '@lib/queries';
-import { todayJst, jaDate, WEATHER_LABELS } from '@lib/domain';
+import { todayJst, jaDate, BUSINESS_LABELS } from '@lib/domain';
 
 export const prerender = false;
 
@@ -33,10 +33,10 @@ const rpSummary = !state
   <a class="back-link" href="/">← トップに戻る</a>
   <h1>ご予約</h1>
 
-  {state && state.weather.status !== 'normal' && (
+  {state && state.business.status !== 'open' && (
     <div class="notice warn" style="margin-bottom:1rem">
-      本日 ({jaDate(today)}) は <strong>{WEATHER_LABELS[state.weather.status]}</strong> です。
-      {state.weather.message}
+      本日 ({jaDate(today)}) は <strong>{BUSINESS_LABELS[state.business.status] ?? state.business.status}</strong> です。
+      {state.business.message}
       <a href="/">本日の走行状況を見る →</a>
     </div>
   )}

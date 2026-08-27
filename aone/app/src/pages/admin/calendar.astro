@@ -7,7 +7,8 @@ import {
 } from '@lib/queries';
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel,
-  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, blockLabel,
+  KIND_SHORT, STATUS_LABELS, BUSINESS_LABELS, SURFACE_LABELS,
+  BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, blockLabel,
   nameWithHonorific,
 } from '@lib/domain';
 
@@ -138,13 +139,14 @@ const isOpen = (v: string) => v === 'true';
           <a class:list={[
             'cal-cell', d.date === today && 'today',
             d.dow === 0 && 'sun', d.dow === 6 && 'sat', d.is_holiday && 'holiday',
-            d.weather === 'cancelled' && 'closed',
+            (d.business === 'cancelled' || d.business === 'closed') && 'closed',
           ]} href={`/admin/day/${d.date}`}>
             <div class="cal-day">
               {Number(d.date.slice(8, 10))}<span class="dow-label"> ({WD_BY_DOW[d.dow]})</span>
             </div>
             <div class="cell-body">
-            {d.weather !== 'normal' && <div class="tiny wx">{WEATHER_LABELS[d.weather]}</div>}
+            {d.business !== 'open' && <div class="tiny wx">{BUSINESS_LABELS[d.business] ?? d.business}</div>}
+            {d.surface && <div class="tiny muted">{SURFACE_LABELS[d.surface] ?? d.surface}</div>}
             {(d.blocks ?? []).map((b) => (
               <div class="tiny ev">{blockLabel(b.kind, b.title)}</div>
             ))}
@@ -191,8 +193,11 @@ const isOpen = (v: string) => v === 'true';
       {weekData.map((d) => (
         <div class:list={['wk-col', d.date === today && 'today']}>
           <a class="wk-head" href={`/admin/day/${d.date}`}>{jaDateShort(d.date)}</a>
-          {d.state && d.state.weather.status !== 'normal' && (
-            <div class="tiny wx">{WEATHER_LABELS[d.state.weather.status]}</div>
+          {d.state && d.state.business.status !== 'open' && (
+            <div class="tiny wx">{BUSINESS_LABELS[d.state.business.status] ?? d.state.business.status}</div>
+          )}
+          {d.state?.surface.status && (
+            <div class="tiny muted">{SURFACE_LABELS[d.state.surface.status] ?? d.state.surface.status}</div>
           )}
           {(d.state?.blocks ?? []).map((b) => <div class="tiny ev">{b.title}</div>)}
           {d.rows.length === 0 && <div class="tiny muted">予約なし</div>}

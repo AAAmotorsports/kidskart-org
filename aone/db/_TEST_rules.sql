@@ -211,14 +211,14 @@ begin
   assert (r->>'reason') = 'blocked', '6-7 終日ブロックが RP を止めていない';
 
   -- =========================================================================
-  raise notice '--- 7. 天候中止';
+  raise notice '--- 7. 走行中止';
   -- =========================================================================
-  insert into aone_business_days (date, weather_status, status_message)
+  insert into aone_business_days (date, business_status, status_message)
   values (d_sunday, 'cancelled', '雨天のため本日は中止です');
   r := aone_check_availability('sport', d_sunday, 'kart', 'am');
-  assert (r->>'reason') = 'weather_cancelled', '7-1 雨天中止が効いていない';
+  assert (r->>'reason') = 'weather_cancelled', '7-1 走行中止が効いていない';
   st := aone_day_state(d_sunday);
-  assert (st->'weather'->>'status') = 'cancelled', '7-2 day_state に天候が出ない';
+  assert (st->'business'->>'status') = 'cancelled', '7-2 day_state に営業状況が出ない';
   assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '7-3 中止日が off 表示にならない';
 
   -- =========================================================================
@@ -245,8 +245,8 @@ begin
         'reason','テスト','actor','admin'));
   assert (r->>'status') = 'cancelled', '9-1 キャンセルできない';
   r := aone_check_availability('sport', d_sunday, 'minibike', 'pm');
-  -- 日曜は天候中止を入れてあるので weather_cancelled になる。天候を戻して再判定
-  update aone_business_days set weather_status = 'normal' where date = d_sunday;
+  -- 日曜は走行中止を入れてあるので weather_cancelled になる。営業状況を戻して再判定
+  update aone_business_days set business_status = 'open' where date = d_sunday;
   r := aone_check_availability('sport', d_sunday, 'minibike', 'pm');
   assert (r->>'ok')::boolean, '9-2 キャンセル後も枠が空かない: ' || r::text;
 
@@ -555,6 +555,53 @@ begin
                                8, null, null, 'course_only');
   assert not (r->>'ok')::boolean and (r->>'reason') = 'charter_lead_time',
     '18-8 当日のコース貸切が受け付けられてしまう';
+
+  -- =========================================================================
+  raise notice '--- 19. 営業状況と路面状況';
+  -- =========================================================================
+  -- 既定は「営業中」。何も設定していない日は open で返る
+  st := aone_day_state(aone_today() + 40);
+  assert (st->'business'->>'status') = 'open', '19-1 既定が営業中になっていない';
+  assert (st->'business'->>'source') = 'manual', '19-2 既定の出どころが manual でない';
+  assert (st->'surface'->>'status') is null, '19-3 路面が未設定にならない';
+
+  -- 休業にすると受け付けない
+  insert into aone_business_days (date, business_status) values (aone_today() + 40, 'closed');
+  r := aone_check_availability('sport', aone_today() + 40, 'kart', 'am');
+  assert (r->>'reason') = 'business_closed', '19-4 休業日が受け付けられてしまう';
+  st := aone_day_state(aone_today() + 40);
+  assert (st->'business'->>'status') = 'closed', '19-5 day_state が休業にならない';
+  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '19-6 休業日が off 表示にならない';
+
+  -- 路面状況は受付可否に一切影響しない (ヘビーウェットでも予約は取れる)
+  update aone_business_days set business_status = 'open', surface_status = 'heavy_wet'
+  where date = aone_today() + 40;
+  r := aone_check_availability('sport', aone_today() + 40, 'kart', 'am');
+  assert (r->>'ok')::boolean, '19-7 路面状況が受付を止めてしまう: ' || r::text;
+  st := aone_day_state(aone_today() + 40);
+  assert (st->'surface'->>'status') = 'heavy_wet', '19-8 day_state に路面が出ない';
+  assert (st->'business'->>'status') = 'open', '19-9 路面を入れると営業状況が変わってしまう';
+
+  -- 臨時休業の予定を入れておけば、営業状況は自動で休業になる (二重入力しない)
+  insert into aone_blocks (date, kind, title, scope)
+  values (aone_today() + 41, 'closed', 'お盆休み', 'all');
+  st := aone_day_state(aone_today() + 41);
+  assert (st->'business'->>'status') = 'closed', '19-10 臨時休業の予定が営業状況に出ない';
+  assert (st->'business'->>'source') = 'block', '19-11 休業の出どころが block でない';
+
+  -- 手で「走行中止」にしてある日は、予定より手の設定が勝つ
+  insert into aone_business_days (date, business_status) values (aone_today() + 41, 'cancelled');
+  st := aone_day_state(aone_today() + 41);
+  assert (st->'business'->>'status') = 'cancelled', '19-12 手の設定が予定に上書きされる';
+
+  -- 月ダイジェストにも 2 軸で出る
+  update aone_business_days set business_status = 'open', surface_status = 'drying'
+  where date = aone_today() + 40;
+  assert (select x->>'surface' from jsonb_array_elements(
+            aone_month_state(extract(year from aone_today() + 40)::int,
+                             extract(month from aone_today() + 40)::int)) x
+          where x->>'date' = to_char(aone_today() + 40, 'YYYY-MM-DD')) = 'drying',
+    '19-13 月ダイジェストに路面が出ない';
 
   raise notice 'ALL TESTS PASSED';
 end;
