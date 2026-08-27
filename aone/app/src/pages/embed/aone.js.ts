@@ -120,6 +120,13 @@ const WIDGET_JS = String.raw`
     '.aone-msess>b{flex:0 0 1.9em;color:var(--aone-ink3)}',
     '.aone-msess-items{flex:1;min-width:0}',
     '.aone-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}',
+    // レンタル / スポーツ走行 / 両方 の切り替え (/schedule と同じ見た目)
+    '.aone-modes{display:inline-flex;border:1px solid var(--aone-line);border-radius:99px;',
+    '  overflow:hidden;background:#fff;margin-bottom:8px}',
+    '.aone-mode{padding:6px 16px;font-size:.9em;font-weight:700;border:0;background:none;',
+    '  cursor:pointer;color:var(--aone-ink3);font-family:inherit;line-height:1.4}',
+    '.aone-mode+.aone-mode{border-left:1px solid var(--aone-line)}',
+    '.aone-mode.on{background:var(--aone-ink);color:#fff}',
     '.aone-nav button{border:1px solid var(--aone-line);background:#fff;border-radius:99px;',
     '  padding:5px 14px;font-weight:700;cursor:pointer;font-size:.9em;font-family:inherit;',
     '  color:var(--aone-ink)}',
@@ -260,10 +267,12 @@ const WIDGET_JS = String.raw`
   }
 
   // 1 つの時間帯 (AM / PM) の中身。予約が先、受付状況が後。
-  function sessionBlock(label, cats, fallbackOpen, books, closedDay) {
+  function sessionBlock(label, cats, fallbackOpen, books, closedDay, mode) {
     // 「13:00 RP」と「株)ふーぷーパートナー 様」を 2 行に分ける。
     // 1 行に続けると、狭いセルではどこまでが時刻でどこからが名前か読みづらい。
-    var items = (books || []).map(function (b) {
+    // レンタル (RP・貸切) とスポーツ走行の ○✕ を、モードで出し分ける。
+    // 公開スケジュール (/schedule) と同じ切り替え
+    var items = (mode === 'sport' ? [] : (books || [])).map(function (b) {
       var head = b.kind === 'rp'
         ? b.time + ' RP'
         : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
@@ -273,7 +282,7 @@ const WIDGET_JS = String.raw`
         + (name ? '<span class="aone-l2 aone-clamp">' + esc(name) + '</span>' : '')
         + '</div>';
     });
-    if (!closedDay) {
+    if (!closedDay && mode !== 'rental') {
       var mark = sessionLine(cats, fallbackOpen);
       if (mark) items.push(mark);
     }
@@ -282,7 +291,32 @@ const WIDGET_JS = String.raw`
       items.join('') + '</div></div>';
   }
 
+  /** モードごとの予約の入口。/schedule と同じ振り分け */
+  function reserveLink(d, mode) {
+    if (mode === 'rental') return d.links.rp || (d.links.reserve + '/rp');
+    if (mode === 'sport') return d.links.sport || (d.links.reserve + '/sport');
+    return d.links.reserve;
+  }
+
+  var MODES = [['rental', 'レンタル'], ['sport', 'スポーツ走行'], ['both', '両方']];
+  var MODE_KEY = 'aone-cal-mode';
+
+  /** 見ているモード。前に選んだものを覚えておく (毎回押し直させない) */
+  function readMode(el) {
+    var attr = el.getAttribute('data-mode');
+    if (attr && MODES.some(function (m) { return m[0] === attr; })) return attr;
+    try {
+      var v = localStorage.getItem(MODE_KEY);
+      if (v && MODES.some(function (m) { return m[0] === v; })) return v;
+    } catch (e) { /* 保存が使えなくても既定で動く */ }
+    return 'both';
+  }
+  function saveMode(v) {
+    try { localStorage.setItem(MODE_KEY, v); } catch (e) { /* 保存できなくても続行 */ }
+  }
+
   function renderMonth(el, d) {
+    var mode = readMode(el);
     // 月曜はじまり (公開スケジュール・管理カレンダーと揃える)
     var WD = ['月', '火', '水', '木', '金', '土', '日'];
     // getUTCDay() 順 (日=0)。スマホの縦長表示で日付の横に出す
@@ -291,6 +325,15 @@ const WIDGET_JS = String.raw`
       + '<button type="button" data-mv="prev">← 前の月</button>'
       + '<b>' + d.year + '年' + d.month + '月</b>'
       + '<button type="button" data-mv="next">次の月 →</button></div>';
+
+    // レンタルで遊ぶ人とマイマシンを持ち込む人ではっきり分かれるので、
+    // 見たいほうだけに絞れるようにする (/schedule と同じ)
+    html += '<div class="aone-modes">';
+    MODES.forEach(function (m) {
+      html += '<button type="button" class="aone-mode' + (m[0] === mode ? ' on' : '') + '"'
+        + ' data-mode="' + m[0] + '">' + m[1] + '</button>';
+    });
+    html += '</div>';
 
     html += '<table class="aone-cal"><thead><tr>';
     WD.forEach(function (w, i) {
@@ -319,7 +362,7 @@ const WIDGET_JS = String.raw`
       var title = '参加申込へ';
       if (!href && day.date >= d.today
           && day.business !== 'cancelled' && day.business !== 'closed') {
-        href = d.links.reserve + '?date=' + day.date;
+        href = reserveLink(d, mode) + '?date=' + day.date;
         title = 'この日のご予約へ';
       }
       if (day.entry_url) cls.push('entry');
@@ -358,9 +401,9 @@ const WIDGET_JS = String.raw`
         var closedDay = day.business === 'cancelled' || day.business === 'closed';
         html += '<div class="aone-ss">'
           + sessionBlock('AM', day.am_categories, day.am_open,
-              books.filter(function (b) { return !isPmBooking(b.time); }), closedDay)
+              books.filter(function (b) { return !isPmBooking(b.time); }), closedDay, mode)
           + sessionBlock('PM', day.pm_categories, day.pm_open,
-              books.filter(function (b) { return isPmBooking(b.time); }), closedDay)
+              books.filter(function (b) { return isPmBooking(b.time); }), closedDay, mode)
           + '</div>';
       }
       html += '</div>' + (href ? '</a></td>' : '</div></td>');
@@ -368,11 +411,26 @@ const WIDGET_JS = String.raw`
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
+    // モードによって出ているものが違うので、注記も合わせる
+    // (レンタルでは ○ が出ないのに「○ = 受付可」と書くと通じない)
+    var note = mode === 'rental'
+      ? 'すでにご予約が入っているレースパック・貸切を出しています。'
+      : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';
     html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
-      + '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。'
-      + '<a href="' + d.links.reserve + '" style="font-weight:800">ご予約はこちら →</a></p>';
+      + note
+      + '<a href="' + reserveLink(d, mode) + '" style="font-weight:800">ご予約はこちら →</a></p>';
 
     el.innerHTML = html;
+
+    Array.prototype.forEach.call(el.querySelectorAll('[data-mode]'), function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-mode');
+        saveMode(v);
+        el.setAttribute('data-mode', v);
+        // データは取得済みなので、そのまま描き直すだけでよい
+        renderMonth(el, d);
+      });
+    });
 
     Array.prototype.forEach.call(el.querySelectorAll('[data-mv]'), function (b) {
       b.addEventListener('click', function () {
