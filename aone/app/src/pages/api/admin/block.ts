@@ -81,6 +81,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     title,
     scope,
     category_code: scope === 'category' ? str(body?.category_code) ?? null : null,
+    // 「指定したカテゴリーだけ走れる」で許すカテゴリー。
+    // 空のまま保存すると何も止まらない (登録し忘れで全部止まる事故を避ける)
+    allow_categories: scope === 'only_category'
+      ? (str(body?.allow_categories) ?? '').split(/[,、]/).map((c) => c.trim()).filter(Boolean)
+      : [],
     start_time: str(body?.start_time) ?? null,
     end_time: str(body?.end_time) ?? null,
     blocks_sport: body?.blocks_sport !== false,

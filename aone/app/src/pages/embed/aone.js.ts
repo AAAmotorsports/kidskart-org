@@ -299,9 +299,15 @@ const WIDGET_JS = String.raw`
   }
 
   var MODES = [['rental', 'レンタル'], ['sport', 'スポーツ走行'], ['both', '両方']];
+
   var MODE_KEY = 'aone-cal-mode';
 
-  /** 見ているモード。前に選んだものを覚えておく (毎回押し直させない) */
+  /**
+   * 見ているモード。前に選んだものをブラウザに覚えさせる (2026-08 オーナー確認)。
+   *
+   * ページ側で data-mode を書いてあればそれが優先。
+   * 覚えられない環境 (プライベートウィンドウ等) でも「両方」で普通に動く。
+   */
   function readMode(el) {
     var attr = el.getAttribute('data-mode');
     if (attr && MODES.some(function (m) { return m[0] === attr; })) return attr;
@@ -413,9 +419,13 @@ const WIDGET_JS = String.raw`
     html += '</tr></tbody></table>';
     // モードによって出ているものが違うので、注記も合わせる
     // (レンタルでは ○ が出ないのに「○ = 受付可」と書くと通じない)
+    // 選んだモードは次に開いたときも覚えている。「スポーツ走行」のまま
+    // 開き直すとレースパック・貸切が出ないので、その場で戻り方を書いておく
     var note = mode === 'rental'
       ? 'すでにご予約が入っているレースパック・貸切を出しています。'
-      : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';
+      : mode === 'sport'
+        ? '○ = 受付可。レースパック・貸切のご予約は「両方」を押すと出ます。'
+        : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';
     html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
       + note
       + '<a href="' + reserveLink(d, mode) + '" style="font-weight:800">ご予約はこちら →</a></p>';
