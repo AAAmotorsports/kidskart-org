@@ -1,0 +1,264 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { openEvents } from '@lib/queries';
+import { jaDate, entryPriceLabel } from '@lib/domain';
+
+export const prerender = false;
+
+// イベントの参加申込 (2026-08 オーナー指示)。
+//
+// 走行の予約とは別物なので入口も台帳も分ける:
+//   * 聞く項目が違う (チーム名・ゼッケン・参加クラス・フレームメーカー)
+//   * 走行枠を消費しない (イベント日は予定が終日止めている)
+//
+// 開催日はカレンダーに登録した予定そのもの。ここに出るのは
+// /admin/calendar で「参加申込を受け付ける」にしたものだけ (aone_open_events)。
+const env = envFrom(Astro.locals);
+const events = await openEvents(env);
+
+// ?event=<id> で最初から 1 つ選んだ状態にできる (カレンダーから飛んで来たとき)
+const picked = Astro.url.searchParams.get('event') ?? '';
+const tel = env.PUBLIC_SITE_TEL || '092-919-7186';
+---
+<Base
+  title="イベント参加申込 | A-ONE サーキット"
+  description="A-ONE サーキットのレース・イベントの参加申込。耐久・スプリント・シリーズ戦の受付中一覧から選んでお申し込みいただけます。">
+  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
+  <h1>イベント参加申込</h1>
+
+  {events.length === 0 ? (
+    <div class="card">
+      <p>ただいま参加申込を受け付けているイベントはありません。</p>
+      <p class="small muted">
+        開催予定は <a href="/schedule">スケジュール</a> でご確認ください。
+        お問い合わせはお電話 ({tel}) でも承ります。
+      </p>
+    </div>
+  ) : (
+    <>
+      <p class="small muted">
+        お申し込みになるイベントをお選びください。
+        受付後、A-ONE より参加のご案内をお送りします。
+      </p>
+
+      <div class="events">
+        {events.map((e) => (
+          <label class="ev-card" data-ev={e.id}>
+            <input type="radio" name="ev" value={e.id} checked={picked === e.id} />
+            <div class="ev-body">
+              <div class="ev-date">{jaDate(e.date)}</div>
+              <div class="ev-title">{e.title}</div>
+              <div class="ev-meta">
+                <span class="badge">{entryPriceLabel(e.price, e.unit) ?? '参加費はお問い合わせください'}</span>
+                <span class="tiny muted">申込締切 {jaDate(e.deadline)}</span>
+              </div>
+              {e.note && <p class="tiny muted ev-note">{e.note}</p>}
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <form id="form" class="card" novalidate>
+        <h2 id="form-title">お申込内容</h2>
+
+        <div class="field">
+          <label for="team">チーム名 <span class="req">必須</span></label>
+          <input type="text" id="team" maxlength="80" />
+          <div class="tiny muted" id="team-hint"></div>
+        </div>
+
+        <!-- シリーズ戦だけの項目 -->
+        <div id="wrap-series" hidden>
+          <div class="two">
+            <div class="field">
+              <label for="frame">フレームメーカー</label>
+              <input type="text" id="frame" maxlength="40" placeholder="例: トニーカート" />
+            </div>
+            <div class="field">
+              <label for="number">希望ゼッケン</label>
+              <input type="text" id="number" maxlength="10" placeholder="例: 7" />
+            </div>
+          </div>
+          <div class="field" id="wrap-class">
+            <label>参加クラス <span class="req">必須</span></label>
+            <div class="choice" id="classes"></div>
+          </div>
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <label for="name" id="name-label">お名前 <span class="req">必須</span></label>
+            <input type="text" id="name" maxlength="60" placeholder="山田 太郎" />
+          </div>
+          <div class="field">
+            <label for="kana">ふりがな</label>
+            <input type="text" id="kana" maxlength="60" placeholder="やまだ たろう" />
+          </div>
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <label for="email">メールアドレス <span class="req">必須</span></label>
+            <input type="email" id="email" maxlength="120" placeholder="example@a-one.com" />
+          </div>
+          <div class="field">
+            <label for="phone">お電話番号 <span class="req">必須</span></label>
+            <input type="tel" id="phone" maxlength="20" placeholder="090-1234-5678" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="note">ご連絡事項 (任意)</label>
+          <textarea id="note" rows="2" maxlength="500"
+                    placeholder="同乗ドライバーのお名前、レンタル希望など"></textarea>
+        </div>
+
+        <div class="rules" id="rules">
+          <label class="agree">
+            <input type="checkbox" id="agreed" />
+            <span id="agree-text">特別規則書・車輌規則を確認し、同意します <span class="req">必須</span></span>
+          </label>
+          <div class="tiny" id="rules-links"></div>
+        </div>
+
+        <div id="msg" class="notice" hidden></div>
+        <button class="btn primary" id="send" type="button">この内容で申し込む</button>
+        <p class="tiny muted" style="margin:.6rem 0 0">
+          お申し込みの時点では参加は確定しません。A-ONE からのご案内をもって確定とさせていただきます。
+        </p>
+      </form>
+    </>
+  )}
+</Base>
+
+<style>
+  .events{display:flex;flex-direction:column;gap:.6rem;margin:1rem 0 1.4rem}
+  .ev-card{display:flex;gap:.7rem;align-items:flex-start;cursor:pointer;
+    border:1px solid var(--line);border-radius:10px;padding:.8rem .9rem;background:var(--bg-1);
+    transition:border-color .12s ease,box-shadow .12s ease}
+  .ev-card:hover{border-color:var(--ink-4)}
+  .ev-card:has(input:checked){border-color:var(--red);box-shadow:0 0 0 2px rgba(215,38,61,.14)}
+  .ev-card input{margin-top:.3rem;accent-color:var(--red);flex:none}
+  .ev-body{min-width:0;display:flex;flex-direction:column;gap:.15rem}
+  .ev-date{font-size:.85rem;color:var(--ink-3);font-weight:700}
+  .ev-title{font-weight:800;font-size:1.05rem;line-height:1.4}
+  .ev-meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.15rem}
+  .ev-note{margin:.2rem 0 0}
+  .req{color:var(--red);font-size:.78em;font-weight:700;margin-left:.2rem}
+  .rules{border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem;background:var(--bg-2);
+    margin:.4rem 0 1rem}
+  .agree{display:flex;gap:.6rem;align-items:flex-start;cursor:pointer;font-weight:700}
+  .agree input{margin-top:.35rem;width:1.05rem;height:1.05rem;accent-color:var(--red);flex:none}
+  #rules-links{margin-top:.4rem;display:flex;gap:.8rem;flex-wrap:wrap}
+</style>
+
+<script is:inline define:vars={{ events, picked }}>
+  const $ = (id) => document.getElementById(id);
+  const form = $('form');
+  if (form) {
+    const byId = {};
+    events.forEach(function (e) { byId[e.id] = e; });
+
+    function current() {
+      const on = document.querySelector('input[name=ev]:checked');
+      return on ? byId[on.value] : null;
+    }
+
+    // 選んだイベントの様式にあわせて、聞く項目と文言を変える
+    function sync() {
+      const e = current();
+      form.hidden = !e;
+      if (!e) return;
+
+      const isSeries = e.entry_type === 'series';
+      const person = e.entry_type === 'endurance' ? '代表者' : '参加者';
+
+      $('form-title').textContent = e.title + ' のお申込';
+      $('name-label').innerHTML = person + 'のお名前 <span class="req">必須</span>';
+      $('team-hint').textContent = e.entry_type === 'endurance'
+        ? '走行されるチームのお名前をご記入ください。'
+        : 'お一人でのご参加でも、チーム名 (所属・ショップ名など) をご記入ください。';
+
+      $('wrap-series').hidden = !isSeries;
+      const classes = isSeries ? (e.classes || []) : [];
+      $('wrap-class').hidden = classes.length === 0;
+      $('classes').innerHTML = classes.map(function (c, i) {
+        return '<label><input type="radio" name="cls" value="' + c + '"' +
+          (i === 0 ? ' checked' : '') + ' /> ' + c + '</label>';
+      }).join('');
+
+      // 規則書のリンクはイベントごとに登録されたものだけ出す
+      const links = [];
+      if (e.rules_url) links.push(['特別規則書', e.rules_url]);
+      if (e.vehicle_rules_url) links.push(['車輌規則', e.vehicle_rules_url]);
+      $('rules-links').innerHTML = links.map(function (l) {
+        return '<a href="' + l[1] + '" target="_blank" rel="noopener">' + l[0] + 'を読む →</a>';
+      }).join('');
+
+      $('msg').hidden = true;
+    }
+
+    document.querySelectorAll('input[name=ev]').forEach(function (b) {
+      b.addEventListener('change', sync);
+    });
+    // 1 件しかないときは選ぶ手間をなくす
+    if (!picked && events.length === 1) {
+      document.querySelector('input[name=ev]').checked = true;
+    }
+    sync();
+
+    // 入力し直したらエラー表示を消す (入れたのに赤いままだと直ったか分からない)
+    form.addEventListener('input', function () { $('msg').hidden = true; });
+
+    $('send').addEventListener('click', async function () {
+      const e = current();
+      const msg = $('msg');
+      const btn = $('send');
+      const fail = function (text) {
+        msg.hidden = false;
+        msg.className = 'notice ng';
+        msg.textContent = text;
+        btn.disabled = false;
+        btn.textContent = 'この内容で申し込む';
+      };
+
+      if (!e) return fail('イベントをお選びください。');
+      const cls = document.querySelector('input[name=cls]:checked');
+      const payload = {
+        block_id: e.id,
+        team_name: $('team').value.trim(),
+        frame_maker: $('frame').value.trim(),
+        number_wish: $('number').value.trim(),
+        race_class: cls ? cls.value : '',
+        note: $('note').value.trim(),
+        agreed: $('agreed').checked,
+        name: $('name').value.trim(),
+        kana: $('kana').value.trim(),
+        email: $('email').value.trim(),
+        phone: $('phone').value.trim(),
+      };
+
+      if (!payload.team_name) return fail('チーム名を入力してください。');
+      if (!payload.name) return fail('お名前を入力してください。');
+      if (!payload.email || payload.email.indexOf('@') < 0) return fail('メールアドレスを入力してください。');
+      if (!payload.phone) return fail('お電話番号を入力してください。');
+      if (!payload.agreed) return fail('特別規則書・車輌規則への同意が必要です。');
+
+      btn.disabled = true;
+      btn.textContent = '送信中…';
+      try {
+        const res = await fetch('/api/reserve/event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'お申し込みできませんでした');
+        location.href = '/reserve/event/done?n=' + encodeURIComponent(data.entry_number);
+      } catch (err) {
+        fail(err.message);
+      }
+    });
+  }
+</script>

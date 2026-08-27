@@ -603,6 +603,128 @@ begin
           where x->>'date' = to_char(aone_today() + 40, 'YYYY-MM-DD')) = 'drying',
     '19-13 月ダイジェストに路面が出ない';
 
+  -- =========================================================================
+  raise notice '--- 20. イベントの参加申込';
+  -- =========================================================================
+  declare
+    v_ev1 uuid; v_ev2 uuid; v_ev3 uuid; v_entry jsonb;
+  begin
+    -- 耐久 (チーム単位) / スプリント (人単位) / シリーズ戦 (クラスあり)
+    insert into aone_blocks (date, kind, title, scope, entry_open, entry_type,
+                             entry_price, entry_unit, entry_rules_url)
+    values (aone_today() + 60, 'event', '90分耐久', 'all', true, 'endurance',
+            20000, 'team', 'https://example.com/rules.pdf')
+    returning id into v_ev1;
+
+    insert into aone_blocks (date, kind, title, scope, entry_open, entry_type,
+                             entry_price, entry_unit)
+    values (aone_today() + 61, 'event', 'スプリント', 'all', true, 'sprint', 7000, 'person')
+    returning id into v_ev2;
+
+    insert into aone_blocks (date, kind, title, scope, entry_open, entry_type,
+                             entry_unit, entry_classes)
+    values (aone_today() + 62, 'race', 'RMC エーワンシリーズ', 'all', true, 'series',
+            'person', array['Light','Junior','Mini','Micro','ビギナー','SS'])
+    returning id into v_ev3;
+
+    -- 受付中の一覧に 3 件とも出る
+    assert jsonb_array_length(aone_open_events()) >= 3, '20-1 受付中イベントが出ない';
+
+    -- 耐久: チーム名 + 代表者。金額はイベントの設定がそのまま入る
+    v_entry := aone_create_event_entry(jsonb_build_object(
+      'block_id', v_ev1, 'team_name', 'チーム A-ONE',
+      'contact', jsonb_build_object('name','今井 太郎','kana','イマイ タロウ',
+                                    'email','imai@example.com','phone','09011112222'),
+      'agreed', true));
+    assert (v_entry->>'ok')::boolean, '20-2 耐久の申込ができない: ' || v_entry::text;
+    assert (v_entry->>'amount') = '20000', '20-3 耐久の金額が違う: ' || v_entry::text;
+    assert (v_entry->>'entry_number') like 'E%', '20-4 申込番号の形式が違う';
+    assert (select agreed_at from aone_event_entries where id = (v_entry->>'id')::uuid) is not null,
+      '20-5 同意の記録が残らない';
+
+    -- 顧客が名寄せされる (同じ電話番号で走行予約を入れると同じ顧客になる)
+    r := t_book(jsonb_build_object('kind','rp','date', aone_today()+63, 'start_time','10:00',
+                                   'party_size',3,'who','今井 太郎','phone','09011112222'));
+    assert (select customer_id from aone_reservations where id = (r->>'id')::uuid)
+         = (select customer_id from aone_event_entries where id = (v_entry->>'id')::uuid),
+      '20-6 エントリーと予約で顧客が別になる';
+
+    -- 金額を出さないイベント (RMC) は amount が null で受け付けられる
+    v_entry := aone_create_event_entry(jsonb_build_object(
+      'block_id', v_ev3, 'team_name','A-ONE レーシング', 'race_class','Junior',
+      'frame_maker','トニーカート', 'number_wish','7',
+      'contact', jsonb_build_object('name','山田 花子','email','y@example.com','phone','09033334444'),
+      'agreed', true));
+    assert (v_entry->>'ok')::boolean, '20-7 シリーズ戦の申込ができない: ' || v_entry::text;
+    assert (v_entry->'amount') = 'null'::jsonb, '20-8 金額なしのはずが入っている: ' || v_entry::text;
+    assert (select race_class from aone_event_entries where id = (v_entry->>'id')::uuid) = 'Junior',
+      '20-9 参加クラスが保存されない';
+
+    -- クラスの選択肢があるのに選んでいないと断る
+    begin
+      perform aone_create_event_entry(jsonb_build_object(
+        'block_id', v_ev3, 'team_name','T',
+        'contact', jsonb_build_object('name','A','email','a@example.com','phone','090')));
+      raise exception '20-10 参加クラス未選択が通ってしまった';
+    exception when sqlstate 'AONE1' then null;
+    end;
+
+    -- チーム名は 3 種別とも必須
+    begin
+      perform aone_create_event_entry(jsonb_build_object(
+        'block_id', v_ev2,
+        'contact', jsonb_build_object('name','A','email','a@example.com','phone','090')));
+      raise exception '20-11 チーム名なしが通ってしまった';
+    exception when sqlstate 'AONE1' then null;
+    end;
+
+    -- メールは必須 (連絡が取れないと参加案内を送れない)
+    begin
+      perform aone_create_event_entry(jsonb_build_object(
+        'block_id', v_ev2, 'team_name','T',
+        'contact', jsonb_build_object('name','A','phone','090')));
+      raise exception '20-12 メールなしが通ってしまった';
+    exception when sqlstate 'AONE1' then null;
+    end;
+
+    -- 受付を止めたイベントには申し込めない
+    update aone_blocks set entry_open = false where id = v_ev2;
+    begin
+      perform aone_create_event_entry(jsonb_build_object(
+        'block_id', v_ev2, 'team_name','T',
+        'contact', jsonb_build_object('name','A','email','a@example.com','phone','090')));
+      raise exception '20-13 受付停止中のイベントに申し込めてしまった';
+    exception when sqlstate 'AONE1' then null;
+    end;
+    assert (select count(*) from jsonb_array_elements(aone_open_events()) x
+             where (x->>'id')::uuid = v_ev2) = 0, '20-14 受付停止が一覧から消えない';
+
+    -- 締切を過ぎたら断る。ただし管理者の代理入力 (forced) は通す
+    update aone_blocks set entry_open = true, entry_deadline = aone_today() - 1 where id = v_ev2;
+    begin
+      perform aone_create_event_entry(jsonb_build_object(
+        'block_id', v_ev2, 'team_name','T',
+        'contact', jsonb_build_object('name','A','email','a@example.com','phone','090')));
+      raise exception '20-15 締切後に申し込めてしまった';
+    exception when sqlstate 'AONE1' then null;
+    end;
+    v_entry := aone_create_event_entry(jsonb_build_object(
+      'block_id', v_ev2, 'team_name','T', 'forced', true, 'source','phone',
+      'contact', jsonb_build_object('name','A','email','a@example.com','phone','090')));
+    assert (v_entry->>'ok')::boolean, '20-16 締切後の代理入力ができない';
+
+    -- 取り消しても記録は残る
+    v_entry := aone_cancel_event_entry(jsonb_build_object('id', v_entry->>'id', 'reason','都合により'));
+    assert (v_entry->>'status') = 'cancelled', '20-17 申込を取り消せない';
+
+    -- イベント (予定) を消しても申込の記録は残る
+    delete from aone_blocks where id = v_ev1;
+    assert (select count(*) from aone_event_entries where event_title = '90分耐久') = 1,
+      '20-18 予定を消すと申込まで消える';
+    assert (select block_id from aone_event_entries where event_title = '90分耐久') is null,
+      '20-19 消えた予定への参照が残っている';
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

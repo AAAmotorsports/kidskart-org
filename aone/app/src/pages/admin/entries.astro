@@ -1,0 +1,237 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { eventEntries, openEvents } from '@lib/queries';
+import {
+  jaDate, jaDateTime, todayJst, yen, nameWithHonorific,
+  ENTRY_TYPE_LABELS, ENTRY_STATUS_LABELS, entryPersonLabel, entryPriceLabel, SOURCE_LABELS,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// イベントの参加申込 (エントリー) 一覧。
+//
+// 走行の予約とは別台帳なので画面も分ける。ここで見たいのは
+// 「どのイベントに誰が何人申し込んでいるか」「入金は済んでいるか」で、
+// 走行の空き状況とは関係がない。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const date = Astro.url.searchParams.get('date') ?? '';
+const blockId = Astro.url.searchParams.get('event') ?? '';
+
+const [entries, events] = await Promise.all([
+  eventEntries(env, { date: date || undefined, blockId: blockId || undefined }),
+  openEvents(env),
+]);
+
+const live = entries.filter((e) => e.status !== 'cancelled');
+const dead = entries.filter((e) => e.status === 'cancelled');
+const total = live.reduce((a, e) => a + (e.amount ?? 0), 0);
+const unpaid = live.filter((e) => !e.is_paid).length;
+
+// 開催日ごとにまとめる (同じ日に複数のイベントがあることは基本ないが、あっても崩れないように)
+const byEvent = new Map<string, typeof live>();
+for (const e of live) {
+  const key = `${e.date}|${e.event_title}`;
+  if (!byEvent.has(key)) byEvent.set(key, []);
+  byEvent.get(key)!.push(e);
+}
+
+const filterLabel = date ? jaDate(date) : blockId ? '指定イベント' : '今日以降すべて';
+---
+<Base title="参加申込 | A-ONE 管理" admin wide>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">🎫 参加申込</h1>
+    <div class="row">
+      <a class="btn sm" href="/admin/entries">今日以降すべて</a>
+      <a class="btn sm ghost" href="/admin/calendar">カレンダー</a>
+      <a class="btn sm dark" href="/api/admin/export?type=entries">全件を CSV</a>
+      <a class="btn sm ghost" href="/admin">管理トップ</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="n">{live.length}</div><div class="l">申込 ({filterLabel})</div></div>
+    <div class="kpi"><div class="n">{yen(total)}</div><div class="l">参加費 合計</div></div>
+    <div class="kpi"><div class="n">{unpaid}</div><div class="l">未入金</div></div>
+    <div class="kpi"><div class="n">{events.length}</div><div class="l">受付中のイベント</div></div>
+  </div>
+
+  {events.length > 0 && (
+    <div class="card">
+      <h2><span class="ic">📣</span> 受付中のイベント</h2>
+      <div class="open-list">
+        {events.map((e) => (
+          <a class="open-ev" href={`/admin/entries?event=${e.id}`}>
+            <div>
+              <div class="tiny muted">{jaDate(e.date)} ・ 締切 {jaDate(e.deadline)}</div>
+              <div class="ev-t">{e.title}</div>
+              <div class="tiny muted">
+                {ENTRY_TYPE_LABELS[e.entry_type] ?? e.entry_type}
+                {' ／ '}
+                {entryPriceLabel(e.price, e.unit) ?? '参加費 未設定 (要問合せ表示)'}
+              </div>
+            </div>
+            <div class="cnt"><strong>{e.entries}</strong><span class="tiny"> 件</span></div>
+          </a>
+        ))}
+      </div>
+      <p class="tiny muted" style="margin:.6rem 0 0">
+        受付の開始・締切・参加費は <a href="/admin/calendar">カレンダー</a> で予定を登録するときに設定します。
+      </p>
+    </div>
+  )}
+
+  {live.length === 0 && (
+    <div class="card"><p class="muted small">この条件の申込はまだありません。</p></div>
+  )}
+
+  {[...byEvent.entries()].map(([key, list]) => {
+    const [d, title] = key.split('|');
+    const type = list[0].entry_type;
+    return (
+      <div class="card">
+        <div class="spread" style="margin-bottom:.5rem">
+          <h2 style="margin:0">{title}</h2>
+          <span class="tiny muted">
+            {jaDate(d)} ／ {ENTRY_TYPE_LABELS[type] ?? type} ／ {list.length} 件
+          </span>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>申込番号</th>
+                <th>チーム名</th>
+                <th>{entryPersonLabel(type)}</th>
+                {type === 'series' && <th>クラス</th>}
+                {type === 'series' && <th>ゼッケン</th>}
+                {type === 'series' && <th>フレーム</th>}
+                <th>連絡先</th>
+                <th>参加費</th>
+                <th>状態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((e) => (
+                <tr data-id={e.id}>
+                  <td class="mono tiny">
+                    {e.entry_number}
+                    <div class="muted">{jaDateTime(e.created_at)} {SOURCE_LABELS[e.source] ?? e.source}</div>
+                  </td>
+                  <td><strong>{e.team_name ?? '—'}</strong></td>
+                  <td>
+                    {nameWithHonorific(e.contact_name)}
+                    {e.contact_kana && <div class="tiny muted">{e.contact_kana}</div>}
+                  </td>
+                  {type === 'series' && <td>{e.race_class ?? '—'}</td>}
+                  {type === 'series' && <td>{e.number_wish ?? '—'}</td>}
+                  {type === 'series' && <td class="tiny">{e.frame_maker ?? '—'}</td>}
+                  <td class="tiny">
+                    <a href={`tel:${e.contact_phone.replace(/-/g, '')}`}>{e.contact_phone}</a>
+                    <div class="muted">{e.contact_email}</div>
+                  </td>
+                  <td class="mono">{e.amount != null ? yen(e.amount) : '要確認'}</td>
+                  <td>
+                    <span class:list={['badge', e.status === 'confirmed' ? 'ok' : 'warn']}>
+                      {ENTRY_STATUS_LABELS[e.status] ?? e.status}
+                    </span>
+                    {e.is_paid && <div class="badge ok tiny">入金済</div>}
+                    {!e.agreed_at && <div class="badge ng tiny">規約未同意</div>}
+                  </td>
+                  <td class="acts">
+                    {e.status !== 'confirmed' && (
+                      <button class="btn sm primary act-entry" data-id={e.id} data-act="confirm">確定</button>
+                    )}
+                    <button class="btn sm act-entry" data-id={e.id} data-act="paid"
+                            data-paid={String(!e.is_paid)}>
+                      {e.is_paid ? '未入金に戻す' : '入金済にする'}
+                    </button>
+                    <button class="btn sm ghost act-entry" data-id={e.id} data-act="cancel">取消</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {list.some((e) => e.note) && (
+          <div class="notes">
+            {list.filter((e) => e.note).map((e) => (
+              <div class="tiny"><strong>{e.team_name}</strong> — {e.note}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  })}
+
+  {dead.length > 0 && (
+    <details class="card">
+      <summary class="small muted">取り消された申込 {dead.length} 件</summary>
+      {dead.map((e) => (
+        <div class="tiny muted" style="padding:.2rem 0">
+          {e.entry_number} — {e.event_title} / {e.team_name} / {nameWithHonorific(e.contact_name)}
+          {e.cancel_reason ? ` (${e.cancel_reason})` : ''}
+        </div>
+      ))}
+    </details>
+  )}
+</Base>
+
+<style>
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.6rem;margin-bottom:1rem}
+  .kpi{background:var(--bg-1);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem}
+  .kpi .n{font-size:1.5rem;font-weight:800;line-height:1.2}
+  .kpi .l{font-size:.78rem;color:var(--ink-3)}
+  .open-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:.5rem}
+  .open-ev{display:flex;justify-content:space-between;align-items:center;gap:.8rem;
+    border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem;text-decoration:none;color:inherit}
+  .open-ev:hover{border-color:var(--red)}
+  .ev-t{font-weight:800}
+  .cnt{font-size:1.4rem;font-weight:800;white-space:nowrap}
+  .tablewrap{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:52rem;font-size:.9rem}
+  th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:.75rem;color:var(--ink-3);white-space:nowrap;background:var(--bg-2)}
+  .mono{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .acts{display:flex;gap:.3rem;flex-wrap:wrap}
+  .notes{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line);
+    display:flex;flex-direction:column;gap:.2rem}
+</style>
+
+<script is:inline>
+  async function post(body) {
+    const res = await fetch('/api/admin/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '失敗しました');
+    return data;
+  }
+
+  document.querySelectorAll('.act-entry').forEach((b) => b.addEventListener('click', async () => {
+    const act = b.dataset.act;
+    let payload = { id: b.dataset.id };
+    if (act === 'confirm') {
+      payload.status = 'confirmed';
+    } else if (act === 'paid') {
+      payload.is_paid = b.dataset.paid === 'true';
+    } else if (act === 'cancel') {
+      const reason = prompt('取り消しの理由 (任意)');
+      if (reason === null) return;
+      payload.cancel = true;
+      payload.reason = reason;
+    }
+    b.disabled = true;
+    try {
+      await post(payload);
+      location.reload();
+    } catch (e) {
+      alert(e.message);
+      b.disabled = false;
+    }
+  }));
+</script>

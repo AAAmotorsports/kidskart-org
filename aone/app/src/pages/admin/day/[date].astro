@@ -56,6 +56,7 @@ const surface = state?.surface.status ?? '';
       <a class="btn sm" href={`/admin/day/${today}`}>今日</a>
       <a class="btn sm" href={`/admin/day/${addDays(date, 1)}`}>翌日 →</a>
       <a class="btn sm" href={`/admin/sheet?date=${date}`}>受付シート</a>
+      <a class="btn sm ghost" href={`/admin/entries?date=${date}`}>参加申込</a>
       <a class="btn sm ghost" href={`/admin/calendar?ym=${date.slice(0, 7)}`}>カレンダー</a>
     </div>
   </div>

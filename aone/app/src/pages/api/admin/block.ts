@@ -40,6 +40,41 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!title) return json({ error: '予定名を入力してください' }, 400);
 
   const scope = str(body?.scope) ?? 'all';
+
+  // 参加申込の受付設定 (0022)。チェックが外れていれば全部 null に倒す。
+  // 中途半端に残しておくと、あとで受付を開けたときに古い金額で出てしまう。
+  const entryOpen = body?.entry_open === true;
+  const ENTRY_TYPES = ['endurance', 'sprint', 'series'];
+  const entryType = str(body?.entry_type);
+  if (entryOpen && (!entryType || !ENTRY_TYPES.includes(entryType))) {
+    return json({ error: '申込の様式が不正です' }, 400);
+  }
+  const priceRaw = str(body?.entry_price);
+  const entryPrice = priceRaw && Number.isFinite(Number(priceRaw)) ? Number(priceRaw) : null;
+  const classes = (str(body?.entry_classes) ?? '')
+    .split(/[,、]/).map((c) => c.trim()).filter(Boolean);
+
+  const entry = entryOpen ? {
+    entry_open: true,
+    entry_type: entryType,
+    entry_price: entryPrice,
+    entry_unit: str(body?.entry_unit) === 'team' ? 'team' : 'person',
+    entry_deadline: str(body?.entry_deadline) ?? null,
+    entry_classes: entryType === 'series' ? classes : [],
+    entry_rules_url: str(body?.entry_rules_url) ?? null,
+    entry_vehicle_rules_url: str(body?.entry_vehicle_rules_url) ?? null,
+    entry_note: str(body?.entry_note) ?? null,
+  } : {
+    entry_open: false,
+    entry_type: null,
+    entry_price: null,
+    entry_deadline: null,
+    entry_classes: [],
+    entry_rules_url: null,
+    entry_vehicle_rules_url: null,
+    entry_note: null,
+  };
+
   const rows = dates.map((date) => ({
     date,
     kind: str(body?.kind) ?? 'event',
@@ -55,6 +90,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     public_label: str(body?.public_label) ?? null,
     memo: str(body?.memo) ?? null,
     created_by: str(body?.actor) ?? 'admin',
+    ...entry,
   }));
 
   const { data, error } = await supabase.from('aone_blocks').insert(rows).select('id,date');

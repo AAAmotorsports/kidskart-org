@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
-import { monthState, rentalBookings } from '@lib/queries';
+import { monthState, rentalBookings, openEvents } from '@lib/queries';
 import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, BLOCK_KIND_LABELS, blockLabel } from '@lib/domain';
 
 export const prerender = false;
@@ -37,6 +37,9 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
   // 「名前は出さない」を選べば name が null になる。
   const lastDay = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
   const bookings = await rentalBookings(env, `${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`);
+  // 参加申込を受け付けているイベントは、カレンダーから申込フォームへ飛ばす
+  const open = await openEvents(env);
+  const entryByDate = new Map(open.map((e) => [e.date, e.id]));
 
   const origin = new URL(request.url).origin;
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -74,6 +77,10 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
         }),
       counts: d.counts,
       bookings: bookings[d.date] ?? [],
+      // 申込受付中なら、その申込フォームの URL
+      entry_url: entryByDate.has(d.date)
+        ? `${origin}/reserve/event?event=${entryByDate.get(d.date)}`
+        : null,
     })),
     links: {
       site: `${origin}/`,

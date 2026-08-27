@@ -100,6 +100,35 @@ export function surfaceText(status?: string | null): string | null {
   return `${SURFACE_EMOJI[status] ?? ''} 路面 ${SURFACE_LABELS[status] ?? status}`.trim();
 }
 
+/**
+ * イベントの参加申込 (エントリー) の様式。
+ *
+ * 走行の予約とは別台帳 (aone_event_entries)。聞く項目が違ううえ、
+ * 走行枠を消費しないため (イベント日は予定が終日止めている)。
+ */
+export const ENTRY_TYPE_LABELS: Record<string, string> = {
+  endurance: '耐久 (チーム)',
+  sprint: 'スプリント',
+  series: 'シリーズ戦',
+};
+
+export const ENTRY_STATUS_LABELS: Record<string, string> = {
+  received: '受付済み',
+  confirmed: '参加確定',
+  cancelled: '取り消し',
+};
+
+/** 申込者の呼び方。耐久はチーム代表、ほかは本人 */
+export function entryPersonLabel(type: string): string {
+  return type === 'endurance' ? '代表者' : '参加者';
+}
+
+/** 「20,000 円 / チーム」。金額未設定なら null (「お問い合わせ」表示にする) */
+export function entryPriceLabel(price: number | null, unit: string): string | null {
+  if (price == null) return null;
+  return `${yen(price)} / ${unit === 'team' ? 'チーム' : '人'}`;
+}
+
 export const BLOCK_KIND_LABELS: Record<string, string> = {
   race: 'レース',
   event: 'イベント',

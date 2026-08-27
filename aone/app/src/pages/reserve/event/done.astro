@@ -1,0 +1,50 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+
+export const prerender = false;
+
+// 参加申込を受け付けたあとの完了画面。
+//
+// 申込番号だけを URL で受け取り、DB は引かない。個人情報を出さないので
+// 番号を推測されても何も見えない (予約者ページのような専用 URL は、
+// エントリーには作っていない — 変更・取り消しは電話で受ける運用のため)。
+const env = envFrom(Astro.locals);
+const number = (Astro.url.searchParams.get('n') ?? '').trim();
+const tel = env.PUBLIC_SITE_TEL || '092-919-7186';
+---
+<Base title="参加申込を受け付けました | A-ONE サーキット">
+  <div class="card done">
+    <div class="mark">🎫</div>
+    <h1>参加申込を受け付けました</h1>
+    {number && <p class="num">申込番号 <strong>{number}</strong></p>}
+    <p>
+      ご登録のメールアドレスに控えをお送りしました。
+      届かない場合は迷惑メールフォルダをご確認ください。
+    </p>
+
+    <div class="notice info" style="text-align:left">
+      <strong>この時点では参加は確定していません。</strong><br />
+      受付内容を確認のうえ、A-ONE より参加のご案内をお送りします。
+      当日の集合時間・タイムスケジュールもそちらでご連絡します。
+    </div>
+
+    <p class="small muted">
+      内容の変更・取り消し、ご不明な点はお電話 (<a href={`tel:${tel.replace(/-/g, '')}`}>{tel}</a>)
+      でご連絡ください。
+    </p>
+
+    <div class="row" style="justify-content:center;margin-top:1rem">
+      <a class="btn" href="/schedule">スケジュールを見る</a>
+      <a class="btn ghost" href="/">今日走れる？</a>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .done{text-align:center;max-width:32rem;margin:1.5rem auto}
+  .mark{font-size:2.6rem;line-height:1}
+  .done h1{margin:.4rem 0 .6rem;font-size:1.4rem}
+  .num{font-family:ui-monospace,monospace;color:var(--ink-2)}
+  .num strong{font-size:1.1rem;color:var(--ink)}
+</style>
