@@ -130,7 +130,12 @@ const WIDGET_JS = String.raw`
     '.aone-nav button{border:1px solid var(--aone-line);background:#fff;border-radius:99px;',
     '  padding:5px 14px;font-weight:700;cursor:pointer;font-size:.9em;font-family:inherit;',
     '  color:var(--aone-ink)}',
-    '.aone-nav b{font-size:1.05em}',
+    // 見出しの年月をそのまま選べるようにする (前の月・次の月を何度も押さずに飛べる)
+    '.aone-ym{font:inherit;font-size:1.05em;font-weight:800;color:var(--aone-ink);',
+    '  background:#fff;border:1px solid var(--aone-line);border-radius:8px;',
+    '  padding:3px 6px;cursor:pointer;max-width:60%}',
+    // 今月を開いたときに 1 日からではなく今日から始める (スマホだけ出す)
+    '.aone-past{display:none}',
     '.aone-load{color:var(--aone-ink3);font-size:.9em;padding:10px 0}',
     // スマホでは 7 列だと狭すぎて読めないので、旧スケジュール表と同じ
     // 「1 日 = 1 行、AM / PM は左右」の縦長レイアウトに切り替える
@@ -144,6 +149,10 @@ const WIDGET_JS = String.raw`
     '  .aone-d{flex:0 0 3.6em}',
     '  .aone-dow{display:inline;font-size:.86em}',
     '  .aone-ss{margin-top:0}',
+    '  .aone-past{display:block;width:100%;margin:0 0 8px;padding:8px;border-radius:8px;',
+    '    border:1px solid var(--aone-line);background:#fff;font:inherit;font-size:.85em;',
+    '    font-weight:700;color:var(--aone-ink3);cursor:pointer;font-family:inherit}',
+    '  .aone-cal.hide-past td.past{display:none}',
     '  .aone-clamp{-webkit-line-clamp:none;display:block}}'
   ].join('');
 
@@ -321,15 +330,49 @@ const WIDGET_JS = String.raw`
     try { localStorage.setItem(MODE_KEY, v); } catch (e) { /* 保存できなくても続行 */ }
   }
 
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  /**
+   * 月のプルダウンに出す選択肢。
+   * 「8 月に 12 月の予定を見たい」が前の月・次の月ボタンだけだと 4 回押しになる。
+   * 過去 3 か月 〜 先 12 か月を出し、今見ている月がその外なら足す。
+   */
+  function monthOptions(currentYm, todayIso) {
+    var thisYm = String(todayIso || '').slice(0, 7);
+    var ty = Number(thisYm.slice(0, 4)), tm = Number(thisYm.slice(5, 7));
+    var list = [];
+    for (var i = -3; i <= 12; i++) {
+      var dt = new Date(Date.UTC(ty, tm - 1 + i, 1));
+      list.push(dt.getUTCFullYear() + '-' + pad2(dt.getUTCMonth() + 1));
+    }
+    if (/^\d{4}-\d{2}$/.test(currentYm) && list.indexOf(currentYm) < 0) {
+      list.push(currentYm);
+      list.sort();
+    }
+    return list.map(function (ym) {
+      return {
+        ym: ym,
+        label: Number(ym.slice(0, 4)) + '年' + Number(ym.slice(5, 7)) + '月'
+          + (ym === thisYm ? ' (今月)' : ''),
+      };
+    });
+  }
+
   function renderMonth(el, d) {
     var mode = readMode(el);
     // 月曜はじまり (公開スケジュール・管理カレンダーと揃える)
     var WD = ['月', '火', '水', '木', '金', '土', '日'];
     // getUTCDay() 順 (日=0)。スマホの縦長表示で日付の横に出す
     var WDOW = ['日', '月', '火', '水', '木', '金', '土'];
+    var ymNow = d.year + '-' + pad2(d.month);
     var html = '<div class="aone-nav">'
       + '<button type="button" data-mv="prev">← 前の月</button>'
-      + '<b>' + d.year + '年' + d.month + '月</b>'
+      + '<select class="aone-ym" data-ym aria-label="表示する月を選ぶ">'
+      + monthOptions(ymNow, d.today).map(function (o) {
+          return '<option value="' + o.ym + '"' + (o.ym === ymNow ? ' selected' : '') + '>'
+            + esc(o.label) + '</option>';
+        }).join('')
+      + '</select>'
       + '<button type="button" data-mv="next">次の月 →</button></div>';
 
     // レンタルで遊ぶ人とマイマシンを持ち込む人ではっきり分かれるので、
@@ -341,7 +384,16 @@ const WIDGET_JS = String.raw`
     });
     html += '</div>';
 
-    html += '<table class="aone-cal"><thead><tr>';
+    // スマホは 1 日 1 行の縦長なので、今月を開くと過ぎた日を延々スクロールすることになる。
+    // 過ぎた日は最初からたたんでおき、今日から始まるようにする (PC の 7 列は変えない)
+    var pastCount = String(d.today || '').slice(0, 7) === ymNow
+      ? Number(String(d.today).slice(8, 10)) - 1 : 0;
+    if (pastCount > 0) {
+      html += '<button type="button" class="aone-past" data-past>'
+        + '▼ ' + d.month + '月1日〜' + pastCount + '日 も表示する</button>';
+    }
+
+    html += '<table class="aone-cal' + (pastCount > 0 ? ' hide-past' : '') + '"><thead><tr>';
     WD.forEach(function (w, i) {
       html += '<th class="' + (i === 6 ? 'sun' : (i === 5 ? 'sat' : '')) + '">' + w + '</th>';
     });
@@ -417,6 +469,11 @@ const WIDGET_JS = String.raw`
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }
     html += '</tr></tbody></table>';
+    // 月末まで見たあと上に戻らなくても次の月へ行けるようにする (スマホは縦に長い)
+    var nextNo = d.month === 12 ? 1 : d.month + 1;
+    html += '<div class="aone-nav" style="margin:8px 0 0">'
+      + '<button type="button" data-mv="prev">← 前の月</button>'
+      + '<button type="button" data-mv="next">' + nextNo + '月のスケジュール →</button></div>';
     // モードによって出ているものが違うので、注記も合わせる
     // (レンタルでは ○ が出ないのに「○ = 受付可」と書くと通じない)
     // 選んだモードは次に開いたときも覚えている。「スポーツ走行」のまま
@@ -441,6 +498,22 @@ const WIDGET_JS = String.raw`
         renderMonth(el, d);
       });
     });
+
+    var ymSel = el.querySelector('[data-ym]');
+    if (ymSel) {
+      ymSel.addEventListener('change', function () { loadMonth(el, ymSel.value); });
+    }
+
+    var pastBtn = el.querySelector('[data-past]');
+    if (pastBtn) {
+      var shown = pastBtn.textContent;
+      pastBtn.addEventListener('click', function () {
+        var tbl = el.querySelector('.aone-cal');
+        var hidden = tbl.className.indexOf('hide-past') >= 0;
+        tbl.className = hidden ? 'aone-cal' : 'aone-cal hide-past';
+        pastBtn.textContent = hidden ? '▲ 過ぎた日を閉じる' : shown;
+      });
+    }
 
     Array.prototype.forEach.call(el.querySelectorAll('[data-mv]'), function (b) {
       b.addEventListener('click', function () {

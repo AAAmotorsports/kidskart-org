@@ -281,6 +281,36 @@ export function addDays(iso: string, days: number): string {
   return t.toISOString().slice(0, 10);
 }
 
+/**
+ * 月のプルダウンに出す選択肢。
+ *
+ * 「8 月に 12 月の予定を見たい」が実運用でよくあるのに、前月・翌月ボタンだけだと
+ * 4 回押すことになる。過去は 3 か月、先は 12 か月まで出す
+ * (レースの予定は年内ぶんまでしか立たない)。
+ *
+ * 今見ている月がこの範囲の外なら、それも足す。選ぶ手段が消えるのを防ぐため。
+ */
+export function monthOptions(
+  currentYm: string,
+  todayIso: string = todayJst(),
+): { ym: string; label: string }[] {
+  const thisYm = todayIso.slice(0, 7);
+  const [ty, tm] = thisYm.split('-').map(Number);
+  const list: string[] = [];
+  for (let i = -3; i <= 12; i++) {
+    const d = new Date(Date.UTC(ty, tm - 1 + i, 1));
+    list.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  if (/^\d{4}-\d{2}$/.test(currentYm) && !list.includes(currentYm)) {
+    list.push(currentYm);
+    list.sort();
+  }
+  return list.map((ym) => {
+    const [y, m] = ym.split('-').map(Number);
+    return { ym, label: `${y}年${m}月${ym === thisYm ? ' (今月)' : ''}` };
+  });
+}
+
 export function hhmm(t: string | null | undefined): string {
   return t ? t.slice(0, 5) : '';
 }
