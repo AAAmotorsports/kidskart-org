@@ -82,7 +82,7 @@ const WIDGET_JS = String.raw`
     '.aone-cal th{background:#12233a;color:#fff;padding:4px 0;font-size:.9em;font-weight:700;',
     '  text-align:center}',
     '.aone-cal th.sun{color:#ffb3bd}.aone-cal th.sat{color:#b7d8ff}',
-    '.aone-cal td{border:1px solid var(--aone-line);vertical-align:top;height:84px;padding:3px;',
+    '.aone-cal td{border:1px solid var(--aone-line);vertical-align:top;height:96px;padding:3px;',
     '  width:14.28%}',
     '.aone-cal td.pad{background:#f7fafc}',
     '.aone-cal td.today{outline:2px solid var(--aone-red);outline-offset:-2px}',
@@ -99,6 +99,9 @@ const WIDGET_JS = String.raw`
     // 2 行まで折り返してから省略する。1 行で切ると名前がほとんど読めない
     '.aone-clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
     '  overflow:hidden;white-space:normal;overflow-wrap:anywhere}',
+    // 1 行目 = 時刻や種別、2 行目 = 名前
+    '.aone-l1{display:block;font-weight:700;opacity:.85}',
+    '.aone-l2{display:block}',
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
     '  font-size:.92em}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
@@ -255,12 +258,17 @@ const WIDGET_JS = String.raw`
 
   // 1 つの時間帯 (AM / PM) の中身。予約が先、受付状況が後。
   function sessionBlock(label, cats, fallbackOpen, books, closedDay) {
+    // 「13:00 RP」と「株)ふーぷーパートナー 様」を 2 行に分ける。
+    // 1 行に続けると、狭いセルではどこまでが時刻でどこからが名前か読みづらい。
     var items = (books || []).map(function (b) {
-      var t = b.kind === 'rp'
+      var head = b.kind === 'rp'
         ? b.time + ' RP'
         : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
-      if (b.name) t += ' ' + b.name;
-      return '<div class="aone-bk aone-clamp ' + b.kind + '" title="' + esc(t) + '">' + esc(t) + '</div>';
+      var name = b.name || '';
+      return '<div class="aone-bk ' + b.kind + '" title="' + esc(name ? head + ' ' + name : head) + '">'
+        + '<span class="aone-l1">' + esc(head) + '</span>'
+        + (name ? '<span class="aone-l2 aone-clamp">' + esc(name) + '</span>' : '')
+        + '</div>';
     });
     if (!closedDay) {
       var mark = sessionLine(cats, fallbackOpen);
@@ -320,7 +328,13 @@ const WIDGET_JS = String.raw`
       }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
       day.events.forEach(function (e) {
-        html += '<div class="aone-e aone-clamp" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
+        // 「イベント」と「８０分耐久レース」を 2 行に分ける。
+        // 種別を頭に付けていないもの (臨時休業など) は 1 行のまま
+        var name = e.name || e.label;
+        var head = e.label !== name ? e.kind_label : '';
+        html += '<div class="aone-e" title="' + esc(e.label) + '">'
+          + (head ? '<span class="aone-l1">' + esc(head) + '</span>' : '')
+          + '<span class="aone-l2 aone-clamp">' + esc(name) + '</span></div>';
       });
 
       if (day.date >= d.today) {

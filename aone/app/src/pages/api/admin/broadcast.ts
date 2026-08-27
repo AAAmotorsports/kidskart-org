@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { keepAlive, originOf, str, mapRpcError, notConfigured } from '@lib/api';
 import { sendMail } from '@lib/mail';
-import { jaDate } from '@lib/domain';
+import { jaDate, nameWithHonorific } from '@lib/domain';
 
 export const prerender = false;
 
@@ -62,7 +62,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const send = (async () => {
     for (const r of targets) {
       const text = [
-        `${r.contact_name} 様`,
+        nameWithHonorific(r.contact_name),
         '',
         `${jaDate(date)} のご予約についてのお知らせです。`,
         '',

@@ -59,13 +59,19 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       am_open: d.sport_am === 'true',
       pm_open: d.sport_pm === 'true',
       rp_free: d.rp_free,
+      // label は「イベント ８０分耐久レース」のように種別を頭に付けたもの。
+      // カレンダーのセルでは 2 行に分けて出したいので、name も別に渡す。
       events: (d.blocks ?? [])
         .filter((b) => b.is_public)
-        .map((b) => ({
-          label: blockLabel(b.kind, b.public_label || b.title),
-          kind: b.kind,
-          kind_label: BLOCK_KIND_LABELS[b.kind] ?? b.kind,
-        })),
+        .map((b) => {
+          const name = (b.public_label || b.title || '').trim();
+          return {
+            label: blockLabel(b.kind, name),
+            name,
+            kind: b.kind,
+            kind_label: BLOCK_KIND_LABELS[b.kind] ?? b.kind,
+          };
+        }),
       counts: d.counts,
       bookings: bookings[d.date] ?? [],
     })),
