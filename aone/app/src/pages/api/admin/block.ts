@@ -31,11 +31,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ ok: true });
   }
 
+  // 予定を後から直す。停止範囲を間違えて登録すると「全部止まったまま」になるが、
+  // 削除して作り直すと参加申込の設定も消えてしまうので、その場で直せるようにする。
+  const editId = action === 'update' ? str(body?.id) : null;
+  if (action === 'update' && !editId) return json({ error: 'id が必要です' }, 400);
+
   const dates: string[] = Array.isArray(body?.dates)
     ? body.dates.filter((d: unknown) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
     : [str(body?.date)].filter(Boolean) as string[];
 
-  if (dates.length === 0) return json({ error: '日付を指定してください' }, 400);
+  if (!editId && dates.length === 0) return json({ error: '日付を指定してください' }, 400);
   const title = str(body?.title);
   if (!title) return json({ error: '予定名を入力してください' }, 400);
 
@@ -75,8 +80,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     entry_note: null,
   };
 
-  const rows = dates.map((date) => ({
-    date,
+  const fields = {
     kind: str(body?.kind) ?? 'event',
     title,
     scope,
@@ -94,10 +98,19 @@ export const POST: APIRoute = async ({ request, locals }) => {
     is_public: body?.is_public !== false,
     public_label: str(body?.public_label) ?? null,
     memo: str(body?.memo) ?? null,
-    created_by: str(body?.actor) ?? 'admin',
     ...entry,
-  }));
+  };
 
+  if (editId) {
+    // 日付は変えない (別の日に動かしたいなら、消して登録し直すほうが分かりやすい)
+    const { error } = await supabase.from('aone_blocks').update(fields).eq('id', editId);
+    if (error) return mapRpcError(error);
+    return json({ ok: true, updated: 1 });
+  }
+
+  const rows = dates.map((date) => ({
+    date, ...fields, created_by: str(body?.actor) ?? 'admin',
+  }));
   const { data, error } = await supabase.from('aone_blocks').insert(rows).select('id,date');
   if (error) return mapRpcError(error);
   return json({ ok: true, created: data?.length ?? 0, blocks: data });
