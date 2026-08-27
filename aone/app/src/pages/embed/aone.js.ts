@@ -82,7 +82,7 @@ const WIDGET_JS = String.raw`
     '.aone-cal th{background:#12233a;color:#fff;padding:4px 0;font-size:.9em;font-weight:700;',
     '  text-align:center}',
     '.aone-cal th.sun{color:#ffb3bd}.aone-cal th.sat{color:#b7d8ff}',
-    '.aone-cal td{border:1px solid var(--aone-line);vertical-align:top;height:74px;padding:3px;',
+    '.aone-cal td{border:1px solid var(--aone-line);vertical-align:top;height:84px;padding:3px;',
     '  width:14.28%}',
     '.aone-cal td.pad{background:#f7fafc}',
     '.aone-cal td.today{outline:2px solid var(--aone-red);outline-offset:-2px}',
@@ -96,12 +96,15 @@ const WIDGET_JS = String.raw`
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
     '.aone-cal td.sat .aone-d{color:#2f6fb5}',
+    // 2 行まで折り返してから省略する。1 行で切ると名前がほとんど読めない
+    '.aone-clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
+    '  overflow:hidden;white-space:normal;overflow-wrap:anywhere}',
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
-    '  font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '  font-size:.92em}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
     '.aone-sfs{color:#42566b;font-size:.92em}',
     '.aone-bk{font-size:.92em;font-weight:700;line-height:1.3;border-left:3px solid var(--aone-red);',
-    '  padding-left:3px;color:#a81a2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '  padding-left:3px;color:#a81a2d}',
     '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
     '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px;line-height:1.35}',
     '.aone-ss .y{color:#14724a}.aone-ss .n{color:#a8b8c5}',
@@ -128,7 +131,7 @@ const WIDGET_JS = String.raw`
     '  .aone-d{flex:0 0 3.6em}',
     '  .aone-dow{display:inline;font-size:.86em}',
     '  .aone-ss{margin-top:0}',
-    '  .aone-e,.aone-bk{white-space:normal}}'
+    '  .aone-clamp{-webkit-line-clamp:none;display:block}}'
   ].join('');
 
   function injectCss() {
@@ -257,7 +260,7 @@ const WIDGET_JS = String.raw`
         ? b.time + ' RP'
         : '貸切 ' + b.time + (b.end_time ? '〜' + b.end_time : '');
       if (b.name) t += ' ' + b.name;
-      return '<div class="aone-bk ' + b.kind + '" title="' + esc(t) + '">' + esc(t) + '</div>';
+      return '<div class="aone-bk aone-clamp ' + b.kind + '" title="' + esc(t) + '">' + esc(t) + '</div>';
     });
     if (!closedDay) {
       var mark = sessionLine(cats, fallbackOpen);
@@ -317,7 +320,7 @@ const WIDGET_JS = String.raw`
       }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
       day.events.forEach(function (e) {
-        html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
+        html += '<div class="aone-e aone-clamp" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
       });
 
       if (day.date >= d.today) {
