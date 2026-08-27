@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { monthState, rentalBookings, openEvents } from '@lib/queries';
-import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS } from '@lib/domain';
+import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS, monthOptions } from '@lib/domain';
 
 export const prerender = false;
 
@@ -44,6 +44,13 @@ const entryByDate = new Map(openEvs.map((e) => [e.date, `/reserve/event?event=${
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
+const ymNow = `${year}-${String(month).padStart(2, '0')}`;
+const months = monthOptions(ymNow, today);
+const nextMonthNo = month === 12 ? 1 : month + 1;
+
+// スマホは 1 日 1 行の縦長なので、今月を開くと過ぎた日を延々スクロールすることになる。
+// 過ぎた日は最初からたたんでおき、今日から始まるようにする (PC は 7 列のままなので変えない)。
+const pastCount = ymNow === today.slice(0, 7) ? Number(today.slice(8, 10)) - 1 : 0;
 
 // カレンダーは月曜はじまり (日本のサーキット運営では週末が右端に来る方が読みやすい)。
 // getUTCDay() は 日=0 なので、月曜を 0 とする並びに直してから空セルを置く。
@@ -75,7 +82,14 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
   <div class="spread" style="margin-bottom:.8rem">
-    <h1 style="margin:0">{year}年{month}月のスケジュール</h1>
+    {/* 見出しの年月をそのまま選べるようにする。「8 月に 12 月を見る」が
+        前の月・次の月ボタンだけだと 4 回押しになるため */}
+    <h1 style="margin:0" class="ym-h1">
+      <select id="ym-jump" class="ym-select" aria-label="表示する月を選ぶ">
+        {months.map((o) => <option value={o.ym} selected={o.ym === ymNow}>{o.label}</option>)}
+      </select>
+      のスケジュール
+    </h1>
     <div class="row">
       <a class="btn sm" href={`/schedule?ym=${prev}&mode=${mode}`}>← 前の月</a>
       <a class="btn sm" href={`/schedule?ym=${next}&mode=${mode}`}>次の月 →</a>
@@ -105,7 +119,12 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
     <div class="card"><p class="muted">スケジュールを取得できませんでした。</p></div>
   ) : (
     <>
-      <div class="cal">
+      {pastCount > 0 && (
+        <button type="button" id="past-toggle" class="past-toggle">
+          ▼ {month}月1日〜{pastCount}日 も表示する
+        </button>
+      )}
+      <div class:list={['cal', pastCount > 0 && 'hide-past']} id="cal">
         {WD.map((w, i) => <div class:list={['cal-head', i === 6 && 'sun', i === 5 && 'sat']}>{w}</div>)}
         {Array.from({ length: firstDow }).map(() => <div class="cal-cell empty"></div>)}
         {days.map((d) => {
@@ -197,6 +216,12 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
         })}
       </div>
 
+      {/* スマホは縦長なので、月末まで見たあと上に戻らなくても次の月へ行けるようにする */}
+      <div class="row bottom-nav">
+        <a class="btn sm" href={`/schedule?ym=${prev}&mode=${mode}`}>← 前の月</a>
+        <a class="btn sm" href={`/schedule?ym=${next}&mode=${mode}`}>{nextMonthNo}月のスケジュール →</a>
+      </div>
+
       <p class="tiny muted" style="margin-top:.6rem">
         <strong>日付をクリックするとご予約に進めます。</strong>
         <strong>○</strong> = 受付可、クラス名が出ている枠は<strong>すでにご予約が入っています</strong>
@@ -225,6 +250,28 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
     </>
   )}
 </Base>
+
+<script is:inline define:vars={{ mode }}>
+  // 月のプルダウン
+  const jump = document.getElementById('ym-jump');
+  if (jump) {
+    jump.addEventListener('change', () => {
+      location.href = '/schedule?ym=' + encodeURIComponent(jump.value) + '&mode=' + mode;
+    });
+  }
+  // 過ぎた日の開閉 (スマホだけボタンが見えている)
+  const toggle = document.getElementById('past-toggle');
+  const cal = document.getElementById('cal');
+  if (toggle && cal) {
+    toggle.addEventListener('click', () => {
+      const hidden = cal.classList.toggle('hide-past');
+      toggle.textContent = hidden
+        ? toggle.dataset.show
+        : '▲ 過ぎた日を閉じる';
+    });
+    toggle.dataset.show = toggle.textContent.trim();
+  }
+</script>
 
 <style>
   /* minmax(0,1fr) + min-width:0 が無いと、長い予約名が列幅を押し広げて
@@ -282,6 +329,19 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .bk.charter{border-left-color:#7c6fdb;color:#5646b8}
   .day-slots .ok{color:#14724a} .day-slots .ng{color:var(--ink-4)}
   .dow-label{display:none}
+  /* 見出しの年月をプルダウンにする。押せることが分かるよう枠と ▼ を出す */
+  .ym-h1{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+  .ym-select{width:auto;max-width:100%;font:inherit;font-weight:800;color:inherit;background:#fff;
+    border:1px solid var(--line-2);border-radius:8px;padding:.15rem 1.6rem .15rem .5rem;
+    cursor:pointer;appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),
+      linear-gradient(135deg,var(--ink-3) 50%,transparent 50%);
+    background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+  .ym-select:hover{border-color:var(--red)}
+  /* 過ぎた日をたたむのはスマホの縦長表示だけ (PC の 7 列は穴が空くと読めない) */
+  .past-toggle{display:none}
+  .bottom-nav{margin-top:.6rem;justify-content:space-between}
   .cell-body{display:flex;flex-direction:column;gap:.15rem;min-width:0;width:100%}
 
   /* スマホでは 7 列だと 1 セルが狭すぎて読めないので、旧スケジュール表と同じ
@@ -301,5 +361,10 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
     .cell-body{gap:.2rem}
     .sessions{margin-top:0;gap:.25rem}
     .bk{white-space:normal}
+    /* 今月を開いたときに、1 日からではなく今日から始まるようにする */
+    .past-toggle{display:block;width:100%;margin:0 0 .5rem;padding:.5rem;
+      border:1px solid var(--line-2);border-radius:8px;background:#fff;
+      font:inherit;font-size:.82rem;font-weight:700;color:var(--ink-2);cursor:pointer}
+    .cal.hide-past .cal-cell.past{display:none}
   }
 </style>

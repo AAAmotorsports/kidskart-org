@@ -10,7 +10,7 @@ import {
   KIND_SHORT, STATUS_LABELS, BUSINESS_LABELS, SURFACE_LABELS,
   ENTRY_TYPE_LABELS, ENTRY_TYPE_ORDER, RACE_CLASSES,
   BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, blockLabel,
-  nameWithHonorific,
+  nameWithHonorific, monthOptions,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -26,6 +26,9 @@ const weekStart = Astro.url.searchParams.get('start') ?? today;
 const [y, m] = ym.split('-').map(Number);
 const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
 const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : Number(today.slice(5, 7));
+const ymNow = `${year}-${String(month).padStart(2, '0')}`;
+// 先の月の予定 (レース・イベント) を登録することが多いので、月を直接選べるようにする
+const months = monthOptions(ymNow, today);
 
 // 表示モード: レンタル (RP・貸切) / スポーツ走行 (持ち込み) / 両方。
 // 公開スケジュールと同じ切り替えを管理側にも置く。
@@ -102,7 +105,15 @@ const isOpen = (v: string) => v === 'true';
 ---
 <Base title="カレンダー | A-ONE 管理" admin wide>
   <div class="spread" style="margin-bottom:.8rem">
-    <h1 style="margin:0">{view === 'month' ? `${year}年${month}月` : `${jaDateShort(weekDates[0])} 〜 ${jaDateShort(weekDates[6])}`}</h1>
+    {view === 'month' ? (
+      <h1 style="margin:0">
+        <select id="ym-jump" class="ym-select" aria-label="表示する月を選ぶ">
+          {months.map((o) => <option value={o.ym} selected={o.ym === ymNow}>{o.label}</option>)}
+        </select>
+      </h1>
+    ) : (
+      <h1 style="margin:0">{jaDateShort(weekDates[0])} 〜 {jaDateShort(weekDates[6])}</h1>
+    )}
     <div class="row">
       {view === 'month' ? (
         <>
@@ -346,7 +357,15 @@ const isOpen = (v: string) => v === 'true';
   </div>
 </Base>
 
-<script is:inline>
+<script is:inline define:vars={{ mode }}>
+  // 見出しの年月を選ぶとその月へ
+  const ymJump = document.getElementById('ym-jump');
+  if (ymJump) {
+    ymJump.addEventListener('change', () => {
+      location.href = '/admin/calendar?ym=' + encodeURIComponent(ymJump.value) + '&mode=' + mode;
+    });
+  }
+
   const $ = (id) => document.getElementById(id);
 
   // 参加申込の設定は、受け付けるときだけ出す
@@ -441,6 +460,10 @@ const isOpen = (v: string) => v === 'true';
 </script>
 
 <style>
+  /* 見出しの年月をそのままプルダウンにする (前月・翌月を何度も押さずに飛べる) */
+  .ym-select{width:auto;max-width:100%;font:inherit;font-weight:800;color:inherit;background:#fff;
+    border:1px solid var(--line-2);border-radius:8px;padding:.15rem .5rem;cursor:pointer}
+  .ym-select:hover{border-color:var(--red)}
   .entry-box{border:1px solid var(--line);border-left:3px solid var(--red);border-radius:0 6px 6px 0;
     padding:.7rem .9rem;margin:.7rem 0 .3rem;background:var(--bg-2)}
 
