@@ -299,20 +299,23 @@ const WIDGET_JS = String.raw`
   }
 
   var MODES = [['rental', 'レンタル'], ['sport', 'スポーツ走行'], ['both', '両方']];
-  var MODE_KEY = 'aone-cal-mode';
 
-  /** 見ているモード。前に選んだものを覚えておく (毎回押し直させない) */
+  /**
+   * 見ているモード。
+   *
+   * ページを開き直したら必ず「両方」に戻す (data-mode の指定があればそれ)。
+   * 一度ブラウザに覚えさせる作りにしていたが、それをやめた:
+   * 「スポーツ走行」で見たことを忘れたまま次に開くと、入っているはずの
+   * レースパック・貸切が消えていて「予約が表示されない」と見える。
+   * 公開スケジュール (/schedule) も URL で渡すだけで覚えさせていない。
+   *
+   * 同じページの中では覚える (el の data-mode に書く) ので、
+   * 月を送っても選んだモードのままになる。
+   */
   function readMode(el) {
     var attr = el.getAttribute('data-mode');
     if (attr && MODES.some(function (m) { return m[0] === attr; })) return attr;
-    try {
-      var v = localStorage.getItem(MODE_KEY);
-      if (v && MODES.some(function (m) { return m[0] === v; })) return v;
-    } catch (e) { /* 保存が使えなくても既定で動く */ }
     return 'both';
-  }
-  function saveMode(v) {
-    try { localStorage.setItem(MODE_KEY, v); } catch (e) { /* 保存できなくても続行 */ }
   }
 
   function renderMonth(el, d) {
@@ -424,9 +427,7 @@ const WIDGET_JS = String.raw`
 
     Array.prototype.forEach.call(el.querySelectorAll('[data-mode]'), function (b) {
       b.addEventListener('click', function () {
-        var v = b.getAttribute('data-mode');
-        saveMode(v);
-        el.setAttribute('data-mode', v);
+        el.setAttribute('data-mode', b.getAttribute('data-mode'));
         // データは取得済みなので、そのまま描き直すだけでよい
         renderMonth(el, d);
       });
