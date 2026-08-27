@@ -39,6 +39,7 @@ const WIDGET_JS = String.raw`
     '.aone-head{display:flex;justify-content:space-between;align-items:center;gap:10px;',
     '  flex-wrap:wrap;margin-bottom:10px}',
     '.aone-date{font-size:1.15em;font-weight:800;margin:0}',
+    '.aone-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
     '.aone-wx{display:inline-flex;align-items:center;gap:5px;font-weight:800;font-size:.85em;',
     '  padding:4px 12px;border-radius:99px;background:var(--aone-green-bg);color:#14724a;',
     '  border:1px solid #b9e3cf}',
@@ -55,7 +56,9 @@ const WIDGET_JS = String.raw`
     '.aone-sess-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:.9em}',
     '.aone-sess-h b{font-size:1.05em}',
     '.aone-sess-h span{color:var(--aone-ink3)}',
-    '.aone-cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}',
+    // auto-fill にしているのは、PC でカテゴリーが 2 つしかないときに
+    // カードが画面幅いっぱいまで伸びてしまわないようにするため
+    '.aone-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}',
     '.aone-cat{text-align:center;border:1px solid var(--aone-line);border-radius:9px;padding:7px 3px;',
     '  background:#f7fafc}',
     '.aone-cat.ok{background:var(--aone-green-bg);border-color:#b9e3cf}',
@@ -102,9 +105,11 @@ const WIDGET_JS = String.raw`
     '.aone-bk.charter{border-left-color:#7c6fdb;color:#5646b8}',
     '.aone-ss{font-size:.92em;color:var(--aone-ink3);margin-top:2px;line-height:1.35}',
     '.aone-ss .y{color:#14724a}.aone-ss .n{color:#a8b8c5}',
-    '.aone-sess{display:flex;gap:4px;align-items:flex-start}',
-    '.aone-sess>b{flex:0 0 1.9em;color:var(--aone-ink3)}',
-    '.aone-sess-items{flex:1;min-width:0}',
+    // 月カレンダーのセル内 AM/PM 行。「今日走れる？」の .aone-sess とは別物なので
+    // 名前を分けてある (同名にすると後勝ちで今日走れる？の段組みが壊れる)
+    '.aone-msess{display:flex;gap:4px;align-items:flex-start}',
+    '.aone-msess>b{flex:0 0 1.9em;color:var(--aone-ink3)}',
+    '.aone-msess-items{flex:1;min-width:0}',
     '.aone-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}',
     '.aone-nav button{border:1px solid var(--aone-line);background:#fff;border-radius:99px;',
     '  padding:5px 14px;font-weight:700;cursor:pointer;font-size:.9em;font-family:inherit;',
@@ -153,10 +158,13 @@ const WIDGET_JS = String.raw`
 
     var html = '<div class="aone-card">';
     html += '<div class="aone-head"><p class="aone-date">' + esc(d.label) + ' の走行状況</p>';
+    // 営業状況と路面状況はひとまとめにして右端に寄せる。
+    // 直接 aone-head の子にすると space-between で真ん中に落ちてしまう
+    html += '<div class="aone-tags">';
     html += '<span class="aone-wx ' + wxClass + '">' + esc(d.business.label) + '</span>';
     // 路面状況は営業状況とは別軸。出ているときだけ添える
     if (d.surface) html += '<span class="aone-sf">路面 ' + esc(d.surface.label) + '</span>';
-    html += '</div>';
+    html += '</div></div>';
 
     if (d.business.message) {
       html += '<p class="aone-msg ' + (wxClass === 'ng' ? 'ng' : '') + '">'
@@ -256,7 +264,7 @@ const WIDGET_JS = String.raw`
       if (mark) items.push(mark);
     }
     if (!items.length) return '';
-    return '<div class="aone-sess"><b>' + label + '</b><div class="aone-sess-items">' +
+    return '<div class="aone-msess"><b>' + label + '</b><div class="aone-msess-items">' +
       items.join('') + '</div></div>';
   }
 
@@ -301,7 +309,12 @@ const WIDGET_JS = String.raw`
       }
       html += '<div class="aone-d">' + day.day +
         '<span class="aone-dow"> (' + WDOW[day.dow] + ')</span></div><div class="aone-body">';
-      if (day.business_label) html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
+      // 臨時休業を予定として登録した日は「休業」が予定から自動で付く。
+      // そのまま両方出すと「休業 / 臨時休業」の二重表示になるので、予定側だけ出す
+      var closedEvent = (day.events || []).some(function (e) { return e.kind === 'closed'; });
+      if (day.business_label && !closedEvent) {
+        html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
+      }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
       day.events.forEach(function (e) {
         html += '<div class="aone-e" title="' + esc(e.label) + '">' + esc(e.label) + '</div>';
