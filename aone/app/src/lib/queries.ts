@@ -7,6 +7,7 @@
 // 画面側に「準備中」を出させる。
 
 import { getSupabase, getSupabaseAdmin } from './supabase';
+import { todayJst } from './domain';
 
 export interface DayState {
   date: string;
@@ -455,5 +456,99 @@ export async function customerDetail(env: Env, id: string) {
   } catch (e) {
     console.warn('[queries] customerDetail 失敗', e);
     return { stat: null, reservations: [] as Reservation[] };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// イベントの参加申込 (エントリー)
+// -----------------------------------------------------------------------------
+// 走行の予約とは別台帳。RLS で anon からは一切読めないので、
+// 公開側が使えるのは aone_open_events() (集計だけ返す) のみ。
+
+/** 参加申込を受け付けているイベント (公開用。個人情報は含まない) */
+export interface OpenEvent {
+  id: string;
+  date: string;
+  title: string;
+  kind: string;
+  entry_type: 'endurance' | 'sprint' | 'series';
+  price: number | null;
+  unit: 'team' | 'person';
+  deadline: string;
+  rules_url: string | null;
+  vehicle_rules_url: string | null;
+  classes: string[];
+  note: string | null;
+  entries: number;
+}
+
+export async function openEvents(env: Env): Promise<OpenEvent[]> {
+  try {
+    const { data, error } = await getSupabase(env).rpc('aone_open_events');
+    if (error) {
+      console.warn('[queries] aone_open_events 失敗', error.message);
+      return [];
+    }
+    return (data ?? []) as OpenEvent[];
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return [];
+  }
+}
+
+export const ENTRY_COLUMNS =
+  'id,entry_number,block_id,date,event_title,entry_type,status,customer_id,' +
+  'team_name,contact_name,contact_kana,contact_email,contact_phone,' +
+  'frame_maker,number_wish,race_class,amount,is_paid,agreed_at,note,staff_memo,' +
+  'access_token,source,created_at,cancelled_at,cancel_reason';
+
+export interface EventEntry {
+  id: string;
+  entry_number: string;
+  block_id: string | null;
+  date: string;
+  event_title: string;
+  entry_type: 'endurance' | 'sprint' | 'series';
+  status: 'received' | 'confirmed' | 'cancelled';
+  customer_id: string | null;
+  team_name: string | null;
+  contact_name: string;
+  contact_kana: string | null;
+  contact_email: string;
+  contact_phone: string;
+  frame_maker: string | null;
+  number_wish: string | null;
+  race_class: string | null;
+  amount: number | null;
+  is_paid: boolean;
+  agreed_at: string | null;
+  note: string | null;
+  staff_memo: string | null;
+  access_token: string;
+  source: string;
+  created_at: string;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+}
+
+/** 管理用。日付か開催イベントで絞る。どちらも無ければ今日以降を新しい順に */
+export async function eventEntries(
+  env: Env,
+  opt: { date?: string; blockId?: string; limit?: number } = {},
+): Promise<EventEntry[]> {
+  try {
+    let query = getSupabaseAdmin(env).from('aone_event_entries').select(ENTRY_COLUMNS);
+    if (opt.date) query = query.eq('date', opt.date);
+    else if (opt.blockId) query = query.eq('block_id', opt.blockId);
+    else query = query.gte('date', todayJst());
+    const { data, error } = await query
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(opt.limit ?? 500);
+    if (error) throw error;
+    return (data ?? []) as unknown as EventEntry[];
+  } catch (e) {
+    console.warn('[queries] eventEntries 失敗', e);
+    return [];
   }
 }

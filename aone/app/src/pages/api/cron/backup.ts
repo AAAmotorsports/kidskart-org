@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { notConfigured } from '@lib/api';
-import { reservationsCsv, customersCsv } from '@lib/csv';
+import { reservationsCsv, customersCsv, entriesCsv } from '@lib/csv';
 import { sendMail } from '@lib/mail';
 import { jaDate, todayJst } from '@lib/domain';
 
@@ -35,10 +35,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const supabase = getSupabaseAdmin(env);
   let reservations;
   let customers;
+  let entries;
   try {
-    [reservations, customers] = await Promise.all([
+    [reservations, customers, entries] = await Promise.all([
       reservationsCsv(supabase),
       customersCsv(supabase),
+      entriesCsv(supabase),
     ]);
   } catch (e: any) {
     console.warn('[cron/backup] CSV の作成に失敗', e);
@@ -51,12 +53,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const ok = await sendMail(env, {
     to,
-    subject: `【控え】A-ONE 予約台帳・顧客名簿 ${today}`,
+    subject: `【控え】A-ONE 予約台帳・顧客名簿・参加申込 ${today}`,
     text: [
       `${jaDate(today)} 時点の控えです。`,
       '',
       `・予約台帳 ${count(reservations.body)} 件`,
       `・顧客名簿 ${count(customers.body)} 名`,
+      `・参加申込 ${count(entries.body)} 件`,
       '',
       '添付の CSV は Excel や Numbers でそのまま開けます。',
       'このメールを消さずに残しておけば、万一のときにここから戻せます。',
@@ -67,6 +70,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     attachments: [
       { filename: reservations.filename, content: reservations.body },
       { filename: customers.filename, content: customers.body },
+      { filename: entries.filename, content: entries.body },
     ],
   });
 
@@ -75,5 +79,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
     date: today,
     reservations: count(reservations.body),
     customers: count(customers.body),
+    entries: count(entries.body),
   }, ok ? 200 : 500);
 };

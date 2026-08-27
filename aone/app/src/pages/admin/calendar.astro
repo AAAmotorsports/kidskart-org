@@ -273,6 +273,58 @@ const isOpen = (v: string) => v === 'true';
       </div>
     </div>
     <label class="tiny"><input type="checkbox" id="f-public" checked /> 公開スケジュールに掲載する</label>
+
+    <!-- ============ 参加申込の受付 ============ -->
+    <div class="entry-box">
+      <label class="tiny"><input type="checkbox" id="f-entry" /> <strong>この予定の参加申込を受け付ける</strong></label>
+      <div id="f-entry-fields" hidden>
+        <div class="four" style="margin-top:.5rem">
+          <div class="field">
+            <label for="f-entry-type">申込の様式</label>
+            <select id="f-entry-type">
+              <option value="endurance">耐久 (チーム単位)</option>
+              <option value="sprint">スプリント (人単位)</option>
+              <option value="series">シリーズ戦 (人単位・クラスあり)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-entry-price">参加費 (円)</label>
+            <input type="number" id="f-entry-price" min="0" step="100" placeholder="空欄 = 要問合せ" />
+          </div>
+          <div class="field">
+            <label for="f-entry-unit">単位</label>
+            <select id="f-entry-unit">
+              <option value="team">1 チームあたり</option>
+              <option value="person">1 人あたり</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-entry-deadline">申込締切</label>
+            <input type="date" id="f-entry-deadline" />
+            <div class="tiny muted">空欄なら開催日の前日</div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-entry-classes">参加クラス (シリーズ戦のみ・カンマ区切り)</label>
+          <input type="text" id="f-entry-classes" placeholder="Light, Junior, Mini, Micro, ビギナー, SS" />
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="f-entry-rules">特別規則書 PDF の URL</label>
+            <input type="url" id="f-entry-rules" placeholder="https://rk-a1.com/wp-content/uploads/..." />
+          </div>
+          <div class="field">
+            <label for="f-entry-vrules">車輌規則 PDF の URL</label>
+            <input type="url" id="f-entry-vrules" placeholder="https://rk-a1.com/wp-content/uploads/..." />
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-entry-note">申込フォームに出す補足 (任意)</label>
+          <input type="text" id="f-entry-note" placeholder="レンタルカートは A-ONE でご用意します など" />
+        </div>
+      </div>
+    </div>
+
     <div id="f-out" class="notice" hidden style="margin-top:.5rem"></div>
     <div style="margin-top:.5rem"><button class="btn primary sm" id="f-save">登録する</button></div>
   </div>
@@ -280,6 +332,17 @@ const isOpen = (v: string) => v === 'true';
 
 <script is:inline>
   const $ = (id) => document.getElementById(id);
+
+  // 参加申込の設定は、受け付けるときだけ出す
+  function syncEntry() {
+    $('f-entry-fields').hidden = !$('f-entry').checked;
+    // 様式で単位の既定が決まる (耐久はチーム、ほかは人)
+    const t = $('f-entry-type').value;
+    $('f-entry-unit').value = t === 'endurance' ? 'team' : 'person';
+  }
+  $('f-entry').addEventListener('change', syncEntry);
+  $('f-entry-type').addEventListener('change', syncEntry);
+  syncEntry();
 
   $('f-save').addEventListener('click', async () => {
     const out = $('f-out');
@@ -325,6 +388,16 @@ const isOpen = (v: string) => v === 'true';
           end_time: $('f-end').value,
           category_code: $('f-category').value,
           is_public: $('f-public').checked,
+          // 参加申込の受付設定。チェックが外れていれば受付しない
+          entry_open: $('f-entry').checked,
+          entry_type: $('f-entry-type').value,
+          entry_price: $('f-entry-price').value,
+          entry_unit: $('f-entry-unit').value,
+          entry_deadline: $('f-entry-deadline').value,
+          entry_classes: $('f-entry-classes').value,
+          entry_rules_url: $('f-entry-rules').value,
+          entry_vehicle_rules_url: $('f-entry-vrules').value,
+          entry_note: $('f-entry-note').value,
         }),
       });
       const data = await res.json();
@@ -340,6 +413,9 @@ const isOpen = (v: string) => v === 'true';
 </script>
 
 <style>
+  .entry-box{border:1px solid var(--line);border-left:3px solid var(--red);border-radius:0 6px 6px 0;
+    padding:.7rem .9rem;margin:.7rem 0 .3rem;background:var(--bg-2)}
+
   /* minmax(0,1fr) と min-width:0 が要る。これが無いと、セル内の長い予約名
      (「貸切 09:00〜12:00 麻生工科大学様 予備日 様」等) が列幅を押し広げ、
      土曜・日曜の列が画面外にはみ出して見えなくなる。 */

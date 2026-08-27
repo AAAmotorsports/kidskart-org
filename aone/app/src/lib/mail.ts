@@ -13,7 +13,7 @@
 import { getSupabaseAdmin } from './supabase';
 import {
   jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
-  nameWithHonorific,
+  nameWithHonorific, stripHonorific, entryPersonLabel,
 } from './domain';
 
 export type MailKind = 'confirm' | 'reminder' | 'thanks' | 'followup' | 'broadcast' | 'cancel' | 'admin';
@@ -510,6 +510,105 @@ export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string)
       '',
       `▼ 管理画面`,
       `${origin}/admin/day/${r.date}`,
+    ].join('\n'),
+  };
+}
+
+// -----------------------------------------------------------------------------
+// イベントの参加申込 (エントリー)
+// -----------------------------------------------------------------------------
+// 走行の予約とは別台帳なので、テンプレートも別に持つ。
+// 予約と同じ「お客様に控え / 管理者に通知」の 2 通構成。
+
+export const ENTRY_COLUMNS_MAIL =
+  'id,entry_number,date,event_title,entry_type,status,team_name,' +
+  'contact_name,contact_kana,contact_email,contact_phone,' +
+  'frame_maker,number_wish,race_class,amount,note,access_token';
+
+export interface EntryForMail {
+  id: string;
+  entry_number: string;
+  date: string;
+  event_title: string;
+  entry_type: string;
+  status: string;
+  team_name: string | null;
+  contact_name: string;
+  contact_kana: string | null;
+  contact_email: string;
+  contact_phone: string;
+  frame_maker: string | null;
+  number_wish: string | null;
+  race_class: string | null;
+  amount: number | null;
+  note: string | null;
+  access_token: string;
+}
+
+function entryLines(e: EntryForMail): string[] {
+  const lines = [
+    `申込番号: ${e.entry_number}`,
+    `イベント: ${e.event_title}`,
+    `開催日: ${jaDate(e.date)}`,
+    `チーム名: ${e.team_name ?? '—'}`,
+    // 明細の行なので敬称は付けない。入力に「様」が入っていても落とす
+    `${entryPersonLabel(e.entry_type)}: ${stripHonorific(e.contact_name)}`,
+  ];
+  if (e.contact_kana) lines.push(`ふりがな: ${e.contact_kana}`);
+  if (e.race_class) lines.push(`参加クラス: ${e.race_class}`);
+  if (e.frame_maker) lines.push(`フレームメーカー: ${e.frame_maker}`);
+  if (e.number_wish) lines.push(`希望ゼッケン: ${e.number_wish}`);
+  lines.push(
+    e.amount != null
+      ? `参加費: ¥${e.amount.toLocaleString('ja-JP')}`
+      : '参加費: 追ってご案内します',
+  );
+  if (e.note) lines.push(`ご連絡事項: ${e.note}`);
+  return lines;
+}
+
+/** 申込を受け付けたことをお客様に伝える控え */
+export function entryMail(env: Env, e: EntryForMail, origin: string) {
+  return {
+    subject: `【参加申込を受け付けました】${e.event_title} (${jaDate(e.date)})`,
+    text: [
+      nameWithHonorific(e.contact_name),
+      '',
+      'イベントの参加申込を受け付けました。ありがとうございます。',
+      '',
+      '▼ お申込内容',
+      ...entryLines(e),
+      '',
+      // 参加案内 (集合時間・組み合わせ等) は A-ONE 側が個別に送る。
+      // 「これで完了なのか」が分からないと問い合わせが増えるので、先に書く。
+      '━━━━━━━━━━━━━━━━━━━━',
+      'このあとの流れ',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '・受付内容を確認のうえ、A-ONE より参加のご案内をお送りします。',
+      '・当日の集合時間・タイムスケジュールもそちらでご連絡します。',
+      '・ご不明な点、内容の変更・取り消しはお電話でご連絡ください。',
+      '',
+      '▼ 当日の営業状況',
+      `${origin}/`,
+      ...footer(env),
+    ].join('\n'),
+  };
+}
+
+/** 参加申込が入ったことを管理者に知らせる */
+export function adminEntryMail(env: Env, e: EntryForMail, origin: string) {
+  return {
+    subject: `🎫申込 [A-ONE] ${e.event_title} ${e.date} ${nameWithHonorific(e.contact_name)}`,
+    text: [
+      'イベントの参加申込が入りました。',
+      '',
+      ...entryLines(e),
+      `お電話: ${e.contact_phone}`,
+      `メール: ${e.contact_email}`,
+      '',
+      '▼ 管理画面 (申込一覧)',
+      `${origin}/admin/entries?date=${e.date}`,
+      ...footer(env),
     ].join('\n'),
   };
 }

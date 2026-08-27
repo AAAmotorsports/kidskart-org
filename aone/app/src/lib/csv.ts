@@ -6,7 +6,7 @@
 
 import {
   KIND_LABELS, STATUS_LABELS, SOURCE_LABELS, CHARTER_TYPE_LABELS,
-  CONTACT_METHOD_LABELS, hhmm, todayJst,
+  CONTACT_METHOD_LABELS, ENTRY_TYPE_LABELS, ENTRY_STATUS_LABELS, hhmm, todayJst,
 } from './domain';
 import { RESERVATION_COLUMNS, type Reservation, type CustomerStat } from './queries';
 
@@ -115,4 +115,36 @@ export async function customersCsv(supabase: any): Promise<CsvFile> {
     (c.tags ?? []).join(' / '), c.staff_memo ?? '',
   ]);
   return { filename: `A-ONE顧客名簿_${todayJst()}.csv`, body: toCsv(CUSTOMER_HEADER, rows) };
+}
+
+/** イベント参加申込 (エントリー) */
+export const ENTRY_HEADER = [
+  '申込番号', '開催日', 'イベント', '様式', '状態',
+  'チーム名', '氏名', 'ふりがな', '電話', 'メール',
+  '参加クラス', 'ゼッケン', 'フレームメーカー',
+  '参加費', '入金', '規約同意', '連絡事項', 'スタッフメモ',
+  '入力経路', '申込日時', '取消日時', '取消理由',
+];
+
+export async function entriesCsv(supabase: any): Promise<CsvFile> {
+  const { data, error } = await supabase
+    .from('aone_event_entries')
+    .select('*')
+    .order('date')
+    .order('created_at');
+  if (error) throw new Error('参加申込を読み出せませんでした: ' + error.message);
+
+  const rows = ((data ?? []) as any[]).map((e) => [
+    e.entry_number, e.date, e.event_title,
+    ENTRY_TYPE_LABELS[e.entry_type] ?? e.entry_type,
+    ENTRY_STATUS_LABELS[e.status] ?? e.status,
+    e.team_name ?? '', e.contact_name, e.contact_kana ?? '',
+    e.contact_phone, e.contact_email,
+    e.race_class ?? '', e.number_wish ?? '', e.frame_maker ?? '',
+    e.amount ?? '', e.is_paid ? '済' : '', e.agreed_at ? '済' : '',
+    e.note ?? '', e.staff_memo ?? '',
+    SOURCE_LABELS[e.source] ?? e.source, e.created_at ?? '',
+    e.cancelled_at ?? '', e.cancel_reason ?? '',
+  ]);
+  return { filename: `A-ONE参加申込_${todayJst()}.csv`, body: toCsv(ENTRY_HEADER, rows) };
 }
