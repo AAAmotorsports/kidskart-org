@@ -176,6 +176,7 @@ export const BLOCK_SCOPE_LABELS: Record<string, string> = {
   sport: 'スポーツ走行のみ停止',
   rp: 'RP のみ停止',
   category: '特定カテゴリーのみ停止',
+  only_category: '指定したカテゴリーだけ走れる (ほかは停止)',
 };
 
 /** ○ △ ✕ — の記号 (「今日走れる？」表示 — 仕様 7) */

@@ -300,22 +300,25 @@ const WIDGET_JS = String.raw`
 
   var MODES = [['rental', 'レンタル'], ['sport', 'スポーツ走行'], ['both', '両方']];
 
+  var MODE_KEY = 'aone-cal-mode';
+
   /**
-   * 見ているモード。
+   * 見ているモード。前に選んだものをブラウザに覚えさせる (2026-08 オーナー確認)。
    *
-   * ページを開き直したら必ず「両方」に戻す (data-mode の指定があればそれ)。
-   * 一度ブラウザに覚えさせる作りにしていたが、それをやめた:
-   * 「スポーツ走行」で見たことを忘れたまま次に開くと、入っているはずの
-   * レースパック・貸切が消えていて「予約が表示されない」と見える。
-   * 公開スケジュール (/schedule) も URL で渡すだけで覚えさせていない。
-   *
-   * 同じページの中では覚える (el の data-mode に書く) ので、
-   * 月を送っても選んだモードのままになる。
+   * ページ側で data-mode を書いてあればそれが優先。
+   * 覚えられない環境 (プライベートウィンドウ等) でも「両方」で普通に動く。
    */
   function readMode(el) {
     var attr = el.getAttribute('data-mode');
     if (attr && MODES.some(function (m) { return m[0] === attr; })) return attr;
+    try {
+      var v = localStorage.getItem(MODE_KEY);
+      if (v && MODES.some(function (m) { return m[0] === v; })) return v;
+    } catch (e) { /* 保存が使えなくても既定で動く */ }
     return 'both';
+  }
+  function saveMode(v) {
+    try { localStorage.setItem(MODE_KEY, v); } catch (e) { /* 保存できなくても続行 */ }
   }
 
   function renderMonth(el, d) {
@@ -416,9 +419,13 @@ const WIDGET_JS = String.raw`
     html += '</tr></tbody></table>';
     // モードによって出ているものが違うので、注記も合わせる
     // (レンタルでは ○ が出ないのに「○ = 受付可」と書くと通じない)
+    // 選んだモードは次に開いたときも覚えている。「スポーツ走行」のまま
+    // 開き直すとレースパック・貸切が出ないので、その場で戻り方を書いておく
     var note = mode === 'rental'
       ? 'すでにご予約が入っているレースパック・貸切を出しています。'
-      : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';
+      : mode === 'sport'
+        ? '○ = 受付可。レースパック・貸切のご予約は「両方」を押すと出ます。'
+        : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';
     html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
       + note
       + '<a href="' + reserveLink(d, mode) + '" style="font-weight:800">ご予約はこちら →</a></p>';
@@ -427,7 +434,9 @@ const WIDGET_JS = String.raw`
 
     Array.prototype.forEach.call(el.querySelectorAll('[data-mode]'), function (b) {
       b.addEventListener('click', function () {
-        el.setAttribute('data-mode', b.getAttribute('data-mode'));
+        var v = b.getAttribute('data-mode');
+        saveMode(v);
+        el.setAttribute('data-mode', v);
         // データは取得済みなので、そのまま描き直すだけでよい
         renderMonth(el, d);
       });

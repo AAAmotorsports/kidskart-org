@@ -749,6 +749,54 @@ begin
   -- 「様」が入っていても二重にならない
   assert aone_public_name('山田 太郎様', 'full') = '山田 太郎 様', '21-12 敬称が二重になる';
 
+  -- =========================================================================
+  raise notice '--- 22. 「このカテゴリーだけ走れる」予定 (レース前日)';
+  -- =========================================================================
+  declare d_only date := aone_today() + 90;
+  begin
+    -- カートだけ許して、ほかのスポーツ走行は止める
+    insert into aone_blocks (date, kind, title, scope, allow_categories)
+    values (d_only, 'event', 'レース前日', 'only_category', array['kart']);
+
+    r := aone_check_availability('sport', d_only, 'kart', 'am');
+    assert (r->>'ok')::boolean, '22-1 許可したカートが止まってしまう: ' || r::text;
+    r := aone_check_availability('sport', d_only, 'minibike', 'am');
+    assert (r->>'reason') = 'blocked', '22-2 ミニバイクが止まらない: ' || r::text;
+    r := aone_check_availability('sport', d_only, 'kidskart', 'pm');
+    assert (r->>'reason') = 'blocked', '22-3 キッズカートが止まらない';
+
+    -- スポーツ走行だけの指定。RP・貸切には効かない (止めたいなら別の予定を足す)
+    r := aone_check_availability('rp', d_only, null, null, '10:00', null, 5);
+    assert (r->>'ok')::boolean, '22-4 RP まで止まってしまう: ' || r::text;
+
+    -- day_state の表示も合っているか (カートは受付可、ミニバイクは off)
+    st := aone_day_state(d_only);
+    assert (select x->>'status' from jsonb_array_elements(st->'sport'->'am'->'categories') x
+             where x->>'code' = 'kart') <> 'off', '22-5 カートが off 表示になる';
+    assert (select x->>'status' from jsonb_array_elements(st->'sport'->'am'->'categories') x
+             where x->>'code' = 'minibike') = 'off', '22-6 ミニバイクが off 表示にならない';
+
+    -- 2 つ許すこともできる
+    update aone_blocks set allow_categories = array['kart','minibike'] where date = d_only;
+    r := aone_check_availability('sport', d_only, 'minibike', 'am');
+    assert (r->>'ok')::boolean, '22-7 許可を足してもミニバイクが止まったまま';
+
+    -- 許可が空なら何も止めない (登録し忘れで全部止まる事故を避ける)
+    update aone_blocks set allow_categories = '{}' where date = d_only;
+    r := aone_check_availability('sport', d_only, 'minibike', 'am');
+    assert (r->>'ok')::boolean, '22-8 許可が空のときに止まってしまう';
+
+    -- ★ すでに入っている予約は、あとから予定を足しても消えない
+    update aone_blocks set allow_categories = array['kart'] where date = d_only;
+    r := t_book(jsonb_build_object('kind','sport','date', d_only, 'session','am',
+                                   'category_code','minibike','party_size',1,
+                                   'forced', true, 'who','先に入っていたミニバイク'));
+    assert (r->>'ok')::boolean, '22-9 強制受付ができない';
+    assert (select count(*) from aone_reservations
+             where date = d_only and category_code = 'minibike' and aone_is_live(status)) = 1,
+      '22-10 予定を足すと既存の予約が消える';
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

@@ -273,6 +273,18 @@ const isOpen = (v: string) => v === 'true';
         </select>
       </div>
     </div>
+    <div class="field" id="wrap-allow" hidden>
+      <label>走れるカテゴリー (チェックしたものだけ受け付けます)</label>
+      <div class="choice">
+        {cats.map((c) => (
+          <label><input type="checkbox" class="allow-cat" value={c.code} /> {c.name}</label>
+        ))}
+      </div>
+      <div class="tiny muted">
+        例: レース前日はカートだけチェック → ミニバイク・キッズカート・その他が止まります。
+        あとからカテゴリーが増えても、チェックしていないものは自動的に止まります。
+      </div>
+    </div>
     <label class="tiny"><input type="checkbox" id="f-public" checked /> 公開スケジュールに掲載する</label>
 
     <!-- ============ 参加申込の受付 ============ -->
@@ -346,6 +358,13 @@ const isOpen = (v: string) => v === 'true';
     // 参加クラスは RMC (マイカート) だけ。レンタルカートにクラス分けは無い
     $('wrap-entry-classes').hidden = t !== 'series';
   }
+  // 「指定したカテゴリーだけ走れる」のときだけ、許可するカテゴリーを聞く
+  function syncScope() {
+    $('wrap-allow').hidden = $('f-scope').value !== 'only_category';
+  }
+  $('f-scope').addEventListener('change', syncScope);
+  syncScope();
+
   $('f-entry').addEventListener('change', syncEntry);
   $('f-entry-type').addEventListener('change', syncEntry);
   syncEntry();
@@ -393,6 +412,8 @@ const isOpen = (v: string) => v === 'true';
           start_time: $('f-start').value,
           end_time: $('f-end').value,
           category_code: $('f-category').value,
+          allow_categories: Array.from(document.querySelectorAll('.allow-cat:checked'))
+            .map((el) => el.value).join(','),
           is_public: $('f-public').checked,
           // 参加申込の受付設定。チェックが外れていれば受付しない
           entry_open: $('f-entry').checked,
