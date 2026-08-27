@@ -85,6 +85,10 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     links: {
       site: `${origin}/`,
       reserve: `${origin}/reserve`,
+      // カレンダーのモード (レンタル / スポーツ走行) で入口を変えるため
+      rp: `${origin}/reserve/rp`,
+      sport: `${origin}/reserve/sport`,
+      event: `${origin}/reserve/event`,
       schedule: `${origin}/schedule`,
     },
   }), {
