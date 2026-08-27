@@ -399,24 +399,26 @@ const surface = state?.surface.status ?? '';
             <label for="n-start">開始</label>
             <input type="time" id="n-start" step="1800" value="14:00" />
           </div>
-          <div class="field">
-            <label for="n-end">終了 (貸切)</label>
+          <div class="field" id="wrap-end">
+            <label for="n-end">終了</label>
             <input type="time" id="n-end" step="1800" />
           </div>
         </div>
-        <div class="two">
+        <div class="two" id="wrap-counts">
           <div class="field">
             <label for="n-party">人数</label>
             <input type="number" id="n-party" min="1" value="1" />
           </div>
-          <div class="field">
-            <label for="n-vehicles">台数</label>
+          <div class="field" id="wrap-vehicles">
+            <label for="n-vehicles">カート台数</label>
             <input type="number" id="n-vehicles" min="1" />
+            <div class="tiny muted">5 台以上から</div>
           </div>
         </div>
         <div class="field">
           <label for="n-name">お名前</label>
-          <input type="text" id="n-name" placeholder="○○ 様" />
+          <input type="text" id="n-name" placeholder="山田 太郎" />
+          <div class="tiny muted">「様」は付けなくて大丈夫です (表示するときに付きます)</div>
         </div>
         <div class="two">
           <div class="field">
@@ -741,8 +743,20 @@ const surface = state?.surface.status ?? '';
     $('wrap-category').hidden = kind !== 'sport';
     $('wrap-nightkind').hidden = kind !== 'night';
     $('wrap-times').hidden = kind === 'sport';
+
+    // 終了時刻とカート台数は貸切だけの項目。
+    // レースパックは人数だけ選べばよく、出しておくと入れる物だと思われる
+    const isCharter = kind === 'charter'
+      || (kind === 'night' && $('n-nightkind').value === 'charter');
+    $('wrap-end').hidden = !isCharter;
+    $('wrap-vehicles').hidden = !isCharter;
+    // 片方だけになったら 1 列にして、空欄が並んでいるように見せない
+    $('wrap-times').classList.toggle('one', !isCharter);
+    $('wrap-counts').classList.toggle('one', !isCharter);
+    if (!isCharter) { $('n-end').value = ''; $('n-vehicles').value = ''; }
   }
   $('n-kind').addEventListener('change', syncKindFields);
+  $('n-nightkind').addEventListener('change', syncKindFields);
   syncKindFields();
 
   $('n-save').addEventListener('click', async () => {
@@ -867,6 +881,7 @@ const surface = state?.surface.status ?? '';
   .entry-head{background:var(--red);color:#fff;margin:-1rem -1rem .7rem;padding:.6rem 1rem;
     border-radius:10px 10px 0 0;font-size:1.05rem}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  .two.one{grid-template-columns:1fr}
   .res{border:1px solid var(--line);border-radius:10px;padding:.6rem;margin-bottom:.6rem;background:var(--bg-2)}
   .res .acts{margin-top:.4rem}
   .res .note{color:var(--ink-2)}

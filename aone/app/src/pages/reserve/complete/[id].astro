@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { reservationById } from '@lib/queries';
-import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen } from '@lib/domain';
+import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, nameWithHonorific } from '@lib/domain';
 
 export const prerender = false;
 
@@ -49,7 +49,7 @@ const pending = visible && r.status !== 'confirmed';
             <tr><th>時間</th><td>{timeRangeLabel(r)}</td></tr>
             <tr><th>人数</th><td>{r.party_size} 名</td></tr>
             {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
-            <tr><th>お名前</th><td>{r.contact_name} 様</td></tr>
+            <tr><th>お名前</th><td>{nameWithHonorific(r.contact_name)}</td></tr>
           </tbody>
         </table>
       </div>

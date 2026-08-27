@@ -13,6 +13,7 @@
 import { getSupabaseAdmin } from './supabase';
 import {
   jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
+  nameWithHonorific,
 } from './domain';
 
 export type MailKind = 'confirm' | 'reminder' | 'thanks' | 'followup' | 'broadcast' | 'cancel' | 'admin';
@@ -209,7 +210,7 @@ export function confirmMail(env: Env, r: ReservationForMail, origin: string) {
     : `【予約確定】${jaDate(r.date)} ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS]} — ${r.reservation_number}`;
 
   const text = [
-    `${r.contact_name} 様`,
+    `${nameWithHonorific(r.contact_name)}`,
     '',
     ...(pending
       ? [
@@ -250,7 +251,7 @@ export function reminderMail(env: Env, r: ReservationForMail, origin: string) {
   return {
     subject: `【明日のご予約】${jaDate(r.date)} — ${r.reservation_number}`,
     text: [
-      `${r.contact_name} 様`,
+      `${nameWithHonorific(r.contact_name)}`,
       '',
       '明日のご予約についてご案内します。',
       '',
@@ -272,7 +273,7 @@ export function thanksMail(env: Env, r: ReservationForMail, origin: string) {
   return {
     subject: '本日はありがとうございました',
     text: [
-      `${r.contact_name} 様`,
+      `${nameWithHonorific(r.contact_name)}`,
       '',
       '本日は A-ONE サーキットをご利用いただきありがとうございました。',
       'お楽しみいただけましたでしょうか。',
@@ -292,7 +293,7 @@ export function followupMail(env: Env, r: ReservationForMail, origin: string) {
   return {
     subject: 'またのご利用をお待ちしております — A-ONE サーキット',
     text: [
-      `${r.contact_name} 様`,
+      `${nameWithHonorific(r.contact_name)}`,
       '',
       `先日 (${jaDate(r.date)}) は A-ONE サーキットをご利用いただきありがとうございました。`,
       'その後、走りの感触はいかがでしたか。',
@@ -315,7 +316,7 @@ export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee:
   return {
     subject: `【キャンセル受付】${r.reservation_number}`,
     text: [
-      `${r.contact_name} 様`,
+      `${nameWithHonorific(r.contact_name)}`,
       '',
       '下記のご予約をキャンセルしました。',
       '',
@@ -354,7 +355,7 @@ export function changeMail(env: Env, r: ReservationForMail, origin: string) {
   return {
     subject: `【ご予約内容の変更】${jaDate(r.date)} — ${r.reservation_number}`,
     text: [
-      `${r.contact_name} 様`,
+      `${nameWithHonorific(r.contact_name)}`,
       '',
       'ご予約の内容を変更しました。下記のとおりお受けしています。',
       '',
@@ -392,6 +393,8 @@ export function adminChangeMail(
   const add = (name: string, a: unknown, b: unknown) => {
     if (String(a ?? '—') !== String(b ?? '—')) diffs.push(`${name}: ${a ?? '—'} → ${b ?? '—'}`);
   };
+  // 名前が変わったら受付シートを刷り直すことになるので、いちばん上に出す
+  add('お名前', before.contact_name, after.contact_name);
   add('日付', jaDate(before.date), jaDate(after.date));
   add('時間', timeRangeLabel(before), timeRangeLabel(after));
   add('人数', `${before.party_size} 名`, `${after.party_size} 名`);
@@ -403,7 +406,7 @@ export function adminChangeMail(
   add('状態', STATUS_LABELS[before.status] ?? before.status, STATUS_LABELS[after.status] ?? after.status);
 
   return {
-    subject: `✏️変更 [A-ONE] ${label} ${after.date} ${hhmm(after.start_time)} ${after.contact_name} 様`,
+    subject: `✏️変更 [A-ONE] ${label} ${after.date} ${hhmm(after.start_time)} ${nameWithHonorific(after.contact_name)}`,
     text: [
       'お客様が予約者ページからご予約内容を変更しました。',
       '',
@@ -428,7 +431,7 @@ export function adminChangeMail(
 export function adminCancelMail(env: Env, r: ReservationForMail, origin: string) {
   const label = KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind;
   return {
-    subject: `❌キャンセル [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様`,
+    subject: `❌キャンセル [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${nameWithHonorific(r.contact_name)}`,
     text: [
       'お客様が予約者ページからキャンセルしました。枠が空きます。',
       '',
@@ -463,7 +466,7 @@ export function pendingCallbackAlertMail(
       ...rows.flatMap((r) => [
         '━━━━━━━━━━━━━━━━━━━━',
         `【${r.hours_waiting} 時間経過】${STATUS_LABELS[r.status] ?? r.status}`,
-        `${r.contact_name} 様  📞 ${r.contact_phone ?? '電話なし'}`,
+        `${nameWithHonorific(r.contact_name)}  📞 ${r.contact_phone ?? '電話なし'}`,
         `${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind} / ${jaDate(r.date)} ` +
           `${hhmm(r.start_time)}${r.end_time ? '〜' + hhmm(r.end_time) : ''} / ${r.party_size} 名`,
         `予約番号: ${r.reservation_number}`,
@@ -488,8 +491,8 @@ export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string)
   return {
     // 件名の頭で「折り返しが要るか」が分かるようにする (受信箱で見落とさないため)
     subject: callback
-      ? `🔴要折り返し [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様 (${statusJa})`
-      : `✅確定 [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${r.contact_name} 様`,
+      ? `🔴要折り返し [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${nameWithHonorific(r.contact_name)} (${statusJa})`
+      : `✅確定 [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${nameWithHonorific(r.contact_name)}`,
     text: [
       ...(callback
         ? [

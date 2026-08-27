@@ -4,6 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { reservationByToken } from '@lib/queries';
 import {
   jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, todayJst, addDays,
+  nameWithHonorific, stripHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -59,7 +60,7 @@ const isSport = r?.kind === 'sport';
             <tr><th>人数</th><td>{r.party_size} 名</td></tr>
             {r.vehicle_count != null && <tr><th>台数</th><td>{r.vehicle_count} 台</td></tr>}
             {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
-            <tr><th>お名前</th><td>{r.contact_name} 様</td></tr>
+            <tr><th>お名前</th><td>{nameWithHonorific(r.contact_name)}</td></tr>
             <tr><th>お電話</th><td>{r.contact_phone ?? '—'}</td></tr>
             <tr><th>メール</th><td>{r.contact_email ?? '—'}</td></tr>
           </tbody>
@@ -109,6 +110,14 @@ const isSport = r?.kind === 'sport';
             <div class="field" style="max-width:12rem">
               <label for="party">人数</label>
               <input type="number" id="party" value={r.party_size} min={isRp ? 3 : 1} max="200" />
+            </div>
+
+            <div class="field">
+              <label for="name">お名前</label>
+              <input type="text" id="name" value={stripHonorific(r.contact_name)} maxlength="60" />
+              <div class="tiny muted">
+                代表者のお名前です。「様」は付けなくて大丈夫です。
+              </div>
             </div>
 
             <div id="update-msg" class="notice" hidden></div>
@@ -208,6 +217,8 @@ const isSport = r?.kind === 'sport';
         access_token: token,
         date: $('date').value,
         party_size: Number($('party').value || 1),
+        // 名前も変えられる (結婚・法人名の変更・入力ミスの直し)
+        name: $('name').value.trim(),
       };
       if (kind === 'sport') payload.session = session;
       else if (kind === 'rp') payload.start_time = picked;
