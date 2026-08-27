@@ -93,6 +93,9 @@ const WIDGET_JS = String.raw`
     '.aone-body{display:block}',
     '.aone-dow{display:none}',
     '.aone-cal td.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--aone-red)}',
+    // 参加申込を受け付けている日は、押せることが分かるようにする
+    '.aone-entry{background:var(--aone-red);color:#fff;border-radius:4px;padding:1px 4px;',
+    '  font-weight:800;font-size:.9em;margin-top:2px;text-align:center}',
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
     '.aone-cal td.sat .aone-d{color:#2f6fb5}',
@@ -309,12 +312,20 @@ const WIDGET_JS = String.raw`
       if (day.business === 'cancelled' || day.business === 'closed') cls.push('closed');
       if (day.date < d.today) cls.push('past');
 
-      var linkable = day.date >= d.today
-        && day.business !== 'cancelled' && day.business !== 'closed';
-      html += '<td class="' + cls.join(' ') + (linkable ? ' linkable' : '') + '">';
-      if (linkable) {
-        html += '<a class="aone-cell" href="' + d.links.reserve + '?date=' + day.date +
-          '" title="この日のご予約へ">';
+      // 参加申込を受け付けているイベントの日は、申込フォームへ飛ばす。
+      // イベント日は終日ブロックされていて走行の予約はできないので、
+      // 「ご予約へ」に飛ばしても行き止まりになる
+      var href = day.entry_url || null;
+      var title = '参加申込へ';
+      if (!href && day.date >= d.today
+          && day.business !== 'cancelled' && day.business !== 'closed') {
+        href = d.links.reserve + '?date=' + day.date;
+        title = 'この日のご予約へ';
+      }
+      if (day.entry_url) cls.push('entry');
+      html += '<td class="' + cls.join(' ') + (href ? ' linkable' : '') + '">';
+      if (href) {
+        html += '<a class="aone-cell" href="' + esc(href) + '" title="' + title + '">';
       } else {
         html += '<div class="aone-cell">';
       }
@@ -336,6 +347,10 @@ const WIDGET_JS = String.raw`
           + (head ? '<span class="aone-l1">' + esc(head) + '</span>' : '')
           + '<span class="aone-l2 aone-clamp">' + esc(name) + '</span></div>';
       });
+      // 押せることが分からないとクリックされないので、はっきり出す
+      if (day.entry_url) {
+        html += '<div class="aone-entry">参加申込 受付中 →</div>';
+      }
 
       if (day.date >= d.today) {
         // AM / PM ごとに「予約 → 受付状況」の順で並べる
@@ -348,7 +363,7 @@ const WIDGET_JS = String.raw`
               books.filter(function (b) { return isPmBooking(b.time); }), closedDay)
           + '</div>';
       }
-      html += '</div>' + (linkable ? '</a></td>' : '</div></td>');
+      html += '</div>' + (href ? '</a></td>' : '</div></td>');
       col++;
     });
     while (col < 7 && col > 0) { html += '<td class="pad"></td>'; col++; }

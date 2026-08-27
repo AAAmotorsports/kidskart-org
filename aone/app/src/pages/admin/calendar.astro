@@ -8,6 +8,7 @@ import {
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, BUSINESS_LABELS, SURFACE_LABELS,
+  ENTRY_TYPE_LABELS, ENTRY_TYPE_ORDER, RACE_CLASSES,
   BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, blockLabel,
   nameWithHonorific,
 } from '@lib/domain';
@@ -205,7 +206,7 @@ const isOpen = (v: string) => v === 'true';
             <div class="tiny res">
               <strong>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</strong>{' '}
               {r.kind === 'sport' ? (r.session === 'am' ? 'AM' : 'PM') : timeRangeLabel(r)}<br />
-              {r.contact_name} 様 ({r.party_size}名)
+              {nameWithHonorific(r.contact_name)} ({r.party_size}名)
               {r.status !== 'confirmed' && <span class="badge warn">{STATUS_LABELS[r.status]}</span>}
             </div>
           ))}
@@ -282,9 +283,7 @@ const isOpen = (v: string) => v === 'true';
           <div class="field">
             <label for="f-entry-type">申込の様式</label>
             <select id="f-entry-type">
-              <option value="endurance">耐久 (チーム単位)</option>
-              <option value="sprint">スプリント (人単位)</option>
-              <option value="series">シリーズ戦 (人単位・クラスあり)</option>
+              {ENTRY_TYPE_ORDER.map((t) => <option value={t}>{ENTRY_TYPE_LABELS[t]}</option>)}
             </select>
           </div>
           <div class="field">
@@ -304,9 +303,14 @@ const isOpen = (v: string) => v === 'true';
             <div class="tiny muted">空欄なら開催日の前日</div>
           </div>
         </div>
-        <div class="field">
-          <label for="f-entry-classes">参加クラス (シリーズ戦のみ・カンマ区切り)</label>
-          <input type="text" id="f-entry-classes" placeholder="Light, Junior, Mini, Micro, ビギナー, SS" />
+        <div class="field" id="wrap-entry-classes">
+          <label>参加クラス</label>
+          <div class="choice">
+            {RACE_CLASSES.map((c) => (
+              <label><input type="checkbox" class="entry-class" value={c} checked /> {c}</label>
+            ))}
+          </div>
+          <div class="tiny muted">申込フォームで選べるクラスです。使わないものはチェックを外してください。</div>
         </div>
         <div class="two">
           <div class="field">
@@ -339,6 +343,8 @@ const isOpen = (v: string) => v === 'true';
     // 様式で単位の既定が決まる (耐久はチーム、ほかは人)
     const t = $('f-entry-type').value;
     $('f-entry-unit').value = t === 'endurance' ? 'team' : 'person';
+    // 参加クラスは RMC (マイカート) だけ。レンタルカートにクラス分けは無い
+    $('wrap-entry-classes').hidden = t !== 'series';
   }
   $('f-entry').addEventListener('change', syncEntry);
   $('f-entry-type').addEventListener('change', syncEntry);
@@ -394,7 +400,8 @@ const isOpen = (v: string) => v === 'true';
           entry_price: $('f-entry-price').value,
           entry_unit: $('f-entry-unit').value,
           entry_deadline: $('f-entry-deadline').value,
-          entry_classes: $('f-entry-classes').value,
+          entry_classes: Array.from(document.querySelectorAll('.entry-class:checked'))
+            .map((el) => el.value).join(','),
           entry_rules_url: $('f-entry-rules').value,
           entry_vehicle_rules_url: $('f-entry-vrules').value,
           entry_note: $('f-entry-note').value,

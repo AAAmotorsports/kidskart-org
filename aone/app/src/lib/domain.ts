@@ -107,10 +107,19 @@ export function surfaceText(status?: string | null): string | null {
  * 走行枠を消費しないため (イベント日は予定が終日止めている)。
  */
 export const ENTRY_TYPE_LABELS: Record<string, string> = {
-  endurance: '耐久 (チーム)',
-  sprint: 'スプリント',
-  series: 'シリーズ戦',
+  sprint: 'スプリント (レンタルカート)',
+  endurance: '耐久 (レンタルカート)',
+  series: 'RMC (マイカート)',
 };
+
+/** 管理画面のプルダウンの並び。使う頻度の高い順 */
+export const ENTRY_TYPE_ORDER = ['sprint', 'endurance', 'series'] as const;
+
+/**
+ * 参加クラスの選択肢。RMC (マイカート) だけで使う。
+ * レンタルカートの耐久・スプリントにクラス分けは無い。
+ */
+export const RACE_CLASSES = ['Light', 'Junior', 'Mini', 'Micro', 'ビギナー', 'SS'] as const;
 
 export const ENTRY_STATUS_LABELS: Record<string, string> = {
   received: '受付済み',

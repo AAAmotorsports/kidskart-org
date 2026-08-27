@@ -9,6 +9,7 @@ import {
   BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
   BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
   CONTACT_METHOD_LABELS, CHARTER_TYPE_LABELS, jaDateTime,
+  nameWithHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -64,13 +65,13 @@ const surface = state?.surface.status ?? '';
   {waitingCallback.length > 0 && (
     <div class="notice ng" style="margin-bottom:1rem">
       <strong>🔴 折り返し未対応 {waitingCallback.length} 件</strong> —
-      {waitingCallback.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]} / ${r.contact_phone ?? '電話なし'})`).join(' /')}
+      {waitingCallback.map((r) => ` ${nameWithHonorific(r.contact_name)} (${STATUS_LABELS[r.status]} / ${r.contact_phone ?? '電話なし'})`).join(' /')}
     </div>
   )}
   {contacted.length > 0 && (
     <div class="notice warn" style="margin-bottom:1rem">
       <strong>対応済み・返事待ち {contacted.length} 件</strong> —
-      {contacted.map((r) => ` ${r.contact_name}様 (${STATUS_LABELS[r.status]})`).join(' /')}
+      {contacted.map((r) => ` ${nameWithHonorific(r.contact_name)} (${STATUS_LABELS[r.status]})`).join(' /')}
     </div>
   )}
 
@@ -166,7 +167,7 @@ const surface = state?.surface.status ?? '';
             <div class="spread">
               <div>
                 <span class="badge info">{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</span>
-                <strong> {r.contact_name} 様</strong>
+                <strong> {nameWithHonorific(r.contact_name)}</strong>
                 <span class="small muted"> {timeRangeLabel(r)} / {r.party_size}名
                   {r.vehicle_count ? ` / ${r.vehicle_count}台` : ''}
                   {r.category_code ? ` / ${cats.find((c) => c.code === r.category_code)?.name ?? r.category_code}` : ''}
@@ -315,7 +316,7 @@ const surface = state?.surface.status ?? '';
             <summary class="small muted">キャンセル済み {dead.length} 件</summary>
             {dead.map((r) => (
               <div class="tiny muted" style="padding:.2rem 0">
-                {STATUS_LABELS[r.status]} — {r.contact_name} 様 / {KIND_SHORT[r.kind as keyof typeof KIND_SHORT]} /
+                {STATUS_LABELS[r.status]} — {nameWithHonorific(r.contact_name)} / {KIND_SHORT[r.kind as keyof typeof KIND_SHORT]} /
                 {timeRangeLabel(r)} {r.cancel_reason ? `(${r.cancel_reason})` : ''}
               </div>
             ))}
