@@ -16,14 +16,17 @@ export const prerender = false;
  */
 function publicView(state: any): any {
   if (!state || typeof state !== 'object') return state;
-  const { business, blocks, ...rest } = state;
+  const { business, surface, blocks, ...rest } = state;
   return {
     ...rest,
-    business: business && {
-      status: business.status,
-      source: business.source,
-      message: business.message,   // 公開メッセージ (staff_note は落とす)
+    // 0021 を当てる前の関数は business / surface を返さない。
+    // 先にアプリだけがデプロイされる瞬間に画面が落ちないよう既定値で埋める。
+    business: {
+      status: business?.status ?? 'open',
+      source: business?.source ?? 'manual',
+      message: business?.message ?? null,   // 公開メッセージ (staff_note は落とす)
     },
+    surface: { status: surface?.status ?? null },
     blocks: (Array.isArray(blocks) ? blocks : [])
       .filter((b: any) => b?.is_public)
       .map((b: any) => ({
