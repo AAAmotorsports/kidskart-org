@@ -4,7 +4,8 @@ import { envFrom } from '@lib/supabase';
 import { dayState, reservationsOfDay, pendingReservations, pendingCallbacks } from '@lib/queries';
 import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
-  KIND_SHORT, STATUS_LABELS, WEATHER_LABELS, WEATHER_EMOJI, STATUS_MARK,
+  KIND_SHORT, STATUS_LABELS, STATUS_MARK,
+  BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -28,10 +29,11 @@ const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 const weekStates = await Promise.all(week.map((d) => dayState(env, d)));
 const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
-// 雨が降った瞬間に 1 タップで営業状態を変えられるようにする。
+// 雨が降った瞬間に 1 タップで営業状況・路面状況を変えられるようにする。
 // ここを押すと「今日走れる？」と公開スケジュールに即反映される。
-const WEATHER_ORDER = ['normal', 'rain_caution', 'checking', 'surface_recovery', 'cancelled', 'other'] as const;
-const currentWeather = state?.weather.status ?? 'normal';
+// ★ 押してもお客様へのメールは飛ばない (急な休みは電話で連絡する運用)。
+const currentBusiness = state?.business.status ?? 'open';
+const currentSurface = state?.surface.status ?? '';
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
 ---
 <Base title="A-ONE 管理" admin wide>
@@ -50,29 +52,47 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
     <div class="kpi"><div class="n">{live.filter((r) => r.kind === 'rp').length}</div><div class="l">RP</div></div>
     <div class="kpi"><div class="n">{pending.length}</div><div class="l">要対応</div></div>
     <div class="kpi wx">
-      <div class="n small">{WEATHER_LABELS[state?.weather.status ?? 'normal']}</div>
-      <div class="l">営業状態</div>
+      <div class="n small">{BUSINESS_LABELS[currentBusiness] ?? currentBusiness}</div>
+      <div class="l">営業状況{currentSurface && ` / ${SURFACE_LABELS[currentSurface] ?? currentSurface}`}</div>
     </div>
   </div>
 
-  <!-- ============ 天候ワンタップ ============ -->
+  <!-- ============ 営業状況 / 路面状況のワンタップ ============ -->
   <div class="card wx-card">
     <div class="spread" style="margin-bottom:.5rem">
-      <h2 style="margin:0"><span class="ic">🌦</span> 本日の営業状態</h2>
-      <span class="tiny muted">押すとすぐ公開ページに反映されます</span>
+      <h2 style="margin:0"><span class="ic">🏁</span> 本日の営業状況</h2>
+      <span class="tiny muted">押すとすぐ公開ページに反映されます（メールは飛びません）</span>
     </div>
     <div class="wx-buttons">
-      {WEATHER_ORDER.map((code) => (
-        <button type="button" class:list={['wx-btn', code, currentWeather === code && 'on']}
+      {BUSINESS_ORDER.map((code) => (
+        <button type="button" class:list={['wx-btn', code, currentBusiness === code && 'on']}
                 data-wx={code}>
-          <span class="wx-emoji">{WEATHER_EMOJI[code]}</span>
-          {WEATHER_LABELS[code]}
+          <span class="wx-emoji">{BUSINESS_EMOJI[code]}</span>
+          {BUSINESS_LABELS[code]}
         </button>
       ))}
     </div>
+
+    <div class="spread" style="margin:.9rem 0 .5rem">
+      <h2 style="margin:0"><span class="ic">💧</span> 路面状況</h2>
+      <span class="tiny muted">表示だけ。予約は止まりません</span>
+    </div>
+    <div class="wx-buttons">
+      <button type="button" class:list={['wx-btn', 'sf', !currentSurface && 'on']} data-sf="">
+        表示しない
+      </button>
+      {SURFACE_ORDER.map((code) => (
+        <button type="button" class:list={['wx-btn', 'sf', currentSurface === code && 'on']}
+                data-sf={code}>
+          <span class="wx-emoji">{SURFACE_EMOJI[code]}</span>
+          {SURFACE_LABELS[code]}
+        </button>
+      ))}
+    </div>
+
     <div class="row" style="margin-top:.6rem">
       <input type="text" id="wx-msg" placeholder="公開メッセージ (例: 11 時に再判断します)"
-             value={state?.weather.message ?? ''} style="max-width:26rem" />
+             value={state?.business.message ?? ''} style="max-width:26rem" />
       <button class="btn sm" id="wx-msg-save">メッセージだけ保存</button>
       <span id="wx-out" class="small"></span>
     </div>
@@ -186,7 +206,12 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
             <div class="wd">{jaDateShort(d)}</div>
             {s ? (
               <>
-                {s.weather.status !== 'normal' && <div class="tiny wx-tag">{WEATHER_LABELS[s.weather.status]}</div>}
+                {s.business.status !== 'open' && (
+                  <div class="tiny wx-tag">{BUSINESS_LABELS[s.business.status] ?? s.business.status}</div>
+                )}
+                {s.surface.status && (
+                  <div class="tiny muted">{SURFACE_LABELS[s.surface.status] ?? s.surface.status}</div>
+                )}
                 <div class="tiny">走行 {s.counts.sport} / RP {s.counts.rp}</div>
                 <div class="tiny muted">{s.counts.people} 名</div>
                 {(s.blocks ?? []).slice(0, 2).map((b) => <div class="tiny ev">{b.title}</div>)}
@@ -213,15 +238,13 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
     return data;
   }
 
-  async function saveWeather(status) {
+  // 送らなかった項目は API 側で据え置かれる。
+  // 営業状況のボタンを押しても、日別画面で入れた路面状況やメモは消えない。
+  async function saveDay(patch) {
     const out = $('wx-out');
     out.textContent = ' 保存中…';
     try {
-      await post('/api/admin/day', {
-        date: today,
-        weather_status: status,
-        status_message: $('wx-msg').value,
-      });
+      await post('/api/admin/day', Object.assign({ date: today }, patch));
       out.textContent = ' 保存しました';
       setTimeout(() => location.reload(), 500);
     } catch (e) {
@@ -229,13 +252,36 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
     }
   }
 
+  // 片方のボタンを押したときに、もう片方を巻き添えで消さないよう毎回両方送る
+  const currentBusiness = () => {
+    const on = document.querySelector('.wx-btn.on:not(.sf)');
+    return on ? on.dataset.wx : 'open';
+  };
+  const currentSurface = () => {
+    const on = document.querySelector('.wx-btn.sf.on');
+    return on ? on.dataset.sf : '';
+  };
+
   document.querySelectorAll('[data-wx]').forEach((b) => {
-    b.addEventListener('click', () => saveWeather(b.dataset.wx));
+    b.addEventListener('click', () => saveDay({
+      business_status: b.dataset.wx,
+      surface_status: currentSurface(),
+    }));
+  });
+
+  document.querySelectorAll('[data-sf]').forEach((b) => {
+    b.addEventListener('click', () => saveDay({
+      business_status: currentBusiness(),
+      surface_status: b.dataset.sf,
+    }));
   });
 
   $('wx-msg-save').addEventListener('click', () => {
-    const on = document.querySelector('.wx-btn.on');
-    saveWeather(on ? on.dataset.wx : 'normal');
+    saveDay({
+      business_status: currentBusiness(),
+      surface_status: currentSurface(),
+      status_message: $('wx-msg').value,
+    });
   });
 
   const bc = $('bc-send');
@@ -268,9 +314,11 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   .wx-btn:active{transform:scale(.98)}
   .wx-emoji{font-size:1.1rem}
   .wx-btn.on{color:#fff;border-color:transparent}
-  .wx-btn.on.normal{background:var(--green)}
-  .wx-btn.on.rain_caution,.wx-btn.on.checking,.wx-btn.on.surface_recovery,.wx-btn.on.other{background:var(--amber);color:var(--ink)}
-  .wx-btn.on.cancelled{background:var(--red)}
+  .wx-btn.on.open{background:var(--green)}
+  .wx-btn.on.checking{background:var(--amber);color:var(--ink)}
+  .wx-btn.on.cancelled,.wx-btn.on.closed{background:var(--red)}
+  /* 路面は営業状況と別軸だとひと目で分かるように色を変える */
+  .wx-btn.on.sf{background:var(--ink);color:#fff}
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;margin-bottom:1rem}
   .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem;text-align:center}
   .kpi .n{font-size:1.6rem;font-weight:800;line-height:1.1}

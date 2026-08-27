@@ -24,7 +24,7 @@
 * 電話予約を登録
 * レース・イベントを登録
 * 貸切・臨時休業を登録
-* 天候ステータスを変更
+* 営業状況・路面状況を変更
 
 を入れるだけで、
 
@@ -59,7 +59,8 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 
 表示されるもの:
 
-* 今日の日付と営業状態 (通常営業 / 雨天注意 / 雨天中止 …)
+* 今日の日付と営業状況 (営業中 / 営業確認中 / 走行中止 / 休業)
+* 路面状況 (ドライ / ウェット / ウェット→ドライ / ヘビーウェット。設定したときだけ)
 * 午前・午後 × カテゴリー別の ○ △ ✕ —
   （カート・ミニバイクは「走れます」、キッズ・その他は「要予約」）
 * RP の空き状況
@@ -104,7 +105,8 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 {
   "date": "2026-08-20",
   "label": "2026年8月20日 (木)",
-  "weather": { "status": "normal", "label": "通常営業", "message": null, "open": true },
+  "business": { "status": "open", "label": "営業中", "message": null, "open": true },
+  "surface": { "status": "wet", "label": "ウェット" },
   "sessions": [
     { "key": "am", "label": "午前", "time": "09:00〜12:00",
       "used_classes": 1, "max_classes": 2,
@@ -121,7 +123,7 @@ WordPress の該当ページ (クラシックエディタなら「テキスト�
 
 ### `GET /api/public/month?ym=2026-08`
 
-各日の `am_open` / `pm_open` / `rp_free` / `events` / `weather_label` を返します。
+各日の `am_open` / `pm_open` / `rp_free` / `events` / `business_label` / `surface_label` を返します。
 
 どちらも CORS 許可済み・個人情報なし・60〜300 秒キャッシュです。
 
@@ -147,9 +149,13 @@ add_shortcode('aone_today', function () {
 
     $out  = '<div class="aone-today">';
     $out .= '<h3>' . esc_html($data['label']) . ' の走行状況';
-    $out .= ' <small>' . esc_html($data['weather']['label']) . '</small></h3>';
-    if (!empty($data['weather']['message'])) {
-        $out .= '<p>' . esc_html($data['weather']['message']) . '</p>';
+    $out .= ' <small>' . esc_html($data['business']['label']) . '</small>';
+    if (!empty($data['surface'])) {
+        $out .= ' <small>路面 ' . esc_html($data['surface']['label']) . '</small>';
+    }
+    $out .= '</h3>';
+    if (!empty($data['business']['message'])) {
+        $out .= '<p>' . esc_html($data['business']['message']) . '</p>';
     }
     foreach ($data['sessions'] as $s) {
         $out .= '<p><strong>' . esc_html($s['label']) . '</strong> ' . esc_html($s['time']) . '<br>';

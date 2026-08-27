@@ -7,8 +7,16 @@ import { jaDate } from '@lib/domain';
 export const prerender = false;
 
 // POST /api/admin/broadcast
-// 天候等で営業状況が変わったときの一括連絡 (仕様 8)。
-// その日の「生きている」予約者全員にメールを送る。
+//
+// 営業状況・路面状況が変わったときのお知らせ (仕様 8)。
+//
+//   reservation_ids なし … その日の「生きている」予約者全員へ (一括連絡)
+//   reservation_ids あり … 指定した予約者だけへ (個別連絡)
+//
+// ★ 営業状況・路面状況を変えただけでは 1 通も飛ばない。ここを人が押したときだけ送る。
+//   急な休業は電話で連絡する運用なので、自動送信にはしていない。
+//
+// 一括も個別も同じ 1 本にしてある。テンプレートを 2 か所に書くと必ず片方が腐る。
 export const POST: APIRoute = async ({ request, locals }) => {
   const env = envFrom(locals);
   const unconfigured = notConfigured(env);
@@ -29,11 +37,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ error: '日付・件名・本文はすべて必要です' }, 400);
   }
 
-  const { data: rows, error } = await supabase
+  // 個別連絡: 宛先を指定した予約だけに絞る
+  const only = Array.isArray(body?.reservation_ids)
+    ? body.reservation_ids.map((v: unknown) => str(v)).filter(Boolean) as string[]
+    : null;
+  if (only && only.length === 0) {
+    return json({ error: '宛先の予約が指定されていません' }, 400);
+  }
+
+  let query = supabase
     .from('aone_reservations')
     .select('id,contact_name,contact_email,reservation_number,kind,access_token')
     .eq('date', date)
     .in('status', ['confirmed', 'contact_wait', 'checking', 'completed']);
+  if (only) query = query.in('id', only);
+
+  const { data: rows, error } = await query;
 
   if (error) return mapRpcError(error);
 
@@ -76,6 +95,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     recipient_count: targets.length,
     created_by: str(body?.actor) ?? 'admin',
   });
+
+  // 個別連絡でメールアドレスが無い相手は送れない。呼び出し側で
+  // 「電話で連絡してください」と出せるように、はっきり返す。
 
   return json({ ok: true, recipients: targets.length, skipped: (rows?.length ?? 0) - targets.length });
 };

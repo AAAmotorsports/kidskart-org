@@ -14,7 +14,15 @@ export interface DayState {
   is_holiday: boolean;
   is_past: boolean;
   is_today: boolean;
-  weather: { status: string; message: string | null; staff_note: string | null };
+  /** 営業状況 (受付可否に影響する)。source='block' = 臨時休業の予定から自動 */
+  business: {
+    status: string;
+    source: 'manual' | 'block';
+    message: string | null;
+    staff_note: string | null;
+  };
+  /** 路面状況 (表示のみ)。未設定なら status は null */
+  surface: { status: string | null };
   hours: { course_open: string; course_close: string };
   blocks: Array<{
     id: string; title: string; kind: string; scope: string;
@@ -48,6 +56,21 @@ export interface DayState {
   counts: { sport: number; rp: number; charter: number; night: number; people: number };
 }
 
+/**
+ * 営業状況・路面状況の欠けを既定値で埋める。
+ *
+ * DB マイグレーション (0021) を当てる前の関数は business / surface を返さない。
+ * 先にアプリだけがデプロイされる瞬間があるので、そこで画面が落ちないようにする。
+ * 既定は「営業中・路面は未設定」— 0021 以前の通常営業と同じ意味になる。
+ */
+function withStatus(state: any): DayState {
+  return {
+    ...state,
+    business: state?.business ?? { status: 'open', source: 'manual', message: null, staff_note: null },
+    surface: state?.surface ?? { status: null },
+  } as DayState;
+}
+
 export async function dayState(env: Env, date: string): Promise<DayState | null> {
   try {
     const { data, error } = await getSupabase(env).rpc('aone_day_state', { p_date: date });
@@ -55,7 +78,7 @@ export async function dayState(env: Env, date: string): Promise<DayState | null>
       console.warn('[queries] aone_day_state 失敗', error.message);
       return null;
     }
-    return data as DayState;
+    return data ? withStatus(data) : null;
   } catch (e) {
     console.warn('[queries] Supabase 未設定?', e);
     return null;
@@ -76,7 +99,8 @@ export interface MonthDay {
   date: string;
   dow: number;
   is_holiday: boolean;
-  weather: string;
+  business: string;
+  surface: string | null;
   sport_am: string;
   sport_pm: string;
   am_categories: MonthCategory[];
@@ -95,7 +119,10 @@ export async function monthState(env: Env, year: number, month: number): Promise
       console.warn('[queries] aone_month_state 失敗', error.message);
       return null;
     }
-    return data as MonthDay[];
+    // 0021 以前の関数は business / surface を返さない (上の withStatus と同じ理由)
+    return (data as any[] ?? []).map((d) => ({
+      ...d, business: d.business ?? 'open', surface: d.surface ?? null,
+    })) as MonthDay[];
   } catch (e) {
     console.warn('[queries] Supabase 未設定?', e);
     return null;

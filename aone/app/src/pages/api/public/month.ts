@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
 import { monthState, rentalBookings } from '@lib/queries';
-import { todayJst, WEATHER_LABELS, BLOCK_KIND_LABELS, blockLabel } from '@lib/domain';
+import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, BLOCK_KIND_LABELS, blockLabel } from '@lib/domain';
 
 export const prerender = false;
 
@@ -52,8 +52,10 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       dow: d.dow,
       weekday: WD[d.dow],
       is_holiday: d.is_holiday,
-      weather: d.weather,
-      weather_label: d.weather === 'normal' ? null : (WEATHER_LABELS[d.weather] ?? d.weather),
+      business: d.business,
+      business_label: d.business === 'open' ? null : (BUSINESS_LABELS[d.business] ?? d.business),
+      surface: d.surface,
+      surface_label: d.surface ? (SURFACE_LABELS[d.surface] ?? d.surface) : null,
       am_open: d.sport_am === 'true',
       pm_open: d.sport_pm === 'true',
       rp_free: d.rp_free,

@@ -163,10 +163,11 @@ const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{
 
   function render() {
     const info = $('day-info');
-    const wx = state.weather && state.weather.status;
-    if (wx === 'cancelled') {
+    const biz = state.business || {};
+    if (biz.status === 'cancelled' || biz.status === 'closed') {
       info.className = 'notice ng small';
-      info.textContent = 'この日は中止となっています。' + (state.weather.message || '');
+      info.textContent = (biz.status === 'closed' ? 'この日は休業日です。' : 'この日は走行中止となっています。')
+        + (biz.message || '');
     } else {
       const blocks = (state.blocks || []).filter((b) => b.is_public).map((b) => b.public_label);
       info.className = blocks.length ? 'notice warn small' : 'notice info small';

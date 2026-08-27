@@ -6,14 +6,15 @@ import { fetchTodayForecast } from '@lib/weather';
 import {
   jaDate, todayJst, addDays, hhmm, timeRangeLabel,
   KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
-  WEATHER_LABELS, BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
+  BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
+  BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
   CONTACT_METHOD_LABELS, CHARTER_TYPE_LABELS, jaDateTime,
 } from '@lib/domain';
 
 export const prerender = false;
 
 // 日別の運営画面 (仕様 12 / 13 / 15)。
-// スタッフはこの 1 画面で「天候設定 → 一括連絡 → 予約確認 → 代理入力 →
+// スタッフはこの 1 画面で「営業状況・路面状況 → 連絡 → 予約確認 → 代理入力 →
 // 強制受付 → 会計・無断キャンセル記録」まで完結できる。
 const env = envFrom(Astro.locals);
 const date = Astro.params.date!;
@@ -41,6 +42,11 @@ const waitingCallback = needsAction.filter((r) => !r.contacted_at);
 const contacted = needsAction.filter((r) => r.contacted_at);
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
 const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
+
+// 営業状況は「臨時休業の予定」から自動で休業になることがある (source='block')
+const business = state?.business.status ?? 'open';
+const businessFromBlock = state?.business.source === 'block';
+const surface = state?.surface.status ?? '';
 ---
 <Base title={`${date} の運営 | A-ONE 管理`} admin wide>
   <div class="spread" style="margin-bottom:.6rem">
@@ -69,28 +75,54 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 
   <div class="cols">
     <div>
-      <!-- ============ 営業状態 (天候) ============ -->
+      <!-- ============ 営業状況 / 路面状況 ============ -->
       <div class="card">
-        <h2><span class="ic">🌦</span> 営業状態</h2>
+        <h2><span class="ic">🏁</span> 営業状況</h2>
         <div class="choice" id="wx-choice">
-          {Object.entries(WEATHER_LABELS).map(([code, label]) => (
+          {BUSINESS_ORDER.map((code) => (
             <label>
-              <input type="radio" name="wx" value={code} checked={(state?.weather.status ?? 'normal') === code} />
-              {label}
+              <input type="radio" name="wx" value={code} checked={business === code} />
+              <span class="wx-emoji">{BUSINESS_EMOJI[code]}</span> {BUSINESS_LABELS[code]}
             </label>
           ))}
         </div>
+        {businessFromBlock && (
+          <p class="tiny muted" style="margin:.4rem 0 0">
+            臨時休業の予定が登録されているので「休業」になっています
+            (ここで別の状況を選べば、そちらが優先されます)。
+          </p>
+        )}
+
+        <h2 style="margin-top:1.1rem"><span class="ic">💧</span> 路面状況</h2>
+        <p class="tiny muted" style="margin:0 0 .4rem">
+          表示だけの情報です。ここを変えても予約は止まりません。
+        </p>
+        <div class="choice" id="sf-choice">
+          <label>
+            <input type="radio" name="sf" value="" checked={!surface} /> 表示しない
+          </label>
+          {SURFACE_ORDER.map((code) => (
+            <label>
+              <input type="radio" name="sf" value={code} checked={surface === code} />
+              <span class="wx-emoji">{SURFACE_EMOJI[code]}</span> {SURFACE_LABELS[code]}
+            </label>
+          ))}
+        </div>
+
         <div class="field" style="margin-top:.6rem">
           <label for="wx-msg">公開メッセージ (「今日走れる？」に表示)</label>
-          <input type="text" id="wx-msg" value={state?.weather.message ?? ''}
+          <input type="text" id="wx-msg" value={state?.business.message ?? ''}
                  placeholder="11 時に再判断します など" />
         </div>
         <div class="field">
           <label for="wx-note">スタッフメモ (非公開)</label>
-          <input type="text" id="wx-note" value={state?.weather.staff_note ?? ''} />
+          <input type="text" id="wx-note" value={state?.business.staff_note ?? ''} />
         </div>
-        <button class="btn primary sm" id="wx-save">営業状態を保存</button>
+        <button class="btn primary sm" id="wx-save">保存する</button>
         <span id="wx-msg-out" class="small"></span>
+        <p class="tiny muted" style="margin:.5rem 0 0">
+          ※ 保存してもお客様へのメールは送られません。お知らせが要るときは下の連絡欄から送ってください。
+        </p>
 
         {forecast && (
           <div class="forecast">
@@ -242,6 +274,36 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
                   <button class="btn sm primary act-save" data-id={r.id}>この内容に変更する</button>
                   <span class="tiny muted">受付ルールは無視して保存します (管理者の強制受付)</span>
                 </div>
+              </div>
+            </details>
+
+            <!-- この方だけに連絡 (一括連絡と同じ 1 本の API を宛先 1 件で叩く) -->
+            <details class="edit">
+              <summary class="small">✉️ この方だけに連絡</summary>
+              <div class="edit-body">
+                {(r.contact_email ?? '').includes('@') ? (
+                  <>
+                    <div class="field">
+                      <label>件名</label>
+                      <input type="text" class="m-subject"
+                             value={`【A-ONE】${date.slice(5).replace('-', '/')} のご予約について`} />
+                    </div>
+                    <div class="field">
+                      <label>本文</label>
+                      <textarea class="m-body" rows="3"
+                        placeholder="本日は路面がヘビーウェットのため、走行時間を短縮しております。"></textarea>
+                    </div>
+                    <div class="row">
+                      <button class="btn sm act-mail" data-id={r.id}>{r.contact_name} 様に送信</button>
+                      <span class="tiny muted">{r.contact_email}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p class="small muted" style="margin:0">
+                    メールアドレスの登録がありません。
+                    {r.contact_phone ? ` お電話 (${r.contact_phone}) でご連絡ください。` : ' 連絡先が登録されていません。'}
+                  </p>
+                )}
               </div>
             </details>
           </div>
@@ -473,14 +535,17 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
     return data;
   }
 
-  // ---- 営業状態 ----
+  // ---- 営業状況 / 路面状況 ----
+  // 保存してもお客様へのメールは飛ばさない (急な休みは電話で連絡する運用)。
   $('wx-save').addEventListener('click', async () => {
     const out = $('wx-msg-out');
     const wx = document.querySelector('input[name=wx]:checked');
+    const sf = document.querySelector('input[name=sf]:checked');
     try {
       await post('/api/admin/day', {
         date,
-        weather_status: wx ? wx.value : 'normal',
+        business_status: wx ? wx.value : 'open',
+        surface_status: sf ? sf.value : '',
         status_message: $('wx-msg').value,
         staff_note: $('wx-note').value,
       });
@@ -568,6 +633,29 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
       alert(e.message);
       b.disabled = false;
       b.textContent = 'この内容に変更する';
+    }
+  }));
+
+  // 個別連絡。一括連絡と同じ /api/admin/broadcast を宛先 1 件で叩く
+  document.querySelectorAll('.act-mail').forEach((b) => b.addEventListener('click', async () => {
+    const box = b.closest('.edit-body');
+    const subject = box.querySelector('.m-subject').value.trim();
+    const message = box.querySelector('.m-body').value.trim();
+    if (!subject || !message) { alert('件名と本文を入力してください'); return; }
+    if (!confirm('この方 1 名にメールを送信します。よろしいですか？')) return;
+
+    const label = b.textContent;
+    b.disabled = true;
+    b.textContent = '送信中…';
+    try {
+      const r = await post('/api/admin/broadcast', {
+        date, subject, body: message, reservation_ids: [b.dataset.id],
+      });
+      b.textContent = r.recipients > 0 ? '送信しました' : '送信できませんでした';
+    } catch (e) {
+      alert(e.message);
+      b.disabled = false;
+      b.textContent = label;
     }
   }));
 

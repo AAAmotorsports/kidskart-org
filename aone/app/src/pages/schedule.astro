@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { monthState, rentalBookings } from '@lib/queries';
-import { todayJst, WEATHER_LABELS, blockLabel } from '@lib/domain';
+import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel } from '@lib/domain';
 
 export const prerender = false;
 
@@ -107,7 +107,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
         {days.map((d) => {
           const dnum = Number(d.date.slice(8, 10));
           const publicBlocks = (d.blocks ?? []).filter((b) => b.is_public);
-          const closed = d.weather === 'cancelled';
+          const closed = d.business === 'cancelled' || d.business === 'closed';
           // 過ぎた日は空にする (「受付停止」が並ぶと休業日のように見えてしまう)
           const isPast = d.date < today;
           // 予約できる日はセルごとリンクにする。「ご予約受付中」の文字を
@@ -130,8 +130,11 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                 {dnum}<span class="dow-label"> ({WD_BY_DOW[d.dow]})</span>
               </div>
               <div class="cell-body">
-              {d.weather !== 'normal' && (
-                <div class="tiny wx">{WEATHER_LABELS[d.weather] ?? d.weather}</div>
+              {d.business !== 'open' && (
+                <div class="tiny wx">{BUSINESS_LABELS[d.business] ?? d.business}</div>
+              )}
+              {d.surface && !isPast && (
+                <div class="tiny sf">{SURFACE_LABELS[d.surface] ?? d.surface}</div>
               )}
               {publicBlocks.map((b) => (
                 <div class="tiny ev">{blockLabel(b.kind, b.public_label)}</div>
@@ -227,6 +230,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .cal-cell.sun .cal-day,.cal-cell.holiday .cal-day{color:var(--red)}
   .cal-cell.sat .cal-day{color:var(--blue)}
   .wx{color:#8a5a06;font-weight:700}
+  .sf{color:var(--muted)}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   /* カレンダーセル内の ○✕ 行 (Base の .slots とは別物なので名前を分ける) */
