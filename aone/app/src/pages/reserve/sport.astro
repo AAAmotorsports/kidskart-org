@@ -1,16 +1,23 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { todayJst, addDays } from '@lib/domain';
+import { settings } from '@lib/queries';
+import { todayJst, addDays, dayFocus } from '@lib/domain';
 
 export const prerender = false;
 
 // スポーツ走行の予約フォーム (仕様 2)。
 // 空き状況は /api/availability から取得して描画する。判定ロジックは持たない。
 const env = envFrom(Astro.locals);
+const cfg = await settings(env);
 const today = todayJst();
 const maxDate = addDays(today, 180);
-const initialDate = Astro.url.searchParams.get('date') ?? today;
+// 18 時を過ぎたら翌日を初期値にする (「今日走れる？」の切り替えと揃える)
+const focus = dayFocus({
+  course_open: cfg?.course_open_time,
+  course_close: cfg?.course_close_time,
+}, today);
+const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
 ---
 <Base title="スポーツ走行のご予約 | A-ONE サーキット">
   <a class="back-link" href="/reserve">← 予約メニューに戻る</a>

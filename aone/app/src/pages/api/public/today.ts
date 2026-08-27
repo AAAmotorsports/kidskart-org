@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
-import { dayState } from '@lib/queries';
+import { dayState, settings } from '@lib/queries';
 import {
   todayJst, jaDate, STATUS_MARK, BUSINESS_LABELS, SURFACE_LABELS, categoryText,
-  BLOCK_KIND_LABELS, blockLabel,
+  BLOCK_KIND_LABELS, blockLabel, dayFocus, openBadge, openNote,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -26,10 +26,22 @@ export const OPTIONS: APIRoute = () => new Response(null, { status: 204, headers
 
 export const GET: APIRoute = async ({ url, locals, request }) => {
   const env = envFrom(locals);
-  const date = url.searchParams.get('date') || todayJst();
+
+  // 18 時 (コースクローズの 30 分後) を過ぎたら翌日を返す。
+  // 営業が終わったあとに今日の空きを出しても、もう誰も来られない。
+  // ?date= で明示された日はそのまま返す (時間帯は「準備中」扱い)。
+  const asked = url.searchParams.get('date');
+  const cfg = await settings(env);
+  const focus = dayFocus({
+    course_open: cfg?.course_open_time,
+    course_close: cfg?.course_close_time,
+  }, todayJst());
+  const date = asked || focus.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return json({ error: 'date は YYYY-MM-DD 形式で指定してください' }, 400);
   }
+  const phase = asked && asked !== focus.date ? 'before_open' : focus.phase;
+  const isTomorrow = !asked && focus.is_tomorrow;
 
   const state = await dayState(env, date);
   if (!state) {
@@ -87,11 +99,26 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     slots: state.rp.slots.map((s) => ({ time: s.time, accepting: s.accepting })),
   };
 
+  const badge = openBadge(state.business.status, phase);
+
   return new Response(JSON.stringify({
     date: state.date,
     label: jaDate(state.date),
     is_holiday: state.is_holiday,
     hours: state.hours,
+    // 時間帯 (準備中 / 営業中 / 本日は終了) と、翌日に切り替わっているか。
+    // ★ 表示のためだけの情報。受付可否には一切かかわらない
+    phase: {
+      key: phase,
+      label: badge.label,
+      emoji: badge.emoji,
+      tone: badge.tone,
+      is_tomorrow: isTomorrow,
+      day_word: isTomorrow ? '明日' : '本日',
+      note: openNote(state.business.status, { ...focus, is_tomorrow: isTomorrow, phase },
+                     state.hours.course_open),
+      switch_time: focus.switch_time,
+    },
     // 営業状況 (走れるかどうか) と路面状況 (どんな路面か) は別軸で返す
     business: {
       status: state.business.status,

@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { settings } from '@lib/queries';
-import { todayJst, addDays } from '@lib/domain';
+import { todayJst, addDays, dayFocus } from '@lib/domain';
 
 export const prerender = false;
 
@@ -13,7 +13,13 @@ const pricePerPerson: number = cfg?.rp_price_per_person ?? 6600;
 // 同一開始時刻は 2 グループまで、17:00 以降は要相談 — 判定は DB 側。
 const today = todayJst();
 const maxDate = addDays(today, 180);
-const initialDate = Astro.url.searchParams.get('date') ?? today;
+// 18 時を過ぎたら翌日を初期値にする (「今日走れる？」の切り替えと揃える)。
+// 選べる範囲は今日のまま — 当日でも電話でご相談いただくことはある
+const focus = dayFocus({
+  course_open: cfg?.course_open_time,
+  course_close: cfg?.course_close_time,
+}, today);
+const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
 // 「今日走れる？」の RP 枠から飛んできたときは、その時間を選択済みにする
 const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{2}$/)
   ? Astro.url.searchParams.get('time')!
