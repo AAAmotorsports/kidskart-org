@@ -45,6 +45,9 @@ const WIDGET_JS = String.raw`
     '  border:1px solid #b9e3cf}',
     '.aone-wx.warn{background:#fff5e2;color:#8a5a06;border-color:#f2d69b}',
     '.aone-wx.ng{background:#fdeef0;color:#a81a2d;border-color:#f2bcc4}',
+    // 準備中・本日は終了。異常ではないので警告色にはしない
+    '.aone-wx.soft{background:#eef2f6;color:#42566b;border-color:#d5dee7}',
+    '.aone-open{margin:0 0 10px;font-weight:700;color:#33475f;font-size:.95em}',
     // 路面状況は営業状況と別軸なので、色を持たせず控えめに出す
     '.aone-sf{display:inline-flex;align-items:center;font-weight:700;font-size:.85em;',
     '  padding:4px 12px;border-radius:99px;background:#eef2f6;color:#42566b;',
@@ -179,17 +182,27 @@ const WIDGET_JS = String.raw`
 
   // ---- 「今日走れる？」 ----------------------------------------------------
   function renderToday(el, d) {
-    var wxClass = d.business.open ? (d.business.status === 'open' ? '' : 'warn') : 'ng';
+    // 18 時を過ぎると API が翌日を返す。バッジも「準備中 / 営業中 / 本日は終了」
+    // に変わる (phase)。古い API のときは今までどおり営業状況だけ出す
+    var ph = d.phase || null;
+    var wxClass = ph ? (ph.tone === 'ok' ? '' : ph.tone)
+                     : (d.business.open ? (d.business.status === 'open' ? '' : 'warn') : 'ng');
+    var dayWord = ph ? ph.day_word : '本日';
 
     var html = '<div class="aone-card">';
-    html += '<div class="aone-head"><p class="aone-date">' + esc(d.label) + ' の走行状況</p>';
+    html += '<div class="aone-head"><p class="aone-date">'
+      + (ph && ph.is_tomorrow ? '明日 ' : '') + esc(d.label) + ' の走行状況</p>';
     // 営業状況と路面状況はひとまとめにして右端に寄せる。
     // 直接 aone-head の子にすると space-between で真ん中に落ちてしまう
     html += '<div class="aone-tags">';
-    html += '<span class="aone-wx ' + wxClass + '">' + esc(d.business.label) + '</span>';
+    html += '<span class="aone-wx ' + wxClass + '">'
+      + (ph ? esc(ph.emoji) + ' ' : '') + esc(ph ? ph.label : d.business.label) + '</span>';
     // 路面状況は営業状況とは別軸。出ているときだけ添える
     if (d.surface) html += '<span class="aone-sf">路面 ' + esc(d.surface.label) + '</span>';
     html += '</div></div>';
+
+    // 「本日は 8:30 コースオープンです」
+    if (ph && ph.note) html += '<p class="aone-open">' + esc(ph.note) + '</p>';
 
     if (d.business.message) {
       html += '<p class="aone-msg ' + (wxClass === 'ng' ? 'ng' : '') + '">'
@@ -227,7 +240,7 @@ const WIDGET_JS = String.raw`
     }
 
     if (d.blocks && d.blocks.length) {
-      html += '<div class="aone-ev">本日の予定: ';
+      html += '<div class="aone-ev">' + esc(dayWord) + 'の予定: ';
       d.blocks.forEach(function (b) { html += '<span>' + esc(b.label) + '</span>'; });
       html += '</div>';
     }

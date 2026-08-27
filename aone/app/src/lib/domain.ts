@@ -269,6 +269,11 @@ export function todayJst(): string {
   return isoInJst(new Date());
 }
 
+/** JST の「いま」の HH:MM */
+export function nowHmJst(d: Date = new Date()): string {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
+
 export function isoInJst(d: Date): string {
   const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
@@ -279,6 +284,99 @@ export function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const t = new Date(Date.UTC(y, m - 1, d + days));
   return t.toISOString().slice(0, 10);
+}
+
+/**
+ * 「今日走れる？」で、いま何を見せるべきか (2026-08 オーナー確認)。
+ *
+ *   〜 コースオープン (8:30)      … 準備中。「8:30 コースオープン」と出す
+ *   コースオープン 〜 クローズ    … 営業中
+ *   クローズ (17:30) 〜 切替 (18:00) … 本日は終了しました
+ *   切替 (18:00) 〜 24:00         … **翌日**を出す (もう今日の情報は要らない)
+ *
+ * 切り替え時刻はコースクローズの 30 分後。営業時間を変えれば一緒に動く。
+ * 日付をまたいだあとは自然に「当日の準備中」に戻る (0:00〜8:30)。
+ *
+ * ★ これは **表示だけ**。予約の受付可否には一切かかわらない
+ *   (受付判定は SQL 側 = `aone_check_availability` が唯一の正)。
+ */
+export type OpenPhase = 'before_open' | 'open' | 'after_close';
+
+export interface DayFocus {
+  /** 画面の主役にする日 */
+  date: string;
+  /** 18 時を過ぎて翌日に切り替わっているか */
+  is_tomorrow: boolean;
+  phase: OpenPhase;
+  /** 翌日に切り替わる時刻 (HH:MM) */
+  switch_time: string;
+}
+
+export const PHASE_LABELS: Record<OpenPhase, string> = {
+  before_open: '準備中',
+  open: '営業中',
+  after_close: '本日は終了',
+};
+
+export const PHASE_EMOJI: Record<OpenPhase, string> = {
+  before_open: '🕗',
+  open: '🏁',
+  after_close: '🌙',
+};
+
+/** HH:MM に分を足す (24 時を超えたら 23:59 で止める) */
+function addMinutesHm(hm: string, minutes: number): string {
+  const [h, m] = hm.split(':').map(Number);
+  const t = h * 60 + m + minutes;
+  if (t >= 24 * 60) return '23:59';
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
+export function dayFocus(
+  hours: { course_open?: string | null; course_close?: string | null } | null | undefined,
+  today: string = todayJst(),
+  nowHm: string = nowHmJst(),
+): DayFocus {
+  const open = hhmm(hours?.course_open) || '08:30';
+  const close = hhmm(hours?.course_close) || '17:30';
+  const switchTime = addMinutesHm(close, 30);
+
+  if (nowHm >= switchTime) {
+    return { date: addDays(today, 1), is_tomorrow: true, phase: 'before_open', switch_time: switchTime };
+  }
+  const phase: OpenPhase = nowHm < open ? 'before_open' : nowHm < close ? 'open' : 'after_close';
+  return { date: today, is_tomorrow: false, phase, switch_time: switchTime };
+}
+
+/**
+ * 頭に出すバッジ。臨時休業・走行中止は営業状況が勝つ
+ * (時間帯より「今日はやっていない」ほうが大事)。
+ */
+export function openBadge(business: string, phase: OpenPhase): {
+  label: string; emoji: string; tone: 'ok' | 'soft' | 'warn' | 'ng';
+} {
+  if (business === 'cancelled' || business === 'closed') {
+    return { label: BUSINESS_LABELS[business] ?? business, emoji: BUSINESS_EMOJI[business] ?? '🚫', tone: 'ng' };
+  }
+  if (business === 'checking') {
+    return { label: BUSINESS_LABELS.checking, emoji: BUSINESS_EMOJI.checking, tone: 'warn' };
+  }
+  return {
+    label: PHASE_LABELS[phase],
+    emoji: PHASE_EMOJI[phase],
+    tone: phase === 'open' ? 'ok' : 'soft',
+  };
+}
+
+/** 「本日は 8:30 コースオープンです」の 1 行。営業していない日は出さない */
+export function openNote(
+  business: string, f: DayFocus, courseOpen?: string | null,
+): string | null {
+  if (business === 'cancelled' || business === 'closed') return null;
+  if (f.phase !== 'before_open') return null;
+  // 見出しなので「08:30」ではなく「8:30」と書く (サイトのほかの表記に合わせる)
+  const t = (hhmm(courseOpen) || '08:30').replace(/^0/, '');
+  return `${f.is_tomorrow ? '明日' : '本日'}は ${t} コースオープンです`;
 }
 
 /**

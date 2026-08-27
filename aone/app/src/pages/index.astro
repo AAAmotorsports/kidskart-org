@@ -1,10 +1,10 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { dayState, type DayState } from '@lib/queries';
+import { dayState, settings, type DayState } from '@lib/queries';
 import {
-  STATUS_MARK, BUSINESS_LABELS, BUSINESS_EMOJI, SURFACE_LABELS, SURFACE_EMOJI, categoryText,
-  jaDate, todayJst, addDays, blockLabel,
+  STATUS_MARK, BUSINESS_LABELS, SURFACE_LABELS, SURFACE_EMOJI, categoryText,
+  jaDate, todayJst, addDays, blockLabel, dayFocus, openBadge, openNote,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -13,15 +13,26 @@ export const prerender = false;
 // 利用者がスケジュール表を読み解かなくても、今日行って走れるかが一目で分かる。
 const env = envFrom(Astro.locals);
 const today = todayJst();
-const tomorrow = addDays(today, 1);
 
-const [state, next] = await Promise.all([dayState(env, today), dayState(env, tomorrow)]);
+// 18 時 (コースクローズの 30 分後) を過ぎたら、主役を翌日に切り替える。
+// 営業が終わったあとに今日の空きを出しても、もう誰も来られない。
+const cfg = await settings(env);
+const focus = dayFocus({
+  course_open: cfg?.course_open_time,
+  course_close: cfg?.course_close_time,
+}, today);
+const dayWord = focus.is_tomorrow ? '明日' : '本日';
+
+const [state, next] = await Promise.all([
+  dayState(env, focus.date),
+  dayState(env, addDays(focus.date, 1)),
+]);
 
 /** RP の空きを「14:00〜 空きあり」の形にまとめる */
 function rpSummary(s: DayState | null): string {
   if (!s) return '';
   const open = s.rp.slots.filter((x) => x.accepting);
-  if (open.length === 0) return '本日の RP はすべて満枠です';
+  if (open.length === 0) return 'RP はすべて満枠です';
   const first = open[0].time;
   const last = open[open.length - 1].time;
   return open.length === s.rp.slots.length
@@ -45,6 +56,9 @@ const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
 // 走行中止・休業の日は「走れない」。営業確認中はまだ走れる可能性がある
 const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
 const surfaceToday = state?.surface.status ?? null;
+// 営業状況 (休業・中止) と、時間帯 (準備中・営業中・終了) を 1 つのバッジにまとめる
+const badge = openBadge(state?.business.status ?? 'open', focus.phase);
+const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.course_open);
 ---
 <Base title="今日走れる？ | A-ONE サーキット" description="A-ONE サーキットの本日の走行状況・空き状況をリアルタイムで表示します。">
   {!state && (
@@ -64,13 +78,13 @@ const surfaceToday = state?.surface.status ?? null;
     <>
       <div class="today-head">
         <div>
-          <div class="tiny muted">本日の走行状況</div>
+          <div class="tiny muted">{dayWord}の走行状況</div>
           <h1 style="margin:0">{jaDate(state.date)}</h1>
         </div>
         <div class="head-tags">
-          <div class={`weather ${state.business.status}`}>
-            <span class="wx-emoji">{BUSINESS_EMOJI[state.business.status] ?? '🏁'}</span>
-            <span>{BUSINESS_LABELS[state.business.status] ?? state.business.status}</span>
+          <div class={`weather ${badge.tone}`}>
+            <span class="wx-emoji">{badge.emoji}</span>
+            <span>{badge.label}</span>
           </div>
           {surfaceToday && (
             <div class="surface">
@@ -81,6 +95,8 @@ const surfaceToday = state?.surface.status ?? null;
         </div>
       </div>
 
+      {note && <p class="open-note">{note}</p>}
+
       {state.business.message && (
         <div class:list={['notice', closedToday ? 'ng' : 'warn']} style="margin-bottom:1rem">
           {state.business.message}
@@ -89,7 +105,7 @@ const surfaceToday = state?.surface.status ?? null;
 
       {closedToday ? (
         <div class="card">
-          <h2>本日は走行を中止しています</h2>
+          <h2>{dayWord}は走行を中止しています</h2>
           <p class="muted">
             天候の回復状況によっては再開する場合があります。お急ぎの場合は
             お電話 ({env.PUBLIC_SITE_TEL || '092-919-7186'}) でご確認ください。
@@ -155,7 +171,7 @@ const surfaceToday = state?.surface.status ?? null;
 
       {publicBlocks.length > 0 && (
         <div class="card">
-          <h2>本日の予定</h2>
+          <h2>{dayWord}の予定</h2>
           <ul class="plain">
             {publicBlocks.map((b) => (
               <li>
@@ -178,7 +194,7 @@ const surfaceToday = state?.surface.status ?? null;
 
       {next && (
         <div class="card">
-          <h2>明日 {jaDate(next.date)}</h2>
+          <h2>{focus.is_tomorrow ? '翌日' : '明日'} {jaDate(next.date)}</h2>
           {next.business.status !== 'open' && (
             <p class="badge warn">{BUSINESS_LABELS[next.business.status] ?? next.business.status}</p>
           )}
@@ -210,8 +226,11 @@ const surfaceToday = state?.surface.status ?? null;
   .today-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin:.4rem 0 1rem}
   .weather{display:inline-flex;align-items:center;gap:.4rem;font-weight:800;padding:.4rem .9rem;
     border-radius:100px;background:var(--green-soft);color:#14724a;border:1px solid #b9e3cf}
-  .weather.checking{background:#fff5e2;color:#8a5a06;border-color:#f2d69b}
-  .weather.cancelled,.weather.closed{background:#fdeef0;color:var(--red-deep);border-color:#f2bcc4}
+  .weather.warn{background:#fff5e2;color:#8a5a06;border-color:#f2d69b}
+  .weather.ng{background:#fdeef0;color:var(--red-deep);border-color:#f2bcc4}
+  /* 準備中・本日は終了。異常ではないので警告色にはしない */
+  .weather.soft{background:var(--bg-2);color:var(--ink-2);border-color:var(--line-2)}
+  .open-note{margin:.2rem 0 .9rem;font-weight:700;color:var(--ink-2)}
   .head-tags{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
   /* 路面状況は「走れるかどうか」ではないので、色を持たせず控えめに出す */
   .surface{display:inline-flex;align-items:center;gap:.4rem;font-weight:700;padding:.4rem .9rem;
