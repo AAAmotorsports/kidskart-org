@@ -1,7 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { dayState, reservationsOfDay, categories, settings } from '@lib/queries';
+import { dayState, reservationsOfDay, categories, settings, blocksOfDay } from '@lib/queries';
 import { fetchTodayForecast } from '@lib/weather';
 import {
   jaDate, todayJst, addDays, hhmm, timeRangeLabel,
@@ -25,12 +25,17 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
   return Astro.redirect(`/admin/day/${today}`);
 }
 
-const [state, rows, cats, cfg] = await Promise.all([
+// 予定は day_state の表示用ではなくテーブルから読む。
+// 「走れるカテゴリー」や参加申込の設定は day_state に入っていないため
+// (編集するには元の行が要る)。
+const [state, rows, cats, cfg, blocks] = await Promise.all([
   dayState(env, date),
   reservationsOfDay(env, date),
   categories(env),
   settings(env),
+  blocksOfDay(env, date),
 ]);
+const catName = (code: string) => cats.find((c) => c.code === code)?.name ?? code;
 
 // 天気予報は当日ぶんのみ気象庁から取得 (参考情報 — 自動中止はしない)
 const forecast = date === today ? await fetchTodayForecast(env.JMA_AREA_CODE || '400000') : null;
@@ -462,22 +467,39 @@ const surface = state?.surface.status ?? '';
       <!-- ============ ブロック予定 ============ -->
       <div class="card">
         <h2><span class="ic">📅</span> この日の予定・受付停止</h2>
-        {(state?.blocks ?? []).map((b) => (
+        {blocks.map((b) => (
           <div class="spread blk">
             <div>
               <span class="badge">{blockLabel(b.kind, b.title)}</span>
               <div class="tiny muted">{BLOCK_SCOPE_LABELS[b.scope] ?? b.scope}
-                {b.start_time && ` ${b.start_time}〜${b.end_time ?? ''}`}
-                {b.category_code && ` / ${b.category_code}`}
+                {b.start_time && ` ${hhmm(b.start_time)}〜${hhmm(b.end_time) || ''}`}
+                {b.category_code && ` / ${catName(b.category_code)}`}
                 {!b.is_public && ' / 非公開'}</div>
+              {/* なぜ止まっているのかが一目で分かるように、許可したカテゴリーを出す */}
+              {b.scope === 'only_category' && (
+                <div class="tiny allow">
+                  {(b.allow_categories ?? []).length > 0
+                    ? `走れる: ${(b.allow_categories ?? []).map(catName).join('・')} (ほかは停止)`
+                    : '⚠ 走れるカテゴリーが未選択です。この予定は何も止めていません'}
+                </div>
+              )}
             </div>
-            <button class="btn sm blk-del" data-id={b.id}>削除</button>
+            <div class="row">
+              <button class="btn sm blk-edit" data-b={JSON.stringify({
+                id: b.id, title: b.title, kind: b.kind, scope: b.scope,
+                start_time: hhmm(b.start_time), end_time: hhmm(b.end_time),
+                category_code: b.category_code ?? '',
+                allow_categories: b.allow_categories ?? [],
+                is_public: b.is_public, memo: b.memo ?? '',
+              })}>編集</button>
+              <button class="btn sm blk-del" data-id={b.id}>削除</button>
+            </div>
           </div>
         ))}
-        {(state?.blocks ?? []).length === 0 && <p class="muted small">登録された予定はありません。</p>}
+        {blocks.length === 0 && <p class="muted small">登録された予定はありません。</p>}
 
-        <details style="margin-top:.6rem">
-          <summary class="small">予定を追加する</summary>
+        <details style="margin-top:.6rem" id="b-details">
+          <summary class="small" id="b-summary">予定を追加する</summary>
           <div class="field" style="margin-top:.5rem">
             <label for="b-title">予定名</label>
             <input type="text" id="b-title" placeholder="A-ONE シリーズ第 3 戦" />
@@ -506,19 +528,35 @@ const surface = state?.surface.status ?? '';
               <input type="time" id="b-end" step="1800" />
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="b-wrap-category">
             <label for="b-category">対象カテゴリー (カテゴリー停止のとき)</label>
             <select id="b-category">
               <option value="">—</option>
               {cats.map((c) => <option value={c.code}>{c.name}</option>)}
             </select>
           </div>
+          {/* 「指定したカテゴリーだけ走れる」を選んだときだけ聞く。
+              ここを聞かないと、選んでも何も止まらない予定ができてしまう */}
+          <div class="field" id="b-wrap-allow" hidden>
+            <label>走れるカテゴリー (チェックしたものだけ受け付けます)</label>
+            <div class="choice">
+              {cats.map((c) => (
+                <label><input type="checkbox" class="b-allow" value={c.code} /> {c.name}</label>
+              ))}
+            </div>
+            <div class="hint">
+              例: レース前日はカートだけチェック → ミニバイク・キッズカート・その他が止まります。
+            </div>
+          </div>
           <label class="tiny"><input type="checkbox" id="b-public" checked /> 公開スケジュールに掲載する</label>
           <div class="field" style="margin-top:.4rem">
             <input type="text" id="b-memo" placeholder="スタッフメモ (任意)" />
           </div>
           <div id="b-out" class="notice" hidden></div>
-          <button class="btn sm" id="b-save">予定を追加</button>
+          <div class="row">
+            <button class="btn sm" id="b-save">予定を追加</button>
+            <button class="btn sm ghost" id="b-cancel" hidden>編集をやめる</button>
+          </div>
         </details>
       </div>
     </div>
@@ -842,12 +880,57 @@ const surface = state?.surface.status ?? '';
   });
 
   // ---- ブロック予定 ----
+  // 停止範囲で聞くことが変わる。「指定したカテゴリーだけ走れる」を選んだのに
+  // カテゴリーを聞かないと、何も止めない予定ができてしまう
+  function bSyncScope() {
+    const v = $('b-scope').value;
+    $('b-wrap-allow').hidden = v !== 'only_category';
+    $('b-wrap-category').hidden = v !== 'category';
+  }
+  $('b-scope').addEventListener('change', bSyncScope);
+  bSyncScope();
+
+  // 編集中の予定 id。null なら新規追加
+  let bEditId = null;
+  function bReset() {
+    bEditId = null;
+    $('b-title').value = ''; $('b-kind').value = 'event'; $('b-scope').value = 'all';
+    $('b-start').value = ''; $('b-end').value = ''; $('b-category').value = '';
+    $('b-public').checked = true; $('b-memo').value = '';
+    document.querySelectorAll('.b-allow').forEach((el) => { el.checked = false; });
+    $('b-save').textContent = '予定を追加';
+    $('b-summary').textContent = '予定を追加する';
+    $('b-cancel').hidden = true;
+    $('b-out').hidden = true;
+    bSyncScope();
+  }
+  $('b-cancel').addEventListener('click', bReset);
+
+  document.querySelectorAll('.blk-edit').forEach((btn) => btn.addEventListener('click', () => {
+    const b = JSON.parse(btn.dataset.b);
+    bEditId = b.id;
+    $('b-title').value = b.title || ''; $('b-kind').value = b.kind; $('b-scope').value = b.scope;
+    $('b-start').value = b.start_time || ''; $('b-end').value = b.end_time || '';
+    $('b-category').value = b.category_code || '';
+    $('b-public').checked = !!b.is_public; $('b-memo').value = b.memo || '';
+    document.querySelectorAll('.b-allow').forEach((el) => {
+      el.checked = (b.allow_categories || []).indexOf(el.value) >= 0;
+    });
+    $('b-save').textContent = '変更を保存';
+    $('b-summary').textContent = '予定を編集する: ' + (b.title || '');
+    $('b-cancel').hidden = false;
+    bSyncScope();
+    $('b-details').open = true;
+    $('b-title').focus();
+  }));
+
   $('b-save').addEventListener('click', async () => {
     const out = $('b-out');
     out.hidden = true;
     try {
       await post('/api/admin/block', {
-        action: 'create',
+        action: bEditId ? 'update' : 'create',
+        id: bEditId,
         date,
         title: $('b-title').value,
         kind: $('b-kind').value,
@@ -855,6 +938,8 @@ const surface = state?.surface.status ?? '';
         start_time: $('b-start').value,
         end_time: $('b-end').value,
         category_code: $('b-category').value,
+        allow_categories: Array.from(document.querySelectorAll('.b-allow:checked'))
+          .map((el) => el.value).join(','),
         is_public: $('b-public').checked,
         memo: $('b-memo').value,
       });
@@ -876,6 +961,7 @@ const surface = state?.surface.status ?? '';
 </script>
 
 <style>
+  .allow{color:var(--ink-2);font-weight:700;margin-top:.1rem}
   .cols{display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;align-items:start}
   .ic{font-size:1.05em;margin-right:.15rem}
   /* 電話が鳴ったらまずここ。1 画面の中で一番見つけやすくしておく */

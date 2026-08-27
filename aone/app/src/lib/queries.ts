@@ -496,6 +496,29 @@ export async function openEvents(env: Env): Promise<OpenEvent[]> {
   }
 }
 
+/**
+ * その日の予定 (受付停止) を丸ごと読む。
+ *
+ * `aone_day_state()` の blocks は表示用に絞ってあり、`allow_categories` や
+ * 参加申込の設定が入っていない。管理画面で予定を **編集** するには元の行が要る
+ * ので、ここだけテーブルを直接読む (公開 API からは呼ばないこと)。
+ */
+export async function blocksOfDay(env: Env, date: string): Promise<any[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin(env)
+      .from('aone_blocks').select('*').eq('date', date)
+      .order('start_time', { ascending: true, nullsFirst: true }).order('title');
+    if (error) {
+      console.warn('[queries] aone_blocks 失敗', error.message);
+      return [];
+    }
+    return data ?? [];
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return [];
+  }
+}
+
 export const ENTRY_COLUMNS =
   'id,entry_number,block_id,date,event_title,entry_type,status,customer_id,' +
   'team_name,contact_name,contact_kana,contact_email,contact_phone,' +
