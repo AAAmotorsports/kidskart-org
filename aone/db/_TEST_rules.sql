@@ -725,6 +725,30 @@ begin
       '20-19 消えた予定への参照が残っている';
   end;
 
+  -- =========================================================================
+  raise notice '--- 21. 公開表示の「姓のみ」';
+  -- =========================================================================
+  -- 法人名・カタカナ姓を機械的に 2 文字で切ると意味が通らなくなる (実運用で発覚)
+  assert aone_public_name('(株)ふーぷーパートナーズ', 'family') = '(株)ふーぷーパートナーズ 様',
+    '21-1 法人名が略されてしまう: ' || aone_public_name('(株)ふーぷーパートナーズ', 'family');
+  assert aone_public_name('A-ONE Racing', 'family') = 'A-ONE Racing 様',
+    '21-2 英字の団体名が空白で切られる: ' || aone_public_name('A-ONE Racing', 'family');
+  assert aone_public_name('麻生工科大学', 'family') = '麻生工科大学 様', '21-3 大学名が略される';
+  assert aone_public_name('エンドウ', 'family') = 'エンドウ 様', '21-4 カタカナ姓が切られる';
+  assert aone_public_name('ナカゾノ', 'family') = 'ナカゾノ 様', '21-5 カタカナ姓が切られる';
+
+  -- 個人名の姓のみは今までどおり
+  assert aone_public_name('山田 太郎', 'family') = '山田 様', '21-6 空白区切りの姓が出ない';
+  assert aone_public_name('長谷川 一郎', 'family') = '長谷川 様', '21-7 3 文字の姓が切れる';
+  assert aone_public_name('山田太郎', 'family') = '山田 様', '21-8 続けて書いた姓名が略されない';
+  assert aone_public_name('今井', 'family') = '今井 様', '21-9 短い姓が変わる';
+
+  -- full / hidden は変えていない
+  assert aone_public_name('山田 太郎', 'full') = '山田 太郎 様', '21-10 full が変わった';
+  assert aone_public_name('山田 太郎', 'hidden') is null, '21-11 hidden が変わった';
+  -- 「様」が入っていても二重にならない
+  assert aone_public_name('山田 太郎様', 'full') = '山田 太郎 様', '21-12 敬称が二重になる';
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

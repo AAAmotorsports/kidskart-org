@@ -6,6 +6,7 @@ import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, STATUS_MARK,
   BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
+  nameWithHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -129,7 +130,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
                 <td class="tiny">{jaDateShort(r.created_at.slice(0, 10))}</td>
                 <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
                 <td>{jaDateShort(r.date)} {timeRangeLabel(r)}</td>
-                <td>{r.contact_name} 様 ({r.party_size}名)</td>
+                <td>{nameWithHonorific(r.contact_name)} ({r.party_size}名)</td>
                 <td><a href={`tel:${(r.contact_phone ?? '').replace(/[^0-9+]/g, '')}`}>{r.contact_phone ?? '—'}</a></td>
                 <td><a class="btn sm" href={`/admin/day/${r.date}`}>開く</a></td>
               </tr>
@@ -152,7 +153,7 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
                 <td>{jaDateShort(r.date)}</td>
                 <td>{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</td>
                 <td>{timeRangeLabel(r)}</td>
-                <td>{r.contact_name} 様 ({r.party_size}名)</td>
+                <td>{nameWithHonorific(r.contact_name)} ({r.party_size}名)</td>
                 <td class="tiny">
                   {r.preferred_contact === 'phone' ? '☎ ' : '✉ '}
                   {r.preferred_contact === 'phone' ? (r.contact_phone ?? '—') : (r.contact_email ?? '—')}

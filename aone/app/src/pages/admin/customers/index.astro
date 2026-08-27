@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { customerStats } from '@lib/queries';
-import { jaDateShort } from '@lib/domain';
+import { jaDateShort, nameWithHonorific } from '@lib/domain';
 
 export const prerender = false;
 
@@ -34,7 +34,7 @@ const rows = await customerStats(env, q || undefined, 200);
         {rows.map((c) => (
           <tr>
             <td>
-              <a href={`/admin/customers/${c.id}`}><strong>{c.name} 様</strong></a>
+              <a href={`/admin/customers/${c.id}`}><strong>{nameWithHonorific(c.name)}</strong></a>
               {c.kana && <div class="tiny muted">{c.kana}</div>}
             </td>
             <td class="tiny">{c.phone ?? '—'}<br />{c.email ?? '—'}</td>

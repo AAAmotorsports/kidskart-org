@@ -4,6 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { customerDetail } from '@lib/queries';
 import {
   jaDateShort, timeRangeLabel, yen, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
+  nameWithHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -22,7 +23,7 @@ const SUGGESTED_TAGS = ['常連', '初心者', '初走行', '大型バイク', '
   ) : (
     <>
       <div class="spread" style="margin-bottom:.6rem">
-        <h1 style="margin:0">{stat.name} 様</h1>
+        <h1 style="margin:0">{nameWithHonorific(stat.name)}</h1>
         <a class="btn sm ghost" href="/admin/customers">← 一覧</a>
       </div>
 

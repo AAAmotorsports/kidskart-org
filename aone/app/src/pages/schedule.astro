@@ -1,7 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { monthState, rentalBookings } from '@lib/queries';
+import { monthState, rentalBookings, openEvents } from '@lib/queries';
 import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS } from '@lib/domain';
 
 export const prerender = false;
@@ -37,6 +37,10 @@ const bookings = showRental
       `${year}-${String(month).padStart(2, '0')}-01`,
       `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`)
   : {};
+
+// 参加申込を受け付けているイベントは、その日から申込フォームへ飛ばす
+const openEvs = await openEvents(env);
+const entryByDate = new Map(openEvs.map((e) => [e.date, `/reserve/event?event=${e.id}`]));
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -112,12 +116,16 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
           const isPast = d.date < today;
           // 予約できる日はセルごとリンクにする。「ご予約受付中」の文字を
           // 全セルに出すとうるさいので、押せることは色と hover で示す。
-          const linkable = !isPast && !closed;
+          // 参加申込を受け付けているイベントの日は申込フォームへ。
+          // イベント日は終日ブロックされていて走行の予約はできないので、
+          // 「ご予約へ」に飛ばすと行き止まりになる
+          const entryHref = entryByDate.get(d.date);
+          const linkable = !!entryHref || (!isPast && !closed);
           const Cell = linkable ? 'a' : 'div';
           return (
             <Cell
-              href={linkable ? `${reserveHref}?date=${d.date}` : undefined}
-              title={linkable ? 'この日のご予約へ' : undefined}
+              href={entryHref ?? (linkable ? `${reserveHref}?date=${d.date}` : undefined)}
+              title={entryHref ? '参加申込へ' : linkable ? 'この日のご予約へ' : undefined}
               class:list={[
               'cal-cell',
               d.date === today && 'today',
@@ -136,6 +144,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
               {d.surface && !isPast && (
                 <div class="tiny sf">{SURFACE_LABELS[d.surface] ?? d.surface}</div>
               )}
+              {entryHref && <div class="tiny entry">参加申込 受付中 →</div>}
               {publicBlocks.map((b) => (
                 /* 「イベント」と名前を 2 行に。種別を頭に付けないもの (臨時休業など) は 1 行 */
                 <div class="tiny ev">
@@ -238,6 +247,9 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .cal-cell.sat .cal-day{color:var(--blue)}
   .wx{color:#8a5a06;font-weight:700}
   .sf{color:var(--muted)}
+  /* 押せることが分からないとクリックされないので、はっきり出す */
+  .entry{background:var(--red);color:#fff;border-radius:4px;padding:.05rem .25rem;
+    font-weight:800;text-align:center;margin-bottom:.1rem}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     max-width:100%}
   .ev .l1{display:block;opacity:.85}

@@ -5,6 +5,7 @@ import { searchReservations } from '@lib/queries';
 import {
   todayJst, addDays, jaDateShort, timeRangeLabel, yen,
   KIND_LABELS, KIND_SHORT, STATUS_LABELS, SOURCE_LABELS,
+  nameWithHonorific,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -79,8 +80,8 @@ const people = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status))
             <td class="tiny">{timeRangeLabel(r)}</td>
             <td>
               {r.customer_id
-                ? <a href={`/admin/customers/${r.customer_id}`}>{r.contact_name} 様</a>
-                : `${r.contact_name} 様`}
+                ? <a href={`/admin/customers/${r.customer_id}`}>{nameWithHonorific(r.contact_name)}</a>
+                : nameWithHonorific(r.contact_name)}
               <div class="tiny muted">{r.contact_phone ?? ''} {r.reservation_number}</div>
             </td>
             <td>{r.party_size}</td>
