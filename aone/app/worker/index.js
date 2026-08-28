@@ -11,20 +11,21 @@
  *   (足すと「サイトが落ちる原因がここにもある」状態になる)。
  */
 import astro from '../dist/_worker.js/index.js';
-import { tasksFor } from './tasks.js';
+import { planFor } from './tasks.js';
 
 export default {
   fetch: (request, env, ctx) => astro.fetch(request, env, ctx),
 
   async scheduled(event, env, ctx) {
-    // JST に直してから時・日を見る (Workers の時計は UTC)
-    const jst = new Date(event.scheduledTime + 9 * 60 * 60 * 1000);
-    const hour = jst.getUTCHours();
-    const day = jst.getUTCDate();
-    const stamp = jst.toISOString().slice(0, 16).replace('T', ' ');
+    // 何時に何をやるかは tasks.js が決める (Node からテストできるように分けてある)
+    const { stamp, tasks } = planFor(event.scheduledTime);
 
-    const tasks = tasksFor(hour, day);
-    if (tasks.length === 0) return;
+    // 仕事が無い時間でも 1 行残す。何も出ないと「cron が動いていないのか、
+    // その時間は何も無いのか」が Logs から見分けられない
+    if (tasks.length === 0) {
+      console.log(`[cron] ${stamp} JST — この時間は送るものがありません (次は 8/12/18 時)`);
+      return;
+    }
 
     const origin = (env.CRON_ORIGIN || 'https://reserve.rk-a1.com').replace(/\/$/, '');
 

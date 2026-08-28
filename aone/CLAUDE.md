@@ -408,7 +408,13 @@ RP の予約画面に「この日のご予約」として時間と名前を出�
 * 二重送信は**必ず DB 側** (`*_mail_sent_at`) で止める。cron の回数や
   スケジュールに依存させない。だから同じ回を 2 度呼んでも安全
 * 実行結果は `console.log('[cron] …')` に 1 行ずつ残る
-  (Cloudflare の Workers → Logs で追える。`observability.enabled` は true)
+  (Cloudflare の Worker ページ → **Observability タブ → ログ**。
+  `observability.enabled` は true)。
+  **送るものが無い時間も 1 行残す** — 何も出ないと「cron が動いていないのか、
+  その時間は何も無いのか」が見分けられない
+* 時刻から「何をやるか」を組み立てるのは `worker/tasks.js` の `planFor()`。
+  JST への読み替えごとここに入れてあるので、Node からそのまま試せる
+  (`worker/index.js` は cloudflare:* を読むので Node から import できない)
 
 > ⚠️ **Astro の Cloudflare アダプタは `scheduled` を出せない。**
 > `dist/_worker.js/index.js` は fetch ハンドラだけなので、`worker/index.js` が
