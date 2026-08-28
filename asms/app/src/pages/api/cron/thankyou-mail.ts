@@ -91,11 +91,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const surveyUrl = (env.PUBLIC_SURVEY_URL ?? '').trim();
   const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
 
-  // --- Fetch today's slots (not cancelled) -------------------------------
+  // --- Fetch target-window slots (not cancelled) -------------------------
+  // 「昨日」も対象に含める理由:
+  //   GitHub Actions cron はまれに数時間規模で遅延することがあり、日を
+  //   またぐと本来の対象日 (targetDate = today) の予約が翌日 catch-up
+  //   まで送られなくなる。「昨日」も query に含めておけば、送信済み
+  //   フラグ (thankyou_email_sent_at) で二重送信を防ぎつつ、遅延分は
+  //   翌日 cron で拾える。
+  //   dateOverride 指定時 (?date=... の手動再送) は指定日だけを見る。
+  const dateList = dateOverride
+    ? [dateOverride]
+    : [addDaysJst(targetDate, -1), targetDate];
   const { data: rawSlots, error: slotsErr } = await supabase
     .from('slots')
     .select('id, date, start_time, end_time, courses(code, name)')
-    .eq('date', targetDate)
+    .in('date', dateList)
     .neq('status', 'cancelled');
   if (slotsErr) {
     return json({ error: `failed to fetch slots: ${slotsErr.message}` }, 500);
@@ -281,6 +291,16 @@ function todayInJst(): string {
   }).format(now);
   // en-CA returns YYYY-MM-DD
   return parts;
+}
+
+function addDaysJst(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const base = Date.UTC(y, m - 1, d) - 9 * 3600 * 1000;
+  const next = new Date(base + days * 86400 * 1000);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(next);
 }
 
 /**

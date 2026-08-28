@@ -1,0 +1,68 @@
+# ==============================================================================
+# ASMS 1ヶ月後フォローアップメール送信 (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# 毎日 19:00 JST に ASMS の /api/cron/followup-mail を叩き、
+# 30 日前 (JST) に参加してその後 1 度も新規予約がない保護者宛に
+# 「その後お子さまいかがですか？」再エンゲージメントメールを送る。
+#
+# 二重送信防止は API 側 (reservations.followup_email_sent_at) で担保。
+# 保護者単位で「1 回だけ」の運用。
+#
+# 対象は 30 日前ぴったりに開催した予約なので、日次でも 1-3 件程度しか
+# 送られない (規模拡大時も控えめ)。
+#
+# 必要な GitHub Actions Secrets:
+#   ASMS_API_BASE      - 例: https://reserve.kidskart.org
+#   ASMS_CRON_SECRET   - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから「Run workflow」で任意の日付を指定 (対象日 =
+# 参加日) して再送可能。
+# ==============================================================================
+
+name: ASMS Followup Mail
+
+on:
+  schedule:
+    # GitHub Actions cron は UTC。10:00 UTC = 19:00 JST
+    # サンキュー (18:00) の後ろに 1 時間ずらす
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 (YYYY-MM-DD, 空欄なら 30 日前 JST)'
+        required: false
+        default: ''
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/followup-mail
+        env:
+          ASMS_API_BASE: ${{ secrets.ASMS_API_BASE }}
+          ASMS_CRON_SECRET: ${{ secrets.ASMS_CRON_SECRET }}
+          DATE: ${{ inputs.date }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASMS_API_BASE:-}" ] || [ -z "${ASMS_CRON_SECRET:-}" ]; then
+            echo "::error::ASMS_API_BASE / ASMS_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+          BASE="${ASMS_API_BASE%/}"
+          URL="$BASE/api/cron/followup-mail"
+          if [ -n "${DATE:-}" ]; then
+            URL="$URL?date=$DATE"
+          fi
+          HTTP_CODE=$(curl -sS -X POST "$URL" \
+            -H "x-cron-secret: $ASMS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Followup mail cron failed with HTTP $HTTP_CODE" >&2
+            exit 1
+          fi
