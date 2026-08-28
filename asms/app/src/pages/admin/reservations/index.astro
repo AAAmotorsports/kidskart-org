@@ -189,7 +189,7 @@ let query = supabase
     id, reservation_number, status, price_tier, total_amount, created_at,
     slots(id, date, start_time, end_time, courses(name, code)),
     guardians(name, kana, phone, email),
-    reservation_participants(id, name_snapshot, attendance_status)
+    reservation_participants(id, name_snapshot, age_at_booking, height_cm, attendance_status)
   `)
   .order('created_at', { ascending: false })
   .limit(200);
@@ -440,7 +440,13 @@ const statusColor: Record<string, string> = {
                 <div class="res-row-3">
                   <span class="res-guardian">👤 {guardian.name}</span>
                   <span class="res-parts">
-                    {parts.map((p: any) => p.name_snapshot).join('・')} ({parts.length}名)
+                    {parts.map((p: any, i: number) => {
+                      const bits: string[] = [];
+                      if (p.age_at_booking != null) bits.push(`${p.age_at_booking}歳`);
+                      if (p.height_cm != null) bits.push(`${p.height_cm}cm`);
+                      const meta = bits.length ? ` (${bits.join(' / ')})` : '';
+                      return `${p.name_snapshot}${meta}${i < parts.length - 1 ? '・' : ''}`;
+                    }).join('')} ({parts.length}名)
                   </span>
                 </div>
                 <div class="res-row-4">
