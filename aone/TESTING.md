@@ -213,7 +213,8 @@ WordPress に貼った月間カレンダー (`data-aone="month"`) でも:
 > 付けないと Astro の CSRF 対策で 403 (`Cross-site POST form submissions are
 > forbidden`) になります。cron 本体の問題ではありません。
 
-前日リマインド / 当日お礼 / 2 週間後フォロー。手動で叩いて確認する:
+前日リマインド / 当日お礼 / **3 か月後**フォロー。
+どれも **レンタル (RP・貸切・ナイター) だけ**に送ります。手動で叩いて確認する:
 
 ```bash
 curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" \
@@ -225,6 +226,9 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 - [ ] お客様役にリマインドが届く
 - [ ] **もう一度同じコマンド** → `skipped` になる (二重送信しない)
 - [ ] `type=thanks` / `type=followup` も同様に確認
+- [ ] **同じ日にスポーツ走行の予約も入れておく → その方には届かない**
+- [ ] `type=followup` の `date` は **3 か月前**の予約に当たる
+      (例: 8/29 に叩くと 5/29 のご利用者に届く)
 - [ ] GitHub Actions の `aone-mails` を手動実行 → 成功する
 
 ## 11-2. 折り返し対応と督促

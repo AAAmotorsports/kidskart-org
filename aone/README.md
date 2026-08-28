@@ -225,9 +225,9 @@ npm run build
 | タイミング | 種類 | 送信元 |
 |---|---|---|
 | 予約直後 | 予約完了 (専用 URL 入り) | `/api/reserve/create` |
-| 前日 | リマインド | cron `type=reminder` |
-| 利用当日 | お礼 | cron `type=thanks` |
-| 2 週間後 | 再来場のご案内 (再予約リンク) | cron `type=followup` |
+| 前日 | リマインド (レンタルのみ) | cron `type=reminder` |
+| 利用当日 | お礼 (レンタルのみ) | cron `type=thanks` |
+| 3 か月後 | 再来場のご案内 (レンタルのみ・再予約リンク) | cron `type=followup` |
 | 変更時 | ご予約内容の変更 (お客様) | `/api/reserve/update` / 管理画面 (送信は任意) |
 | 変更時 | 変更の通知 (管理者・変更点の差分付き) | `/api/reserve/update` |
 | キャンセル時 | キャンセルの通知 (管理者) | `/api/reserve/cancel` |
