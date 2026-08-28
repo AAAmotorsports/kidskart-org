@@ -1,16 +1,13 @@
 # ==============================================================================
-# ASMS 予約前日リマインドメール送信 (GitHub Actions cron)
+# ASMS 予約前日リマインドメール送信 (手動実行専用)
 # ------------------------------------------------------------------------------
-# 毎日 18:00 JST に ASMS の /api/cron/reminder-mail を叩き、
-# 翌日開催の全予約に対して「明日はご参加をお待ちしております」メールを
-# 保護者に送る。持ち物は体験教室 vs リピート/チャレンジで出し分け
-# (体験のみ軍手初回プレゼント、それ以外は保護者に持参案内)。
+# ★ 定期実行は 2026-08-29 に Cloudflare Workers Cron Triggers に移行済み。
+# ★ このワークフローは緊急時の手動再送 (workflow_dispatch) 専用として残す。
+#
+# API 詳細: /api/cron/reminder-mail (Cloudflare Worker 側で毎日 18:30 JST に
+# Cloudflare Cron Trigger から自動発火)。詳細は asms/app/worker-entry.mjs 参照。
 #
 # 二重送信防止は API 側 (reservations.reminder_email_sent_at) で担保。
-#
-# API 側で「開始時刻を過ぎたスロットには送らない」ガード有り、cron が
-# 遅延して翌日に発火した場合は「本日」表記で送信する (dateList: today +
-# tomorrow の 2 日を対象)。
 #
 # 必要な GitHub Actions Secrets:
 #   ASMS_API_BASE      - 例: https://reserve.kidskart.org
@@ -19,13 +16,9 @@
 # 手動実行: Actions タブから「Run workflow」で任意の日付を指定して再送可能。
 # ==============================================================================
 
-name: ASMS Reminder Mail
+name: ASMS Reminder Mail (manual)
 
 on:
-  schedule:
-    # GitHub Actions cron は UTC。09:00 UTC = 18:00 JST
-    # 注意: GitHub cron は 5-15 分の遅延あり (完全な定時性は保証されない)
-    - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
       date:

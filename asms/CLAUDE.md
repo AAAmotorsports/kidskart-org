@@ -189,8 +189,9 @@ price_tier / participants 人数 / total_amount (¥) のみ送る。保護者名
 
 ### サンキューメールの CTA 出し分けポリシー
 
-`/api/cron/thankyou-mail` は毎日 18:00 JST に GitHub Actions cron から
-叩かれ、当日参加者の保護者にサンキューメールを送る。
+`/api/cron/thankyou-mail` は毎日 18:00 JST に **Cloudflare Workers Cron
+Triggers** から叩かれ、当日参加者の保護者にサンキューメールを送る
+(2026-08-29 に GitHub Actions cron から移行、時刻精度が秒〜分レベルに)。
 **「毎回同じお願い」で疲弊させないため、CTA は初回参加時のみに絞る**
 (オーナー承認済み・2026-08-25 判断)。
 

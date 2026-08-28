@@ -1,27 +1,24 @@
 # ==============================================================================
-# ASMS 予約当日サンキューメール送信 (GitHub Actions cron)
+# ASMS 予約当日サンキューメール送信 (手動実行専用)
 # ------------------------------------------------------------------------------
-# 毎日 09:00 UTC (= 18:00 JST) に ASMS の /api/cron/thankyou-mail を叩き、
-# その日開催の全予約に対して「本日はご参加ありがとうございました」＋
-# 「参加者ごとの次回案内」メールを保護者宛に送信する。
+# ★ 定期実行は 2026-08-29 に Cloudflare Workers Cron Triggers に移行済み。
+# ★ このワークフローは緊急時の手動再送 (workflow_dispatch) 専用として残す。
+#
+# API 詳細: /api/cron/thankyou-mail (Cloudflare Worker 側で毎日 18:00 JST に
+# Cloudflare Cron Trigger から自動発火)。詳細は asms/app/worker-entry.mjs 参照。
 #
 # 二重送信防止は API 側 (reservations.thankyou_email_sent_at) で担保。
 #
 # 必要な GitHub Actions Secrets:
-#   ASMS_API_BASE      - 例: https://kidskart-asms.<subdomain>.workers.dev
-#                        (本番 DNS 移行後は https://reserve.kidskart.org)
+#   ASMS_API_BASE      - 例: https://reserve.kidskart.org
 #   ASMS_CRON_SECRET   - Cloudflare Worker の CRON_SECRET と同じ値
 #
 # 手動実行: Actions タブから「Run workflow」で任意の日付を指定して再送可能。
 # ==============================================================================
 
-name: ASMS Thank-you Mail
+name: ASMS Thank-you Mail (manual)
 
 on:
-  schedule:
-    # GitHub Actions cron は UTC。09:00 UTC = 18:00 JST
-    # 注意: GitHub cron は 5-15 分の遅延あり (完全な定時性は保証されない)
-    - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
       date:
