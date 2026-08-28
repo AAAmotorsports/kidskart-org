@@ -12,7 +12,12 @@ const search = (url.searchParams.get('q') ?? '').trim();
 const dateFilter = (url.searchParams.get('date') ?? '').trim(); // YYYY-MM-DD
 const ymParam = (url.searchParams.get('ym') ?? '').trim();     // YYYY-MM (calendar month)
 
-const today = new Date().toISOString().slice(0, 10);
+// JST の「今日」を取る。UTC ベースの toISOString だと 00:00-08:59 JST の
+// あいだ「昨日」の日付になり、カレンダーの「本日」ハイライトが 1 日ずれる。
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
 
 // Determine which month to show in calendar (default = current month,
 // or the month containing dateFilter, or ymParam).
