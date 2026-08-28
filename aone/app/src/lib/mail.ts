@@ -4,7 +4,7 @@
 //   予約直後  … 予約完了メール (変更・キャンセル URL 入り)
 //   1 日前    … リマインド
 //   利用当日  … 終了後のお礼
-//   2 週間後  … 再来場を促すサンキュー (再予約リンク付き)
+//   3 か月後  … 再来場を促すサンキュー (再予約リンク付き)
 // に加えて、天候等の一括連絡 (仕様 8) と管理者宛て通知を扱う。
 //
 // RESEND_API_KEY が無い環境 (dev / 未設定) では送信をスキップして
@@ -287,7 +287,12 @@ export function thanksMail(env: Env, r: ReservationForMail, origin: string) {
   };
 }
 
-/** 2 週間後のフォロー (仕様 11: 再来場促進) */
+/**
+ * 3 か月後のフォロー (仕様 11: 再来場促進 / 2026-08 オーナー確認)。
+ *
+ * 以前は 2 週間後に送っていたが、レンタルカートで遊びに来る方の
+ * 次の機会はもっと先。3 か月おきに 1 通のほうが「そろそろまた」に効く。
+ */
 export function followupMail(env: Env, r: ReservationForMail, origin: string) {
   const link = r.kind === 'rp' ? `${origin}/reserve/rp` : `${origin}/reserve`;
   return {
@@ -295,11 +300,11 @@ export function followupMail(env: Env, r: ReservationForMail, origin: string) {
     text: [
       `${nameWithHonorific(r.contact_name)}`,
       '',
-      `先日 (${jaDate(r.date)}) は A-ONE サーキットをご利用いただきありがとうございました。`,
-      'その後、走りの感触はいかがでしたか。',
+      `${jaDate(r.date)} は A-ONE サーキットをご利用いただきありがとうございました。`,
+      'あれから 3 か月が経ちました。またご一緒に走りませんか。',
       '',
-      'A-ONE では、スポーツ走行・レースパック (3 名以上)・貸切走行を',
-      '通年で受付けています。ご友人やご家族とのレースパックもおすすめです。',
+      'レースパック (3 名以上) は、練習 → 予選 → 決勝レースまでを',
+      'ひととおり楽しめます。貸切走行も承っています。',
       '',
       '▼ またのご利用はこちら',
       link,

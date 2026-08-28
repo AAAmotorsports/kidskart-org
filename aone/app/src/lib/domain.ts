@@ -409,6 +409,21 @@ export function monthOptions(
   });
 }
 
+/**
+ * YYYY-MM-DD に月を足す (3 か月後のフォローメール用)。
+ *
+ * 足した先に同じ日が無いときは月末に丸める (5/31 の 3 か月前 → 2/28)。
+ * 丸めた日は前後の日と重なることがあるが、送信済み列で二重送信は防げる。
+ * 逆に丸めないと 2 月ぶんのフォローが誰にも届かなくなる。
+ */
+export function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, last));
+  return t.toISOString().slice(0, 10);
+}
+
 export function hhmm(t: string | null | undefined): string {
   return t ? t.slice(0, 5) : '';
 }
