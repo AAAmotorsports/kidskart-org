@@ -1,0 +1,68 @@
+# ==============================================================================
+# ASMS 予約前日リマインドメール送信 (GitHub Actions cron)
+# ------------------------------------------------------------------------------
+# 毎日 18:00 JST に ASMS の /api/cron/reminder-mail を叩き、
+# 翌日開催の全予約に対して「明日はご参加をお待ちしております」メールを
+# 保護者に送る。持ち物は体験教室 vs リピート/チャレンジで出し分け
+# (体験のみ軍手初回プレゼント、それ以外は保護者に持参案内)。
+#
+# 二重送信防止は API 側 (reservations.reminder_email_sent_at) で担保。
+#
+# API 側で「開始時刻を過ぎたスロットには送らない」ガード有り、cron が
+# 遅延して翌日に発火した場合は「本日」表記で送信する (dateList: today +
+# tomorrow の 2 日を対象)。
+#
+# 必要な GitHub Actions Secrets:
+#   ASMS_API_BASE      - 例: https://reserve.kidskart.org
+#   ASMS_CRON_SECRET   - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから「Run workflow」で任意の日付を指定して再送可能。
+# ==============================================================================
+
+name: ASMS Reminder Mail
+
+on:
+  schedule:
+    # GitHub Actions cron は UTC。09:00 UTC = 18:00 JST
+    # 注意: GitHub cron は 5-15 分の遅延あり (完全な定時性は保証されない)
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 (YYYY-MM-DD, 空欄なら today+tomorrow JST)'
+        required: false
+        default: ''
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/reminder-mail
+        env:
+          ASMS_API_BASE: ${{ secrets.ASMS_API_BASE }}
+          ASMS_CRON_SECRET: ${{ secrets.ASMS_CRON_SECRET }}
+          DATE: ${{ inputs.date }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASMS_API_BASE:-}" ] || [ -z "${ASMS_CRON_SECRET:-}" ]; then
+            echo "::error::ASMS_API_BASE / ASMS_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+          BASE="${ASMS_API_BASE%/}"
+          URL="$BASE/api/cron/reminder-mail"
+          if [ -n "${DATE:-}" ]; then
+            URL="$URL?date=$DATE"
+          fi
+          HTTP_CODE=$(curl -sS -X POST "$URL" \
+            -H "x-cron-secret: $ASMS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Reminder mail cron failed with HTTP $HTTP_CODE" >&2
+            exit 1
+          fi
