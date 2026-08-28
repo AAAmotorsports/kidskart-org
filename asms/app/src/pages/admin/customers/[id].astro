@@ -104,6 +104,43 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back('ベストタイムを削除しました');
   }
 
+  if (op === 'update_guardian') {
+    // 引越し・電話番号変更・入力ミス修正など、管理画面から保護者情報を
+    // 直接更新できるようにする (もともと Supabase SQL 直打ちしか手段が
+    // 無かった)。update する保護者は guardian_id で明示指定。
+    const gid = (form.get('guardian_id') as string) || '';
+    if (!gid) return back('', 'guardian_id が指定されていません');
+    // その顧客の紐付いた保護者だけ触れるようにガード
+    const { data: linked } = await supabase
+      .from('guardian_customer_links')
+      .select('guardian_id')
+      .eq('customer_id', id)
+      .eq('guardian_id', gid)
+      .maybeSingle();
+    if (!linked) return back('', 'この保護者はこの顧客に紐付いていません');
+
+    const trim = (v: FormDataEntryValue | null) => ((v as string) ?? '').trim();
+    const name = trim(form.get('name'));
+    const kana = trim(form.get('kana'));
+    const phone = trim(form.get('phone'));
+    const email = trim(form.get('email'));
+    const postalCode = trim(form.get('postal_code')) || null;
+    const address = trim(form.get('address')) || null;
+    if (!name || !kana || !phone || !email) {
+      return back('', '氏名・かな・電話・メールは必須です');
+    }
+    const { error } = await supabase
+      .from('guardians')
+      .update({
+        name, kana, phone, email,
+        postal_code: postalCode,
+        address,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', gid);
+    return error ? back('', fmt(error)) : back(`保護者情報を更新しました (${name})`);
+  }
+
   if (op === 'merge_into') {
     const targetId = form.get('target_id') as string;
     if (!targetId) return back('', '統合先が指定されていません');
@@ -181,7 +218,7 @@ if (!customer) {
 // Guardians via link table
 const { data: linkRows } = await supabase
   .from('guardian_customer_links')
-  .select('relation, is_primary, guardians(id, name, kana, phone, email, address)')
+  .select('relation, is_primary, guardians(id, name, kana, phone, email, postal_code, address)')
   .eq('customer_id', id);
 const guardians = (linkRows ?? [])
   .map((l: any) => ({ ...l.guardians, relation: l.relation, is_primary: l.is_primary }))
@@ -575,15 +612,62 @@ if (searchQ.length >= 1) {
                 <span class="g-kana">（{g.kana}）</span>
                 {g.relation && <span class="g-rel">{g.relation}</span>}
                 {g.is_primary && <span class="g-primary">主連絡先</span>}
+                <button type="button" class="g-edit-btn" data-toggle-edit={g.id}>
+                  ✏️ 編集
+                </button>
               </div>
-              <div class="g-contact">
+              <div class="g-contact" data-view={g.id}>
                 {g.phone && <span>📞 {g.phone}</span>}
                 {g.email && <span>✉️ {g.email}</span>}
               </div>
-              {g.address && <div class="g-addr">{g.address}</div>}
+              {g.address && <div class="g-addr" data-view={g.id}>
+                {g.postal_code && <span class="g-zip">〒{g.postal_code}</span>} {g.address}
+              </div>}
+              <form method="POST" class="g-edit-form" hidden data-edit={g.id}>
+                <input type="hidden" name="op" value="update_guardian" />
+                <input type="hidden" name="guardian_id" value={g.id} />
+                <div class="g-edit-row">
+                  <label>氏名<input type="text" name="name" value={g.name} required /></label>
+                  <label>フリガナ<input type="text" name="kana" value={g.kana} required /></label>
+                </div>
+                <div class="g-edit-row">
+                  <label>電話<input type="tel" name="phone" value={g.phone} required /></label>
+                  <label>メール<input type="email" name="email" value={g.email} required /></label>
+                </div>
+                <div class="g-edit-row">
+                  <label class="g-edit-zip">郵便番号<input type="text" name="postal_code" value={g.postal_code ?? ''} placeholder="8180024" /></label>
+                  <label class="g-edit-addr">住所<input type="text" name="address" value={g.address ?? ''} placeholder="福岡県筑紫野市..." /></label>
+                </div>
+                <div class="g-edit-actions">
+                  <button type="submit" class="g-edit-save">保存</button>
+                  <button type="button" class="g-edit-cancel" data-cancel-edit={g.id}>キャンセル</button>
+                </div>
+              </form>
             </li>
           ))}
         </ul>
+        <script is:inline>
+          // 保護者情報の「編集」ボタンで表示 → フォーム切替
+          document.querySelectorAll('[data-toggle-edit]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const gid = btn.getAttribute('data-toggle-edit');
+              document.querySelectorAll(`[data-view="${gid}"]`).forEach((el) => el.hidden = true);
+              const form = document.querySelector(`[data-edit="${gid}"]`);
+              if (form) form.hidden = false;
+              btn.hidden = true;
+            });
+          });
+          document.querySelectorAll('[data-cancel-edit]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const gid = btn.getAttribute('data-cancel-edit');
+              document.querySelectorAll(`[data-view="${gid}"]`).forEach((el) => el.hidden = false);
+              const form = document.querySelector(`[data-edit="${gid}"]`);
+              if (form) form.hidden = true;
+              const editBtn = document.querySelector(`[data-toggle-edit="${gid}"]`);
+              if (editBtn) editBtn.hidden = false;
+            });
+          });
+        </script>
       )}
     </section>
   </main>
@@ -763,6 +847,37 @@ if (searchQ.length >= 1) {
     font-family: var(--mono);
   }
   .g-addr { font-size: .74rem; color: var(--ink-3); margin-top: .3rem; }
+  .g-zip { display: inline-block; margin-right: .3rem; font-family: var(--mono); color: var(--ink-4); }
+  .g-edit-btn {
+    margin-left: auto; padding: .3rem .7rem; font-size: .72rem;
+    background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-2);
+    border-radius: 6px; cursor: pointer; font-weight: 700;
+  }
+  .g-edit-btn:hover { background: var(--bg-3); border-color: var(--line-2); color: var(--ink); }
+  .g-edit-form { display: grid; gap: .5rem; margin-top: .6rem; padding: .8rem; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--line); }
+  .g-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .g-edit-row label { display: flex; flex-direction: column; gap: .2rem; font-size: .72rem; font-weight: 700; color: var(--ink-2); }
+  .g-edit-row input {
+    padding: .45rem .55rem; font-size: .85rem; border: 1.5px solid var(--line);
+    border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  .g-edit-row input:focus { outline: none; border-color: var(--sky); box-shadow: 0 0 0 3px rgba(58,169,232,.15); }
+  .g-edit-zip { max-width: 8rem; }
+  .g-edit-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .3rem; }
+  .g-edit-save {
+    padding: .45rem 1rem; background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; border: none; border-radius: 6px; font-weight: 800; font-size: .82rem;
+    cursor: pointer; box-shadow: 0 2px 6px rgba(229,99,26,.25);
+  }
+  .g-edit-save:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(229,99,26,.35); }
+  .g-edit-cancel {
+    padding: .45rem 1rem; background: var(--bg); border: 1.5px solid var(--line);
+    color: var(--ink-2); border-radius: 6px; font-weight: 700; font-size: .82rem; cursor: pointer;
+  }
+  @media (max-width: 480px) {
+    .g-edit-row { grid-template-columns: 1fr; }
+    .g-edit-zip { max-width: none; }
+  }
 
   .empty-inline {
     text-align: center; padding: 1rem;
