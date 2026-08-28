@@ -10,6 +10,13 @@ export const prerender = false;
 // で分岐した「サンキュー＋次回案内」メールを保護者宛に送る。
 // 二重送信防止のため reservations.thankyou_email_sent_at を記録。
 //
+// 「授業前送信」ガード (2026-08-28 追加):
+//   GitHub Actions cron はまれに数時間規模で遅延することがあり、日を
+//   またぐと翌日の予約に対して「本日ありがとう」メールを授業前に
+//   送ってしまう事故が起きた。対策として slot.end_time (JST) が現在
+//   時刻を過ぎたスロットだけを送信対象にする (isSlotFinishedJst)。
+//   dateOverride 指定時 (?date=... の手動再送) はこのガードをスキップ。
+//
 // 認証: x-cron-secret ヘッダで env.CRON_SECRET と一致確認。
 //
 // 分岐ロジック (参加者ごと):
@@ -85,17 +92,32 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
 
   // --- Fetch today's slots (not cancelled) -------------------------------
-  const { data: slots, error: slotsErr } = await supabase
+  const { data: rawSlots, error: slotsErr } = await supabase
     .from('slots')
-    .select('id, date, start_time, courses(code, name)')
+    .select('id, date, start_time, end_time, courses(code, name)')
     .eq('date', targetDate)
     .neq('status', 'cancelled');
   if (slotsErr) {
     return json({ error: `failed to fetch slots: ${slotsErr.message}` }, 500);
   }
-  const slotIds = (slots ?? []).map((s: any) => s.id);
+
+  // 「授業が終わってから」ガード:
+  //   GitHub Actions cron が数時間遅延して日をまたぐと、翌日分の予約に
+  //   対して「本日ありがとうございました」メールが授業前に飛んでしまう
+  //   事故が発生する (2026-08-28 に実発生)。
+  //   → slot.end_time (JST) が現在時刻 (JST) を過ぎたスロットだけを対象に。
+  //   end_time が未設定のスロットは start_time + 90 分をフォールバックにする。
+  //   dateOverride 指定時 (手動再送) はこのガードをスキップして全部送る。
+  const slots = dateOverride
+    ? (rawSlots ?? [])
+    : (rawSlots ?? []).filter((s: any) => isSlotFinishedJst(s.date, s.end_time, s.start_time));
+
+  const slotIds = slots.map((s: any) => s.id);
   if (slotIds.length === 0) {
-    return json({ ok: true, date: targetDate, total: 0, sent: 0, note: 'no slots today' });
+    const note = (rawSlots ?? []).length === 0
+      ? 'no slots today'
+      : `all ${(rawSlots ?? []).length} slots today are still in progress or upcoming`;
+    return json({ ok: true, date: targetDate, total: 0, sent: 0, note });
   }
   const slotById = new Map<string, { courseCode: string; courseName: string }>();
   for (const s of slots as any[]) {
@@ -259,6 +281,41 @@ function todayInJst(): string {
   }).format(now);
   // en-CA returns YYYY-MM-DD
   return parts;
+}
+
+/**
+ * そのスロットは既に終了時刻を過ぎているか (JST 判定)。
+ * end_time が未設定なら start_time + 90 分をフォールバック目安にする。
+ * どちらも解釈できなければ「未終了扱い」で安全側に倒す。
+ * end_time は "HH:MM" or "HH:MM:SS" 想定。
+ */
+function isSlotFinishedJst(date: string, endTime: string | null, startTime: string | null): boolean {
+  const nowJstMs = Date.now(); // 現在の absolute time
+  const endMs = jstDateTimeToUtcMs(date, endTime) ?? (() => {
+    const startMs = jstDateTimeToUtcMs(date, startTime);
+    return startMs != null ? startMs + 90 * 60 * 1000 : null;
+  })();
+  if (endMs == null) return false; // どちらも取れなければ「まだ」扱いで送らない
+  return nowJstMs >= endMs;
+}
+
+/**
+ * "2026-08-29" + "10:50" (JST 時刻) を絶対時刻 (UTC ms epoch) に変換。
+ * JST は UTC+9 固定なので単純に -9h してから Date.UTC する。
+ */
+function jstDateTimeToUtcMs(date: string, time: string | null): number | null {
+  if (!date || !time) return null;
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const tm = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
+  if (!dm || !tm) return null;
+  const y = parseInt(dm[1], 10);
+  const mo = parseInt(dm[2], 10) - 1;
+  const d = parseInt(dm[3], 10);
+  const hh = parseInt(tm[1], 10);
+  const mm = parseInt(tm[2], 10);
+  const ss = tm[3] ? parseInt(tm[3], 10) : 0;
+  // JST の hh:mm:ss を UTC epoch ms に。JST = UTC + 9h。
+  return Date.UTC(y, mo, d, hh - 9, mm, ss);
 }
 
 function classifyCourse(code: string): CourseKind {
