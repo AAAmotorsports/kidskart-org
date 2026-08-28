@@ -13,7 +13,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aone-booking",
-  "main": "./dist/_worker.js/index.js",
+  // Astro が出す dist/_worker.js/index.js を worker/index.js が包んでいる。
+  // cron (scheduled ハンドラ) を足すため — 詳しくは worker/index.js の頭を参照
+  "main": "./worker/index.js",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -22,6 +24,12 @@
   },
   "observability": {
     "enabled": true
+  },
+  // 自動メールと月次バックアップ。毎時 1 本だけ持たせ、JST の時刻で
+  // 「朝の回 / 昼の拾い直し / 夕の回 / 毎月 1 日」を worker/index.js が振り分ける。
+  // cron の本数を増やさずに済み、1 回落ちても次の回で拾える
+  "triggers": {
+    "crons": ["0 * * * *"]
   },
   // 独自ドメイン。rk-a1.com のゾーンが Cloudflare にあることが前提で、
   // deploy 時に DNS レコードと証明書が自動で作られる。
@@ -51,7 +59,9 @@
     "JMA_AREA_CODE": "400000",
     "JMA_AREA_NAME": "福岡県",
     // GA4 (空文字なら計測タグを出さない)
-    "PUBLIC_GA4_MEASUREMENT_ID": ""
+    "PUBLIC_GA4_MEASUREMENT_ID": "",
+    // cron が自分自身を叩くときの基準 URL (メール文面のリンクもこれになる)
+    "CRON_ORIGIN": "https://reserve.rk-a1.com"
   }
   //
   // Secrets (Cloudflare Dashboard → 変数とシークレット → シークレット型):

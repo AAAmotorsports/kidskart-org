@@ -388,11 +388,46 @@ RP の予約画面に「この日のご予約」として時間と名前を出�
   古い DB の形でも既定値で動くようにしておくこと (`queries.ts` の `withStatus`)。
 * 祝日テーブルは毎年 2 月の官報告示のあと、翌年ぶんを新しい連番で追記する。
 
+## 定時実行は Cloudflare Workers Cron Triggers (2026-08 移行)
+
+`wrangler.jsonc` の `triggers.crons` は **毎時 1 本 (`0 * * * *`) だけ**。
+何を回すかは `worker/index.js` の `scheduled` が JST の時刻で振り分ける
+(`worker/tasks.js` の `tasksFor()` が唯一の定義)。
+
+| JST | 回すもの |
+|---|---|
+| 08:00 | reminder + followup + callbacks |
+| 12:00 | reminder (朝が落ちたときの拾い直し) |
+| 18:00 | thanks |
+| 毎月 1 日 09:00 | backup |
+
+* **cron の本数を増やさない。** 時刻ごとに cron を足すと、プランの上限や
+  「どれがどれ」で事故る。毎時 1 本 + 中で分岐なら、回を足すのは 1 行で済む
+* `scheduled` は **自分自身の fetch ハンドラを呼ぶ** (外に出ないので速く、
+  `CRON_SECRET` がネットワークに出ない)。基準 URL は vars の `CRON_ORIGIN`
+* 二重送信は**必ず DB 側** (`*_mail_sent_at`) で止める。cron の回数や
+  スケジュールに依存させない。だから同じ回を 2 度呼んでも安全
+* 実行結果は `console.log('[cron] …')` に 1 行ずつ残る
+  (Cloudflare の Workers → Logs で追える。`observability.enabled` は true)
+
+> ⚠️ **Astro の Cloudflare アダプタは `scheduled` を出せない。**
+> `dist/_worker.js/index.js` は fetch ハンドラだけなので、`worker/index.js` が
+> それを包んで `scheduled` を足し、`main` をそちらに向けている。
+> `worker/index.js` の `fetch` には何も足さないこと — サイト全体が落ちる経路が
+> 1 本増える。`npx wrangler deploy --dry-run` でバンドルの成否とサイズを
+> 確かめられる (2026-08 時点で gzip 437 KiB)。
+
+> ⚠️ **GitHub Actions の `schedule:` を復活させないこと。**
+> 「リポジトリを 60 日さわらないと定時実行が自動で止まる」仕様があり、
+> 運用が落ち着いた頃に黙って送信が止まる。これが移行した理由。
+> `workflow_dispatch` (手動実行) だけは緊急時のために残してある。
+
 ## バックアップ
 
 Supabase の無料プランに自動バックアップは無い。予約台帳と顧客名簿が飛ぶと
 業務が止まるので、**毎月 1 日に CSV を管理者宛にメールで送る**
-(`/api/cron/backup` ← `.github/workflows/aone-backup.yml`)。
+(`/api/cron/backup` ← Worker の cron。手動で欲しいときは
+`.github/workflows/aone-backup.yml` を Actions タブから実行する)。
 受信箱がそのまま保管場所になるので、誰かが手作業を思い出す必要がない。
 
 CSV の列定義は `lib/csv.ts` の 1 か所だけ。管理画面のボタン

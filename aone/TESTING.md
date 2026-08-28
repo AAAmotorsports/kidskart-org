@@ -229,7 +229,19 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 - [ ] **同じ日にスポーツ走行の予約も入れておく → その方には届かない**
 - [ ] `type=followup` の `date` は **3 か月前**の予約に当たる
       (例: 8/29 に叩くと 5/29 のご利用者に届く)
-- [ ] GitHub Actions の `aone-mails` を手動実行 → 成功する
+- [ ] GitHub Actions の `aone-mails` を手動実行 → 成功する (緊急時用に残してある)
+
+定時実行は **Cloudflare Workers Cron Triggers** です:
+
+- [ ] Cloudflare Dashboard → Workers → aone-booking → 設定 → トリガー イベント に
+      **`0 * * * *` (毎時)** が登録されている
+- [ ] Workers → Logs (ライブ) を開いて 8 時・12 時・18 時をまたぐと
+      **`[cron] … JST /api/cron/mails?type=… → HTTP 200`** が出る
+- [ ] 8 時台の回のあと、リマインドが届く / 18 時台の回のあと、お礼が届く
+- [ ] **同じ日に 2 通届かない** (`aone_mail_log` に同じ予約・同じ種別の行が
+      2 つできていない)
+- [ ] GitHub Actions の 2 つのワークフローに **定時実行が残っていない**
+      (Actions タブで「This workflow has a workflow_dispatch event trigger」だけ)
 
 ## 11-2. 折り返し対応と督促
 
