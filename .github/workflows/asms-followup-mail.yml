@@ -1,15 +1,14 @@
 # ==============================================================================
-# ASMS 1ヶ月後フォローアップメール送信 (GitHub Actions cron)
+# ASMS 1ヶ月後フォローアップメール送信 (手動実行専用)
 # ------------------------------------------------------------------------------
-# 毎日 19:00 JST に ASMS の /api/cron/followup-mail を叩き、
-# 30 日前 (JST) に参加してその後 1 度も新規予約がない保護者宛に
-# 「その後お子さまいかがですか？」再エンゲージメントメールを送る。
+# ★ 定期実行は 2026-08-29 に Cloudflare Workers Cron Triggers に移行済み。
+# ★ このワークフローは緊急時の手動再送 (workflow_dispatch) 専用として残す。
+#
+# API 詳細: /api/cron/followup-mail (Cloudflare Worker 側で毎日 19:00 JST に
+# Cloudflare Cron Trigger から自動発火)。詳細は asms/app/worker-entry.mjs 参照。
 #
 # 二重送信防止は API 側 (reservations.followup_email_sent_at) で担保。
 # 保護者単位で「1 回だけ」の運用。
-#
-# 対象は 30 日前ぴったりに開催した予約なので、日次でも 1-3 件程度しか
-# 送られない (規模拡大時も控えめ)。
 #
 # 必要な GitHub Actions Secrets:
 #   ASMS_API_BASE      - 例: https://reserve.kidskart.org
@@ -19,13 +18,9 @@
 # 参加日) して再送可能。
 # ==============================================================================
 
-name: ASMS Followup Mail
+name: ASMS Followup Mail (manual)
 
 on:
-  schedule:
-    # GitHub Actions cron は UTC。10:00 UTC = 19:00 JST
-    # サンキュー (18:00) の後ろに 1 時間ずらす
-    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       date:

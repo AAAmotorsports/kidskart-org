@@ -19,7 +19,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kidskart-asms",
-  "main": "./dist/_worker.js/index.js",
+  // Astro が生成する dist/_worker.js/index.js は fetch handler のみ。
+  // scheduled (Cron Triggers) を扱うために worker-entry.mjs で薄くラップし、
+  // そちらを main にしている。詳細は worker-entry.mjs 冒頭コメント参照。
+  "main": "./worker-entry.mjs",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -28,6 +31,22 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ---- Cron Triggers ------------------------------------------------------
+  // GitHub Actions cron から Cloudflare Workers Cron Triggers に移行 (2026-08-29)。
+  // GitHub Actions は数時間規模の遅延があるが、Cloudflare は秒〜分レベル。
+  // 二重送信は各 API の DB フラグ (thankyou_email_sent_at 等) で防止済み。
+  //
+  // 対応する endpoint は worker-entry.mjs の CRON_TO_ENDPOINT を参照。
+  //   09:00 UTC = 18:00 JST  → thankyou-mail  (前日分キャッチアップ含む)
+  //   09:30 UTC = 18:30 JST  → reminder-mail  (翌日開催の予約)
+  //   10:00 UTC = 19:00 JST  → followup-mail  (30 日前参加者)
+  "triggers": {
+    "crons": [
+      "0 9 * * *",
+      "30 9 * * *",
+      "0 10 * * *"
+    ]
   },
   // ---- Environment variables --------------------------------------------
   // Non-secret runtime env lives HERE (single source of truth). Dashboard
