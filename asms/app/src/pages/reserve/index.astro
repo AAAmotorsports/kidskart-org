@@ -18,7 +18,12 @@ const { data: courses } = await supabase
   .order('display_order');
 
 // Load open upcoming slots (up to 4 months out).
-const today = new Date().toISOString().slice(0, 10);
+// JST の「今日」を取る。UTC ベースの toISOString だと 00:00-08:59 JST の
+// あいだ「昨日」の日付になり、カレンダーに前日のスロットが残ってしまう。
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
 const { data: slots } = await supabase
   .from('slots')
   .select('id, date, start_time, end_time, capacity, course_id, courses(name, code)')
