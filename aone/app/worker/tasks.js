@@ -44,3 +44,24 @@ export function tasksFor(hourJst, dayOfMonthJst) {
 
   return tasks;
 }
+
+/**
+ * cron が起きた時刻 (ミリ秒) から、その回にやることを組み立てる。
+ *
+ * JST への読み替えとログの見出しもここで作る。worker/index.js 側は
+ * これを呼んで叩くだけにしてあり、時刻まわりを Node から丸ごと試せる。
+ *
+ * @param scheduledTimeMs ScheduledEvent.scheduledTime
+ */
+export function planFor(scheduledTimeMs) {
+  // Workers の時計は UTC。JST に直してから時・日を見る
+  const jst = new Date(scheduledTimeMs + 9 * 60 * 60 * 1000);
+  const hour = jst.getUTCHours();
+  const day = jst.getUTCDate();
+  return {
+    hour,
+    day,
+    stamp: jst.toISOString().slice(0, 16).replace('T', ' '),
+    tasks: tasksFor(hour, day),
+  };
+}

@@ -235,7 +235,12 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 
 - [ ] Cloudflare Dashboard → Workers → aone-booking → 設定 → トリガー イベント に
       **`0 * * * *` (毎時)** が登録されている
-- [ ] Workers → Logs (ライブ) を開いて 8 時・12 時・18 時をまたぐと
+- [ ] **Worker のページ上部の「Observability」タブ → ログ**を開く
+      (左メニューの「観察可能性」からでも見られる)
+- [ ] **毎時 0 分に必ず 1 行出る。**送るものが無い時間は
+      `[cron] … JST — この時間は送るものがありません` と出るので、
+      「動いていない」のか「その時間は何も無い」のかが見分けられる
+- [ ] 8 時・12 時・18 時をまたぐと
       **`[cron] … JST /api/cron/mails?type=… → HTTP 200`** が出る
 - [ ] 8 時台の回のあと、リマインドが届く / 18 時台の回のあと、お礼が届く
 - [ ] **同じ日に 2 通届かない** (`aone_mail_log` に同じ予約・同じ種別の行が
