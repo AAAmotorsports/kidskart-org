@@ -114,7 +114,7 @@ npx wrangler deploy
 |---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | 予約の書き込み・管理画面の読み取り |
 | `RESEND_API_KEY` | メール送信 |
-| `CRON_SECRET` | `/api/cron/mails` を GitHub Actions から叩く共有鍵 |
+| `CRON_SECRET` | `/api/cron/*` を叩く共有鍵 (Worker の cron と、手動実行の GitHub Actions が使う) |
 | `ADMIN_PASSWORD_HASH` | 管理画面のパスワード (SHA-256 hex) |
 
 > ⚠️ `wrangler.jsonc` の `vars` ブロックを空にしたり削除したりすると、
@@ -134,12 +134,23 @@ printf 'あたらしいパスワード' | sha256sum
 
 ### 3. 自動メールの cron
 
+定時実行は **Cloudflare Workers Cron Triggers** です。`wrangler.jsonc` の
+`triggers.crons` に毎時 1 本だけ持たせ、`worker/index.js` が JST の時刻で
+振り分けます (08:00 リマインド + フォロー + 督促 / 12:00 リマインドの拾い直し /
+18:00 お礼 / 毎月 1 日 09:00 バックアップ)。デプロイすれば自動で登録されるので、
+設定作業はありません。
+
+`.github/workflows/aone-mails.yml` と `aone-backup.yml` は **手動実行専用**として
+残してあります (緊急時・日付を指定した再送)。使うときは GitHub Secrets に
+`AONE_API_BASE` と `AONE_CRON_SECRET` を設定してください。
+
+> GitHub Actions の `schedule:` は使いません。「リポジトリを 60 日さわらないと
+> 定時実行が自動で止まる」仕様があり、運用が落ち着いた頃に黙って送信が
+> 止まるためです。
+
 > curl で手動確認するときは `-H "Content-Type: application/json"` を付けること。
 > 付けないと Astro の CSRF 対策 (`security.checkOrigin`) が 403 を返す。
 > `AONE_API_BASE` は独自ドメイン (`https://reserve.rk-a1.com`) を設定する。
-
-`.github/workflows/aone-mails.yml` が 1 日 2 回 `/api/cron/mails` を叩きます。
-GitHub Secrets に `AONE_API_BASE` と `AONE_CRON_SECRET` を設定してください。
 
 ## 本番導入前の通しテスト
 
