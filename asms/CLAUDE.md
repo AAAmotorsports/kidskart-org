@@ -219,6 +219,58 @@ Triggers** から叩かれ、当日参加者の保護者にサンキューメー
 **カラム追加**: `db/0027_guardians_google_review_asked_at.sql` を
 Supabase SQL Editor で実行して有効化。
 
+### 自動メール系 cron の設計判断 (2026-08-29 確定)
+
+**cron はどこで動かすか: Cloudflare Workers Cron Triggers**
+- 定期実行系は当初 GitHub Actions cron に置いていたが、2026-08-28 に
+  11 時間遅延して発火し、翌 5:45 AM に「本日ありがとうございました」
+  メールが授業前の実顧客に届く事故が発生した
+- GitHub Actions cron は公式仕様として「ベストエフォート、負荷時に
+  数分〜数時間遅延する」と明記されている (schedule event, Notes)
+- Cloudflare Workers Cron Triggers は Cloudflare 内部スケジューラで発火し、
+  実測で秒〜分レベルの精度。ASMS は既に Cloudflare Workers 上なので
+  追加インフラなしで移行できる
+- 実装: `asms/app/worker-entry.mjs` が Astro worker (fetch) + scheduled
+  handler の両方を提供。cron 式 → API endpoint の mapping は
+  `CRON_TO_ENDPOINT`
+- GitHub Actions ワークフロー (`asms-*-mail.yml`) は `schedule:` を削除し、
+  `workflow_dispatch:` のみ残す (緊急時の手動再送用)
+
+**送信ガード: 「授業終了済みのみ送信」 (thankyou)**
+- cron が数時間遅延して日をまたぐと、翌日分の予約に「本日ありがとう」を
+  授業前に送ってしまう事故が発生し得るため、`isSlotFinishedJst()` で
+  slot.end_time (JST) が現在時刻を過ぎたスロットのみを送信対象にする
+- end_time が未設定なら start_time + 90 分をフォールバック
+- どちらも取れなければ「未終了扱い」で送らない (安全側)
+- dateOverride 指定時 (`?date=...` の手動再送) はガードをスキップ
+
+**取りこぼし防止: yesterday もクエリに含める**
+- thankyou の cron が万一 1 日 skip されても、翌日 cron が
+  `dateList = [yesterday, today]` を見て前日分を catch-up する
+- 二重送信は `thankyou_email_sent_at IS NULL` チェックで防止
+
+**送信頻度の設計思想**
+| 時刻 | 種類 | 意図 |
+|-----|-----|-----|
+| 18:30 JST 前日 | リマインド | ノーショー防止・キャンセル判断の窓口 |
+| 18:00 JST 当日 | サンキュー | 授業終了後の御礼 + 次回導線 |
+| 19:00 JST 30日後 | フォロー | 未再予約者のみ 1 回だけ (しつこくしない) |
+
+サンキュー・リマインド以外の第 4 のメールは追加しない方針。1 予約に
+つき最大 5 通 (予約時 + リマインド + 当日 + 30 日フォロー + キャンセル時)
+で、これ以上増やすと「またか」で開封率が落ちる。
+
+**監視: cron_runs + /admin パネル**
+- `logCronRun(supabase, name, worker)` ヘルパで全 cron が 1 実行 = 1 行 insert
+- /admin トップの「🤖 自動メールの動作状況」パネルが直近実行を可視化
+- 30 時間動いてなければ黄バッジ、エラーなら赤バッジ
+- Cloudflare Logs を開かなくても管理画面から気づける (「無音で死ぬ」を防止)
+
+**運用時の確認ポイント (最初の 2〜3 日)**
+- /admin の cron パネルが全部緑になっているか
+- Resend Dashboard の送信ログ件数と cron パネルの `sent 件数` が一致するか
+- 2〜3 日安定したらほぼ放置運用で OK
+
 ### Cloudflare 設定のバックアップ
 Cloudflare Dashboard の Secret を誤って全削除するとメール送信・書き込み系が即死する。
 - Secret 値は 1Password 等の別レイヤに保管
