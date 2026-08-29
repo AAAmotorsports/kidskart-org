@@ -116,6 +116,12 @@ function jstTime(iso: string): string {
                   <span class="cron-never">まだ実行されていません</span>
                 )}
               </div>
+              <div class="cron-line-3">
+                <button type="button" class="cron-retry" data-cron={name}
+                        title="この cron を今すぐ手動実行 (?date=YYYY-MM-DD 指定可)">
+                  ▶ 手動実行
+                </button>
+              </div>
             </li>
           );
         })}
@@ -126,6 +132,54 @@ function jstTime(iso: string): string {
         <strong class="cron-err">🔴 赤</strong>= 前回エラー
       </p>
     </section>
+
+    <script>
+      // 「手動実行」ボタン: /api/admin/cron-retry を叩いて cron を即実行。
+      // 日付未指定なら「今日」扱い。事故時の再送 (?date=YYYY-MM-DD) にも対応。
+      document.querySelectorAll<HTMLButtonElement>('button.cron-retry').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const cron = btn.dataset.cron || '';
+          if (!cron) return;
+          const dateInput = prompt(
+            `${cron} を手動実行します。\n` +
+            `対象日を YYYY-MM-DD 形式で入力 (空欄=今日)。\n` +
+            `例: 2026-08-29`,
+            ''
+          );
+          if (dateInput === null) return; // cancel
+          const date = dateInput.trim();
+          if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            alert('日付形式が不正です (YYYY-MM-DD)');
+            return;
+          }
+          btn.disabled = true;
+          const orig = btn.textContent;
+          btn.textContent = '実行中...';
+          try {
+            const r = await fetch('/api/admin/cron-retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cron, date: date || undefined }),
+            });
+            const body = await r.json().catch(() => ({}));
+            if (r.ok) {
+              alert(
+                `✅ ${cron} 実行完了\n\n` +
+                JSON.stringify(body, null, 2).slice(0, 800)
+              );
+              location.reload();
+            } else {
+              alert(`❌ 失敗 (${r.status}):\n${body?.error || JSON.stringify(body).slice(0, 300)}`);
+            }
+          } catch (e: any) {
+            alert(`❌ 通信エラー: ${e?.message || e}`);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = orig;
+          }
+        });
+      });
+    </script>
 
     <div class="grid">
       <a class="card" href="/admin/schedule">
@@ -261,6 +315,18 @@ function jstTime(iso: string): string {
   .cron-summary strong { color: var(--ink); font-family: var(--mono); }
   .cron-failed { color: var(--rose-deep); font-weight: 700; }
   .cron-note { color: var(--ink-3); font-style: italic; }
+  .cron-line-3 { margin-top: .4rem; }
+  .cron-retry {
+    padding: .3rem .7rem; font-size: .72rem; font-weight: 700;
+    background: var(--bg); color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 100px;
+    cursor: pointer; font-family: var(--jp);
+  }
+  .cron-retry:hover:not(:disabled) {
+    background: var(--sky-mist); color: var(--sky-deep);
+    border-color: var(--sky);
+  }
+  .cron-retry:disabled { opacity: .5; cursor: wait; }
   .cron-err-msg { color: var(--rose-deep); font-weight: 700; font-size: .72rem; }
   .cron-running { color: var(--sky-deep); font-weight: 700; }
   .cron-never { color: var(--ink-3); font-style: italic; }

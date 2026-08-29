@@ -51,14 +51,16 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     referral_code,
   } = body ?? {};
 
-  // referral_code はカレンダー入口の ?ref=xxx (localStorage 経由)。
-  // 予約完了後に UPDATE で reservations.referral_code に書く。
-  // 安全のため長さと文字種を制限してから使う。
+  // referral_code は入り口 URL の ?ref=xxx (localStorage 経由) または
+  // ウィザード Step 1 の申込コード欄。予約完了後に UPDATE で
+  // reservations.referral_code に書く。
+  // 大文字に正規化して "autopolis"/"AUTOPOLIS" 混在を防ぐ + 文字種を制限。
   const cleanRef = ((typeof referral_code === 'string' ? referral_code : '') || '')
     .trim()
+    .toUpperCase()
     .slice(0, 60)
-    .replace(/[^A-Za-z0-9_.-]/g, '');
-  const validRef = cleanRef && /^[A-Za-z0-9_.-]+$/.test(cleanRef) ? cleanRef : null;
+    .replace(/[^A-Z0-9_.-]/g, '');
+  const validRef = cleanRef && /^[A-Z0-9_.-]+$/.test(cleanRef) ? cleanRef : null;
 
   // --- Shallow validation (defence in depth; wizard is the real filter) --
   if (!slot_id || !term_id) return json({ error: 'slot_id と term_id は必須です' }, 400);
