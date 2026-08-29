@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { logCronRun } from '@lib/cron-log';
 
 export const prerender = false;
 
@@ -40,6 +41,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const supabase = getSupabaseAdmin(env);
+
+  try {
+    const result = await logCronRun(supabase, 'followup-mail', async () => {
   const urlObj = new URL(request.url);
   const dateOverride = urlObj.searchParams.get('date');
   const origin = env.PUBLIC_APP_URL || `${urlObj.protocol}//${urlObj.host}`;
@@ -56,11 +60,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('date', targetDate)
     .neq('status', 'cancelled');
   if (slotsErr) {
-    return json({ error: `failed to fetch slots: ${slotsErr.message}` }, 500);
+    throw new Error(`failed to fetch slots: ${slotsErr.message}`);
   }
   const slotIds = (slots ?? []).map((s: any) => s.id);
   if (slotIds.length === 0) {
-    return json({ ok: true, target_date: targetDate, total: 0, sent: 0, note: 'no slots on target date' });
+    return { target_date: targetDate, total: 0, sent: 0, note: 'no slots on target date' };
   }
   const slotInfoById = new Map<string, { courseCode: string; courseName: string }>();
   for (const s of slots as any[]) {
@@ -82,7 +86,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .in('status', ['confirmed', 'attended'])
     .is('followup_email_sent_at', null);
   if (rErr) {
-    return json({ error: `failed to fetch reservations: ${rErr.message}` }, 500);
+    throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
 
   // --- For each candidate, verify no newer reservation for same guardian -
@@ -198,7 +202,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-  return json({ ok: true, target_date: targetDate, total, sent, skipped, failed, details });
+      return { target_date: targetDate, total, sent, skipped, failed, details };
+    });
+    return json({ ok: true, ...result });
+  } catch (e: any) {
+    return json({ error: e?.message ?? String(e) }, 500);
+  }
 };
 
 export const GET = POST;

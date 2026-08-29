@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { logCronRun } from '@lib/cron-log';
 
 export const prerender = false;
 
@@ -81,6 +82,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const supabase = getSupabaseAdmin(env);
 
+  try {
+    const result = await logCronRun(supabase, 'thankyou-mail', async () => {
   // --- Today (JST) --------------------------------------------------------
   // Query param ?date=YYYY-MM-DD で日付上書き可 (手動再送・テスト用)
   const urlObj = new URL(request.url);
@@ -108,7 +111,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .in('date', dateList)
     .neq('status', 'cancelled');
   if (slotsErr) {
-    return json({ error: `failed to fetch slots: ${slotsErr.message}` }, 500);
+    throw new Error(`failed to fetch slots: ${slotsErr.message}`);
   }
 
   // 「授業が終わってから」ガード:
@@ -127,7 +130,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const note = (rawSlots ?? []).length === 0
       ? 'no slots today'
       : `all ${(rawSlots ?? []).length} slots today are still in progress or upcoming`;
-    return json({ ok: true, date: targetDate, total: 0, sent: 0, note });
+    return { date: targetDate, total: 0, sent: 0, note };
   }
   const slotById = new Map<string, { courseCode: string; courseName: string }>();
   for (const s of slots as any[]) {
@@ -152,7 +155,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .in('status', ['confirmed', 'attended'])
     .is('thankyou_email_sent_at', null);
   if (rErr) {
-    return json({ error: `failed to fetch reservations: ${rErr.message}` }, 500);
+    throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
 
   // --- 「初回参加か」を判定するため、対象保護者たちの過去のサンキュー
@@ -273,7 +276,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-  return json({ ok: true, date: targetDate, total, sent, skipped, failed, details });
+      return { date: targetDate, total, sent, skipped, failed, details };
+    });
+    return json({ ok: true, ...result });
+  } catch (e: any) {
+    return json({ error: e?.message ?? String(e) }, 500);
+  }
 };
 
 // Also allow GET for easy manual testing (still requires secret)
