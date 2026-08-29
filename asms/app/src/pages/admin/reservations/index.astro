@@ -186,7 +186,7 @@ const nextYm = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth()
 let query = supabase
   .from('reservations')
   .select(`
-    id, reservation_number, status, price_tier, total_amount, created_at,
+    id, reservation_number, status, price_tier, total_amount, created_at, referral_code,
     slots(id, date, start_time, end_time, courses(name, code)),
     guardians(name, kana, phone, email),
     reservation_participants(id, name_snapshot, age_at_booking, height_cm, attendance_status)
@@ -430,6 +430,11 @@ const statusColor: Record<string, string> = {
                   <span class={`badge badge-${statusColor[r.status] ?? 'muted'}`}>
                     {statusLabel[r.status] ?? r.status}
                   </span>
+                  {r.referral_code && (
+                    <span class="ref-badge" title={`参照元: ${r.referral_code}`}>
+                      🔗 {r.referral_code}
+                    </span>
+                  )}
                   <span class="res-num">{r.reservation_number}</span>
                 </div>
                 <div class="res-row-2">
@@ -701,6 +706,12 @@ const statusColor: Record<string, string> = {
     margin-bottom: .4rem;
   }
   .res-num { font-family: var(--mono); font-size: .74rem; color: var(--ink-3); margin-left: auto; }
+  .ref-badge {
+    display: inline-flex; align-items: center; gap: .2rem;
+    padding: 2px 8px; border-radius: 10px;
+    background: rgba(124,111,219,.14); color: var(--violet);
+    font-size: .68rem; font-weight: 700; font-family: var(--mono);
+  }
   .res-row-2 {
     display: flex; gap: .6rem; align-items: baseline;
     font-size: .88rem;

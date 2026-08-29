@@ -1234,6 +1234,12 @@ const termsHtml = terms
       try {
         const payload = collect();
         if (turnstileToken) (payload as any).turnstile_token = turnstileToken;
+        // /reserve/index.astro で URL の ?ref=xxx を localStorage に保存済み。
+        // ここで payload に載せて API に渡す (?ref 付いていなければ空文字扱い)。
+        try {
+          const ref = localStorage.getItem('asms:ref');
+          if (ref) (payload as any).referral_code = ref;
+        } catch (_e) { /* localStorage 読めなくても致命じゃない */ }
         const res = await fetch('/api/reserve/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
