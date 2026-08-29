@@ -298,6 +298,26 @@ const termsHtml = terms
               {isEn ? 'Total: ' : '合計: '}<strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
             </div>
 
+            <div class="ref-field">
+              <label for="referralInput">
+                {isEn ? '🔖 Referral code (optional)' : '🔖 申込コード（お持ちの方のみ）'}
+              </label>
+              <input
+                type="text"
+                id="referralInput"
+                name="referral_code"
+                maxlength="60"
+                placeholder={isEn ? 'e.g. AUTOPOLIS' : '例: AUTOPOLIS'}
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <p class="hint">
+                {isEn
+                  ? 'If you have a code from a flyer, QR, or friend, please enter it.'
+                  : 'チラシ・QR・ご紹介などでお持ちの方はご入力ください。'}
+              </p>
+            </div>
+
             {requiresApproval && (
               <div class="notice">
                 {isEn
@@ -1234,12 +1254,10 @@ const termsHtml = terms
       try {
         const payload = collect();
         if (turnstileToken) (payload as any).turnstile_token = turnstileToken;
-        // /reserve/index.astro で URL の ?ref=xxx を localStorage に保存済み。
-        // ここで payload に載せて API に渡す (?ref 付いていなければ空文字扱い)。
-        try {
-          const ref = localStorage.getItem('asms:ref');
-          if (ref) (payload as any).referral_code = ref;
-        } catch (_e) { /* localStorage 読めなくても致命じゃない */ }
+        // Referral code: 入力欄の値 (localStorage から自動 prefill 済み or 手入力)。
+        // 空なら送らない。サーバー側で sanitize + 検証する。
+        const refValue = referralInput?.value?.trim() || '';
+        if (refValue) (payload as any).referral_code = refValue;
         const res = await fetch('/api/reserve/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1284,6 +1302,23 @@ const termsHtml = terms
         submitError.hidden = false;
       }
     });
+
+    // Referral code field: pre-fill from localStorage (which
+    // /reserve/index.astro captured from ?ref=xxx). User can overwrite
+    // by typing (matches flyer/QR/manual paths in one field).
+    // 全て大文字に正規化して集計時の case-mismatch を回避。
+    const referralInput = form.querySelector<HTMLInputElement>('input[name="referral_code"]');
+    if (referralInput) {
+      try {
+        const savedRef = localStorage.getItem('asms:ref');
+        if (savedRef && !referralInput.value) referralInput.value = savedRef.toUpperCase();
+      } catch (_e) { /* localStorage unavailable */ }
+      referralInput.addEventListener('input', () => {
+        const pos = referralInput.selectionStart;
+        referralInput.value = referralInput.value.toUpperCase();
+        try { referralInput.setSelectionRange(pos, pos); } catch {}
+      });
+    }
 
     renderParticipants();
     updateTotal();
@@ -1492,6 +1527,29 @@ const termsHtml = terms
   }
   .same-as-guardian input[type="checkbox"] { accent-color: var(--sky); }
   .zip-hint { margin-top: .3rem; }
+
+  .ref-field {
+    margin-top: .8rem;
+    padding: .8rem .9rem;
+    background: rgba(140,100,200,.06);
+    border: 1px solid rgba(140,100,200,.25);
+    border-radius: 8px;
+  }
+  .ref-field label {
+    display: block;
+    font-size: .78rem; font-weight: 700; color: #7b57c8;
+    margin-bottom: .35rem;
+  }
+  .ref-field input {
+    width: 100%;
+    padding: .55rem .7rem; font-size: .92rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--mono);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .ref-field .hint { margin: .3rem 0 0; }
 
   .total-preview {
     text-align: right; font-size: 1rem; padding: .6rem 0;
