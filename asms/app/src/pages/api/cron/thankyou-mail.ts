@@ -140,8 +140,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
   }
 
-  // --- Fetch reservations for those slots (active + not yet sent) --------
-  const { data: reservations, error: rErr } = await supabase
+  // --- Fetch reservations for those slots (active) ------------------------
+  //   送信済みも一旦取ってから js 側でフィルタ。こうすると「候補はあるが
+  //   全部送信済み (=何も送らなかった理由)」を summary に残せる。
+  const { data: allReservations, error: rErr } = await supabase
     .from('reservations')
     .select(`
       id, slot_id, status, guardian_id, thankyou_email_sent_at,
@@ -152,11 +154,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
       )
     `)
     .in('slot_id', slotIds)
-    .in('status', ['confirmed', 'attended'])
-    .is('thankyou_email_sent_at', null);
+    .in('status', ['confirmed', 'attended']);
   if (rErr) {
     throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
+  const alreadySent = (allReservations ?? []).filter((r: any) => r.thankyou_email_sent_at != null).length;
+  const reservations = (allReservations ?? []).filter((r: any) => r.thankyou_email_sent_at == null);
 
   // --- 「初回参加か」を判定するため、対象保護者たちの過去のサンキュー
   //     メール送信回数 (=過去に参加してメール送信済みだった件数) を先に
@@ -276,7 +279,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-      return { date: targetDate, total, sent, skipped, failed, details };
+      // note: 送信 0 件の時に「なぜ 0 か」がパネルから見えるよう理由を付ける。
+      let note: string | undefined;
+      if (sent === 0 && total === 0 && alreadySent > 0) {
+        note = `候補 ${alreadySent} 件は全て送信済み`;
+      } else if (sent === 0 && total === 0 && alreadySent === 0) {
+        note = '対象予約なし';
+      }
+      return { date: targetDate, total, sent, skipped, failed, already_sent: alreadySent, note, details };
     });
     return json({ ok: true, ...result });
   } catch (e: any) {
