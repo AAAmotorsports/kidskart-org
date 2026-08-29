@@ -797,6 +797,54 @@ begin
       '22-10 予定を足すと既存の予約が消える';
   end;
 
+  -- ===========================================================================
+  raise notice '--- 23. cron の実行記録';
+  -- ===========================================================================
+  declare
+    h jsonb;
+  begin
+    delete from aone_cron_log;
+
+    -- 1 度も動いていなければ「止まっている」扱い (黙って何も出さない方が危ない)
+    h := aone_cron_health();
+    assert (h->>'stale')::boolean, '23-1 記録が無いのに stale にならない';
+    assert h->>'last_run_at' is null, '23-2 記録が無いのに最終実行が出る';
+
+    -- さっき動いたところ
+    insert into aone_cron_log (ran_at, hour_jst, day_jst, task_count, ok, detail)
+    values (now() - interval '5 minutes', 12, 29, 1, true,
+            '[{"path":"/api/cron/mails?type=reminder","status":200}]'::jsonb);
+    h := aone_cron_health();
+    assert not (h->>'stale')::boolean, '23-3 直前に動いたのに stale になる';
+    assert (h->>'last_hour_jst')::int = 12, '23-4 最後の回の時刻が違う';
+    assert (h->>'last_tasks')::int = 1, '23-5 回した数が違う';
+    assert jsonb_array_length(h->'last_detail') = 1, '23-6 中身が残っていない';
+
+    -- 90 分あいたら「止まっているかも」
+    update aone_cron_log set ran_at = now() - interval '2 hours';
+    h := aone_cron_health();
+    assert (h->>'stale')::boolean, '23-7 2 時間あいても stale にならない';
+
+    -- 送るものが無い時間 (深夜) も記録は残る = 動いてはいる
+    insert into aone_cron_log (hour_jst, day_jst, task_count, ok, detail)
+    values (3, 29, 0, true, '[]'::jsonb);
+    h := aone_cron_health();
+    assert not (h->>'stale')::boolean, '23-8 仕事が無い回で stale のままになる';
+    assert (h->>'last_tasks')::int = 0, '23-9 仕事が無い回の数が 0 でない';
+
+    -- 今日の送信数はメールログから数える (2 か所に持たない)
+    delete from aone_mail_log;
+    insert into aone_mail_log (kind, to_email, subject, ok)
+    values ('reminder', 'a@example.com', 'x', true),
+           ('thanks',   'b@example.com', 'x', true),
+           ('followup', 'c@example.com', 'x', false),
+           -- 予約控えは自動メールではないので数えない
+           ('confirm',  'd@example.com', 'x', true);
+    h := aone_cron_health();
+    assert (h->>'mails_today')::int = 2, '23-10 今日の送信数が合わない';
+    assert (h->>'mails_failed_today')::int = 1, '23-11 失敗数が合わない';
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

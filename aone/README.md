@@ -134,6 +134,9 @@ printf 'あたらしいパスワード' | sha256sum
 
 ### 3. 自動メールの cron
 
+**動いているかは `/admin` の「自動メール」欄で分かります** (最終実行と今日の送信数。
+90 分あくと赤くなります)。Cloudflare のログを見に行かなくても気づけます。
+
 定時実行は **Cloudflare Workers Cron Triggers** です。`wrangler.jsonc` の
 `triggers.crons` に毎時 1 本だけ持たせ、`worker/index.js` が JST の時刻で
 振り分けます (08:00 リマインド + フォロー + 督促 / 12:00 リマインドの拾い直し /

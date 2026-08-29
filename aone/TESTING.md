@@ -235,6 +235,12 @@ curl -X POST "<BASE>/api/cron/mails?type=reminder&date=$(date -d tomorrow +%F)" 
 
 - [ ] Cloudflare Dashboard → Workers → aone-booking → 設定 → トリガー イベント に
       **`0 * * * *` (毎時)** が登録されている
+- [ ] **`/admin` の「自動メール」欄**に「最終実行 たった今 / ○ 分前」と出ている
+      (毎時 0 分に更新される。90 分あくと**赤くなって警告**が出る)
+- [ ] 「今日 送ったメール ○ 通」が実際の送信数と合っている
+
+Cloudflare 側で細かく見たいとき:
+
 - [ ] **Worker のページ上部の「Observability」タブ → ログ**を開く
       (左メニューの「観察可能性」からでも見られる)
 - [ ] **毎時 0 分に必ず 1 行出る。**送るものが無い時間は
