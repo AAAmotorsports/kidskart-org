@@ -519,6 +519,39 @@ export async function blocksOfDay(env: Env, date: string): Promise<any[]> {
   }
 }
 
+export interface CronHealth {
+  last_run_at: string | null;
+  last_hour_jst: number | null;
+  last_ok: boolean | null;
+  last_tasks: number | null;
+  last_detail: any[] | null;
+  /** 90 分以上動いていない = 止まっている疑い */
+  stale: boolean;
+  mails_today: number;
+  mails_failed_today: number;
+}
+
+/**
+ * cron が動いているかの 1 行サマリ (管理トップの「自動メール」欄)。
+ *
+ * 定時実行を Cloudflare の cron に移した理由が「黙って止まるのが怖い」なので、
+ * 止まったことに管理画面で気づけるようにしておく。
+ */
+export async function cronHealth(env: Env): Promise<CronHealth | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin(env).rpc('aone_cron_health');
+    if (error) {
+      // 0025 を当てる前でも管理画面は開けるようにする (欄が出ないだけ)
+      console.warn('[queries] aone_cron_health 失敗', error.message);
+      return null;
+    }
+    return (data ?? null) as CronHealth | null;
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return null;
+  }
+}
+
 export const ENTRY_COLUMNS =
   'id,entry_number,block_id,date,event_title,entry_type,status,customer_id,' +
   'team_name,contact_name,contact_kana,contact_email,contact_phone,' +

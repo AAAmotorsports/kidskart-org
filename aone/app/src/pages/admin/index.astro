@@ -1,7 +1,9 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { dayState, reservationsOfDay, pendingReservations, pendingCallbacks } from '@lib/queries';
+import {
+  dayState, reservationsOfDay, pendingReservations, pendingCallbacks, cronHealth,
+} from '@lib/queries';
 import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, STATUS_MARK,
@@ -16,12 +18,14 @@ export const prerender = false;
 const env = envFrom(Astro.locals);
 const today = todayJst();
 
-const [state, rows, pending, stale] = await Promise.all([
+const [state, rows, pending, stale, cron] = await Promise.all([
   dayState(env, today),
   reservationsOfDay(env, today),
   pendingReservations(env, today),
   // 受付から 24 時間たっても折り返していないもの。放置すると失注する
   pendingCallbacks(env, 24),
+  // 自動メールの cron が動いているか。止まったことにここで気づけるようにする
+  cronHealth(env),
 ]);
 
 const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
@@ -33,6 +37,17 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 // 雨が降った瞬間に 1 タップで営業状況・路面状況を変えられるようにする。
 // ここを押すと「今日走れる？」と公開スケジュールに即反映される。
 // ★ 押してもお客様へのメールは飛ばない (急な休みは電話で連絡する運用)。
+// 自動メールの見出し。最後に動いた時刻を「1 時間前」のように出す
+function sinceLabel(iso: string | null): string {
+  if (!iso) return '一度も動いていません';
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 2) return 'たった今';
+  if (mins < 60) return `${mins} 分前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 時間前`;
+  return `${Math.floor(hours / 24)} 日前`;
+}
+
 const currentBusiness = state?.business.status ?? 'open';
 const currentSurface = state?.surface.status ?? '';
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
@@ -198,6 +213,47 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
     )}
   </div>
 
+  {cron && (
+    <div class:list={['card', 'cron-card', cron.stale && 'ng']}>
+      <h2><span class="ic">✉️</span> 自動メール</h2>
+      <div class="cron-row">
+        <div>
+          <div class="tiny muted">最終実行</div>
+          <div class="cron-big">{sinceLabel(cron.last_run_at)}</div>
+          {cron.last_run_at && (
+            <div class="tiny muted">
+              {new Date(cron.last_run_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+              {cron.last_tasks === 0 && ' (この回は送るものなし)'}
+            </div>
+          )}
+        </div>
+        <div>
+          <div class="tiny muted">今日 送ったメール</div>
+          <div class="cron-big">{cron.mails_today} 通</div>
+          {cron.mails_failed_today > 0 && (
+            <div class="tiny ng-text">送れなかったもの {cron.mails_failed_today} 通</div>
+          )}
+        </div>
+      </div>
+
+      {cron.stale ? (
+        <p class="tiny ng-text" style="margin:.5rem 0 0">
+          <strong>1 時間半以上動いていません。</strong>
+          ふだんは毎時 0 分に動きます。リマインド (前日) ・お礼 (当日) ・
+          フォロー (3 か月後) が止まっているかもしれません。
+          Cloudflare の Worker → Observability → ログで <code>cron</code> を検索すると
+          様子が見られます。
+        </p>
+      ) : (
+        <p class="tiny muted" style="margin:.5rem 0 0">
+          毎時 0 分に動いています。8:00 リマインド ／ 12:00 拾い直し ／
+          18:00 お礼 ／ 毎月 1 日 9:00 バックアップ。
+          {cron.last_ok === false && ' 直前の回にエラーが出ています。'}
+        </p>
+      )}
+    </div>
+  )}
+
   <div class="card">
     <h2><span class="ic">📅</span> 今週</h2>
     <div class="week">
@@ -307,6 +363,12 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
      ボタンを大きく・色で状態が分かるようにする */
   .ic{font-size:1.05em;margin-right:.15rem}
   .wx-card{border-left:4px solid var(--amber)}
+  /* 自動メールが止まったことに気づけるようにする (止まっても誰も見に行かないので) */
+  .cron-card{border-left:4px solid var(--green)}
+  .cron-card.ng{border-left-color:var(--red);background:#fdf5f6}
+  .cron-row{display:flex;gap:2rem;flex-wrap:wrap}
+  .cron-big{font-size:1.15rem;font-weight:800}
+  .ng-text{color:var(--red-deep)}
   .wx-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem}
   .wx-btn{display:flex;align-items:center;justify-content:center;gap:.35rem;
     padding:.7rem .5rem;border:1px solid var(--line-2);border-radius:10px;background:#fff;
