@@ -92,5 +92,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
+  // 毎週の定休 (曜日 × 午前/午後 でスポーツ走行を止める)。
+  // 送られてきたものが全量。チェックを外した = その枠を受け付ける、なので
+  // 「消してから入れ直す」で表せる (差分を計算すると必ずズレる)
+  if (Array.isArray(body?.weekly_sport_closed)) {
+    const rows = body.weekly_sport_closed
+      .map((v: unknown) => String(v ?? ''))
+      .filter((v: string) => /^[0-6]:(am|pm)$/.test(v))
+      .map((v: string) => ({ dow: Number(v.split(':')[0]), session: v.split(':')[1] }));
+
+    const { error: delErr } = await supabase
+      .from('aone_weekly_sport_closed').delete().gte('dow', 0);
+    if (delErr) return mapRpcError(delErr);
+    if (rows.length > 0) {
+      const { error: insErr } = await supabase.from('aone_weekly_sport_closed').insert(rows);
+      if (insErr) return mapRpcError(insErr);
+    }
+  }
+
   return json({ ok: true });
 };

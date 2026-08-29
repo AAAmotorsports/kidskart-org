@@ -1,14 +1,19 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { settings, categories } from '@lib/queries';
+import { settings, categories, weeklySportClosed } from '@lib/queries';
 
 export const prerender = false;
 
 // 通常ルールの数値設定 (仕様 20)。
 // 「ルールを固定化しすぎない」ための逃げ道。ここを変えると受付判定が変わる。
 const env = envFrom(Astro.locals);
-const [cfg, cats] = await Promise.all([settings(env), categories(env)]);
+const [cfg, cats, weeklyClosed] = await Promise.all([
+  settings(env), categories(env), weeklySportClosed(env),
+]);
+
+// 曜日 × 午前/午後 で「スポーツ走行を受けない」枠。0 = 日曜
+const WD = [[0, '日'], [1, '月'], [2, '火'], [3, '水'], [4, '木'], [5, '金'], [6, '土']] as const;
 
 const NUM = [
   ['max_classes_weekday_am', '平日 午前の最大クラス数'],
@@ -67,6 +72,37 @@ const TIME = [
             </div>
           ))}
         </div>
+      </div>
+
+      <div class="card">
+        <h2>毎週のお休み (スポーツ走行)</h2>
+        <p class="tiny muted">
+          チェックした曜日・時間帯は、<strong>スポーツ走行 (持ち込み) の受付を止めます</strong>。
+          レースパック・貸切・ナイターは通常どおり受け付けます。
+          すでに入っているご予約は消えません。個別に受けたいときは日別画面の
+          「強制受付」で入れられます。
+        </p>
+        <table class="wk">
+          <thead>
+            <tr><th></th>{WD.map(([, l]) => <th>{l}</th>)}</tr>
+          </thead>
+          <tbody>
+            {([['am', '午前'], ['pm', '午後']] as const).map(([sess, sessLabel]) => (
+              <tr>
+                <th>{sessLabel}</th>
+                {WD.map(([dow]) => (
+                  <td>
+                    <label class="wk-box">
+                      <input type="checkbox" class="wk-closed" value={`${dow}:${sess}`}
+                             checked={weeklyClosed.includes(`${dow}:${sess}`)} />
+                      休
+                    </label>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <div class="card">
@@ -165,6 +201,9 @@ const TIME = [
       const out = document.getElementById('out');
       out.hidden = true;
       const payload = { categories: [] };
+      // 毎週のお休み。チェックが付いているものが全量 (外した = 受け付ける)
+      payload.weekly_sport_closed = Array.from(document.querySelectorAll('.wk-closed:checked'))
+        .map((el) => el.value);
       document.querySelectorAll('[data-key]').forEach((el) => { payload[el.dataset.key] = el.value; });
 
       const byCode = {};
@@ -202,6 +241,16 @@ const TIME = [
 )}
 
 <style>
+  /* 曜日 × 午前/午後 の「休」チェック。押した枠がはっきり分かるようにする */
+  .wk{border-collapse:collapse}
+  .wk th{font-size:.85rem;color:var(--ink-3);padding:.2rem .35rem;font-weight:800}
+  .wk td{padding:.15rem}
+  /* ほかの画面のチェック (.choice) と同じ見た目。押せることが分かるよう枠を出す */
+  .wk-box{display:inline-flex;align-items:center;gap:.3rem;margin:0;cursor:pointer;
+    border:1px solid var(--line-2);border-radius:8px;padding:.35rem .5rem;background:#fff;
+    font-size:.82rem;font-weight:700;color:var(--ink-3)}
+  .wk-box:has(input:checked){background:#fdeef0;border-color:var(--red);color:var(--red-deep)}
+
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
   @media (max-width:560px){ .grid2{grid-template-columns:1fr} }
 </style>

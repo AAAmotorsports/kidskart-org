@@ -44,6 +44,13 @@ declare
 begin
   select weekday, sunday, weekday2 into d_weekday, d_sunday, d_wd2 from t_dates;
 
+  -- 出荷時の既定 (日曜午後はスポーツ走行を受けない) が入っていることを確かめてから、
+  -- いったん空にする。ここを残すと、日曜を使う他のグループが道連れで落ちる。
+  -- 毎週のお休みそのものは 24 で試す
+  assert exists (select 1 from aone_weekly_sport_closed where dow = 0 and session = 'pm'),
+    '0-1 出荷時の設定 (日曜午後のお休み) が入っていない';
+  delete from aone_weekly_sport_closed;
+
   -- =========================================================================
   raise notice '--- 1. スポーツ走行: 平日は 2 クラスまで、同一カテゴリーは何台でも 1 クラス';
   -- =========================================================================
@@ -843,6 +850,69 @@ begin
     h := aone_cron_health();
     assert (h->>'mails_today')::int = 2, '23-10 今日の送信数が合わない';
     assert (h->>'mails_failed_today')::int = 1, '23-11 失敗数が合わない';
+  end;
+
+  -- ===========================================================================
+  raise notice '--- 24. 毎週のお休み (日曜午後のスポーツ走行)';
+  -- ===========================================================================
+  declare
+    d_sun  date;
+    d_mon  date;
+    st     jsonb;
+  begin
+    -- 次の日曜と、その翌日
+    d_sun := aone_today() + ((7 - extract(dow from aone_today())::int) % 7 + 7);
+    d_mon := d_sun + 1;
+    assert extract(dow from d_sun) = 0, '24-0 テスト日が日曜になっていない';
+
+    -- 出荷時の既定に戻す (冒頭でいったん空にしてある)
+    insert into aone_weekly_sport_closed (dow, session) values (0, 'pm');
+
+    -- 既定で日曜午後は止まっている
+    r := aone_check_availability('sport', d_sun, 'kart', 'pm');
+    assert not (r->>'ok')::boolean, '24-1 日曜午後のスポーツ走行が受け付けられる';
+    assert r->>'reason' = 'weekly_closed', '24-2 理由が weekly_closed でない';
+    assert r->>'message' like '日曜日の午後%', '24-3 メッセージが分かりにくい';
+
+    -- 午前と、ほかの曜日は受ける
+    r := aone_check_availability('sport', d_sun, 'kart', 'am');
+    assert (r->>'ok')::boolean, '24-4 日曜午前まで止まっている';
+    r := aone_check_availability('sport', d_mon, 'kart', 'pm');
+    assert (r->>'ok')::boolean, '24-5 月曜午後まで止まっている';
+
+    -- ★ 止めるのはスポーツ走行だけ。日曜午後こそレンタルのお客様が来る
+    r := aone_check_availability('rp', d_sun, null, null, time '13:00', null, 3);
+    assert (r->>'ok')::boolean, '24-6 日曜午後の RP が止まっている';
+    r := aone_check_availability('charter', d_sun, null, null, time '13:00', time '15:00', 10,
+                                 null, 5, 'with_karts');
+    assert (r->>'ok')::boolean, '24-7 日曜午後の貸切が止まっている';
+
+    -- 表示にも出る。closed = 「✕ 受付停止」(off = 「— 対象外」ではない。
+    -- お休みは対象外ではなく、その枠を受けていないだけ)
+    st := aone_day_state(d_sun);
+    assert (select x->>'status' from jsonb_array_elements(st->'sport'->'pm'->'categories') x
+             where x->>'code' = 'kart') = 'closed', '24-8 日曜午後が ✕ 受付停止にならない';
+    assert (select x->>'message' from jsonb_array_elements(st->'sport'->'pm'->'categories') x
+             where x->>'code' = 'kart') like '日曜日の午後%', '24-8b 理由が出ていない';
+    assert (select x->>'status' from jsonb_array_elements(st->'sport'->'am'->'categories') x
+             where x->>'code' = 'kart') = 'open', '24-9 日曜午前まで止まっている';
+
+    -- 「基本」なので、管理者は強制で入れられる
+    r := t_book(jsonb_build_object('kind','sport','date', d_sun, 'session','pm',
+                                   'category_code','kart','party_size',1,
+                                   'forced', true, 'who','日曜午後の特例'));
+    assert (r->>'ok')::boolean, '24-10 強制受付でも入らない';
+
+    -- 設定を外せば受け付ける
+    delete from aone_weekly_sport_closed where dow = 0 and session = 'pm';
+    r := aone_check_availability('sport', d_sun, 'kart', 'pm');
+    assert (r->>'ok')::boolean, '24-11 設定を外しても止まったまま';
+
+    -- 別の曜日にも付けられる
+    insert into aone_weekly_sport_closed (dow, session) values (1, 'pm');
+    r := aone_check_availability('sport', d_mon, 'kart', 'pm');
+    assert not (r->>'ok')::boolean, '24-12 月曜午後を止められない';
+    assert r->>'message' like '月曜日の午後%', '24-13 曜日名が合っていない';
   end;
 
   raise notice 'ALL TESTS PASSED';
