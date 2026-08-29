@@ -48,7 +48,17 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     emergency,
     signature,
     checked_safety_items,
+    referral_code,
   } = body ?? {};
+
+  // referral_code はカレンダー入口の ?ref=xxx (localStorage 経由)。
+  // 予約完了後に UPDATE で reservations.referral_code に書く。
+  // 安全のため長さと文字種を制限してから使う。
+  const cleanRef = ((typeof referral_code === 'string' ? referral_code : '') || '')
+    .trim()
+    .slice(0, 60)
+    .replace(/[^A-Za-z0-9_.-]/g, '');
+  const validRef = cleanRef && /^[A-Za-z0-9_.-]+$/.test(cleanRef) ? cleanRef : null;
 
   // --- Shallow validation (defence in depth; wizard is the real filter) --
   if (!slot_id || !term_id) return json({ error: 'slot_id と term_id は必須です' }, 400);
@@ -152,6 +162,17 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   const result: any = rpcResult ?? {};
   if (!result.ok) {
     return json({ error: '予約作成が失敗しました', detail: JSON.stringify(result) }, 500);
+  }
+
+  // --- Save referral_code (best-effort, failure is non-fatal) ------------
+  if (validRef && result.reservation_id) {
+    const { error: refErr } = await supabase
+      .from('reservations')
+      .update({ referral_code: validRef })
+      .eq('id', result.reservation_id);
+    if (refErr) {
+      console.warn('[reserve/create] failed to save referral_code:', refErr.message);
+    }
   }
 
   // --- Fire-and-forget notification emails -------------------------------

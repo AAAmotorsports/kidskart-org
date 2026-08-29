@@ -546,6 +546,28 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
 
 <script is:inline define:vars={{ supabaseUrl, supabaseAnonKey }}>
   window.__ASMS_AUTH_CFG = { supabaseUrl, supabaseAnonKey };
+
+  // ---- Referral tracking -------------------------------------------------
+  // ?ref=xxx を URL で受け取ったら localStorage に保存 (30 日 TTL)。
+  // 予約完了時 (/reserve/[slotId]) に payload に含められて DB に保存される。
+  // QR コードや Autopolis チラシの URL 側で ?ref を付ける想定。
+  try {
+    const url = new URL(location.href);
+    const ref = url.searchParams.get('ref');
+    if (ref) {
+      const trimmed = ref.trim().slice(0, 60);  // XSS/injection 対策で長さ制限
+      if (trimmed && /^[A-Za-z0-9_.-]+$/.test(trimmed)) {
+        localStorage.setItem('asms:ref', trimmed);
+        localStorage.setItem('asms:ref_at', String(Date.now()));
+      }
+    }
+    // 30 日以上経った ref は捨てる
+    const savedAt = parseInt(localStorage.getItem('asms:ref_at') || '0', 10);
+    if (savedAt && Date.now() - savedAt > 30 * 86400 * 1000) {
+      localStorage.removeItem('asms:ref');
+      localStorage.removeItem('asms:ref_at');
+    }
+  } catch (_e) { /* localStorage 使えない環境では諦める */ }
 </script>
 
 <script>
