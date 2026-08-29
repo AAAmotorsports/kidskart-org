@@ -1,0 +1,67 @@
+# ==============================================================================
+# A-ONE 予約台帳・顧客名簿のバックアップ — 手動実行用
+# ------------------------------------------------------------------------------
+# ★ 毎月 1 日の定時実行は Cloudflare Workers Cron Triggers に移しました
+#   (aone/app/worker/index.js — JST 1 日 9:00)。ここに schedule: を戻さないこと。
+#
+#   (GitHub Actions の schedule には「リポジトリを 60 日さわらないと自動で
+#    止まる」仕様があり、バックアップが黙って途切れるため移行しました)
+#
+# このワークフローは「今すぐ CSV が欲しい」ときの手動実行用に残しています。
+#
+# /api/cron/backup を叩き、予約台帳と顧客名簿の CSV を管理者宛にメールで送る。
+#
+# Supabase の無料プランには自動バックアップが無い。誰かが毎月思い出して
+# 手で書き出す運用は必ず途切れるので、受信箱に自動で控えが積まれるようにする。
+#
+# 必要な GitHub Actions Secrets (自動メールと同じもの):
+#   AONE_API_BASE     - 例: https://reserve.rk-a1.com
+#   AONE_CRON_SECRET  - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから「Run workflow」でいつでも取れる。
+# ==============================================================================
+
+name: A-ONE Backup (手動実行)
+
+on:
+  # 定時実行は Cloudflare Workers Cron Triggers 側にある (上のコメント参照)
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/cron/backup
+        env:
+          AONE_API_BASE: ${{ secrets.AONE_API_BASE }}
+          AONE_CRON_SECRET: ${{ secrets.AONE_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          # 手動実行しかしないので、設定漏れははっきり失敗させる
+          if [ -z "${AONE_API_BASE:-}" ] || [ -z "${AONE_CRON_SECRET:-}" ]; then
+            echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+
+          # 宛先が正しいかを先に確かめる (404 なら URL の問題でメールの問題ではない)
+          BASE="${AONE_API_BASE%/}"
+          PING=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/public/today" || echo 000)
+          echo "疎通確認 /api/public/today → HTTP $PING"
+          if [ "$PING" != "200" ]; then
+            echo "::error::予約システムに届きません (HTTP $PING)。AONE_API_BASE の値を確認してください" >&2
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -sS -X POST "$BASE/api/cron/backup" \
+            -H "x-cron-secret: $AONE_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::バックアップメールの送信が HTTP $HTTP_CODE で失敗しました" >&2
+            exit 1
+          fi
