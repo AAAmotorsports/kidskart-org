@@ -1,0 +1,107 @@
+# ==============================================================================
+# A-ONE 予約システム 自動メール — 手動実行用 (緊急時・再送)
+# ------------------------------------------------------------------------------
+# ★ 定時実行は Cloudflare Workers Cron Triggers に移しました。
+#   本番の毎日の送信は Worker の scheduled ハンドラ (aone/app/worker/index.js)
+#   が回しています。ここに schedule: を戻さないこと — 二重に走らせる意味がなく、
+#   「どちらが本番か」が分からなくなります。
+#
+#   (GitHub Actions の schedule には「リポジトリを 60 日さわらないと
+#    自動で止まる」仕様があり、気づかないまま送信が止まるため移行しました)
+#
+# このワークフローは **手動実行専用**として残してあります。
+#   * Worker の cron が動かないときの応急手当て
+#   * 日付を指定した再送 (date 入力)
+#
+# /api/cron/mails を叩き、下記 3 種のメールを送る (仕様 11):
+#   reminder … 前日のリマインド (翌日のご予約が対象)
+#   thanks   … 当日ご利用の方へのお礼
+#   followup … 3 か月前にご利用の方への再来場案内
+#   callbacks… 折り返し未対応のまま 24 時間たった予約を管理者に通知
+#
+# お客様宛の 3 通は **レンタル (RP・貸切・ナイター) だけ**。
+# スポーツ走行 (持ち込み) には送りません (2026-08 オーナー確認)。
+#
+# Worker 側の回し方 (JST):
+#   08:00 reminder + followup + callbacks
+#   12:00 reminder (朝が落ちたときの拾い直し)
+#   18:00 thanks
+#
+# 二重送信は API 側 (aone_reservations.*_mail_sent_at) で担保。
+# だから手動実行が Worker の cron と重なっても、2 通目は飛びません。
+#
+# 必要な GitHub Actions Secrets:
+#   AONE_API_BASE     - 例: https://aone-booking.<subdomain>.workers.dev
+#   AONE_CRON_SECRET  - Cloudflare Worker の CRON_SECRET と同じ値
+#
+# 手動実行: Actions タブから種類と日付を指定して再送できる。
+# ==============================================================================
+
+name: A-ONE Auto Mails (手動実行)
+
+on:
+  # 定時実行は Cloudflare Workers Cron Triggers 側にある (上のコメント参照)
+  workflow_dispatch:
+    inputs:
+      type:
+        description: '送信種別 (all / reminder / thanks / followup / callbacks)'
+        required: false
+        default: 'all'
+      date:
+        description: '基準日 (YYYY-MM-DD, 空欄なら今日 JST)'
+        required: false
+        default: ''
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/cron/mails
+        env:
+          AONE_API_BASE: ${{ secrets.AONE_API_BASE }}
+          AONE_CRON_SECRET: ${{ secrets.AONE_CRON_SECRET }}
+          INPUT_TYPE: ${{ github.event.inputs.type }}
+          INPUT_DATE: ${{ github.event.inputs.date }}
+        run: |
+          set -euo pipefail
+          # 手動実行しかしないので、設定漏れははっきり失敗させる
+          if [ -z "${AONE_API_BASE:-}" ] || [ -z "${AONE_CRON_SECRET:-}" ]; then
+            echo "::error::AONE_API_BASE と AONE_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+
+          # 宛先が正しいかを先に確かめる。ここが 404 なら AONE_API_BASE の値が
+          # 間違っているか、Worker が生きていない (メールの問題ではない)
+          BASE="${AONE_API_BASE%/}"
+          PING=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/public/today" || echo 000)
+          echo "疎通確認 /api/public/today → HTTP $PING"
+          if [ "$PING" != "200" ]; then
+            echo "::error::予約システムに届きません (HTTP $PING)。AONE_API_BASE の値を確認してください。https://reserve.rk-a1.com のように、スキーム付き・末尾スラッシュ無しで設定します" >&2
+            exit 1
+          fi
+
+          # 手動実行なので入力どおりに送る (既定は all = 4 種類ぜんぶ)
+          TYPES="${INPUT_TYPE:-all}"
+
+          FAILED=0
+          for T in $TYPES; do
+            URL="$BASE/api/cron/mails?type=${T}"
+            if [ -n "${INPUT_DATE:-}" ]; then
+              URL="${URL}&date=${INPUT_DATE}"
+            fi
+            echo "POST $URL"
+            HTTP_CODE=$(curl -sS -X POST "$URL" \
+              -H "x-cron-secret: $AONE_CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -o response.json \
+              -w "%{http_code}")
+            echo "HTTP $HTTP_CODE"
+            cat response.json
+            echo
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::${T} メールの送信が HTTP $HTTP_CODE で失敗しました" >&2
+              FAILED=1
+            fi
+          done
+          exit $FAILED
