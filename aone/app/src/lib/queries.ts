@@ -519,6 +519,26 @@ export async function blocksOfDay(env: Env, date: string): Promise<any[]> {
   }
 }
 
+/**
+ * 毎週の定休 (曜日 × 午前/午後 でスポーツ走行を止める)。
+ * 返すのは "0:pm" のような文字列の配列。
+ */
+export async function weeklySportClosed(env: Env): Promise<string[]> {
+  try {
+    const { data, error } = await getSupabase(env)
+      .from('aone_weekly_sport_closed').select('dow,session');
+    if (error) {
+      // 0026 を当てる前でも設定画面が開けるようにする (欄が出ないだけ)
+      console.warn('[queries] aone_weekly_sport_closed 失敗', error.message);
+      return [];
+    }
+    return (data ?? []).map((r: any) => `${r.dow}:${r.session}`);
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return [];
+  }
+}
+
 export interface CronHealth {
   last_run_at: string | null;
   last_hour_jst: number | null;
