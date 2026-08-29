@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { logCronRun } from '@lib/cron-log';
 
 export const prerender = false;
 
@@ -36,6 +37,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const supabase = getSupabaseAdmin(env);
+
+  try {
+    const result = await logCronRun(supabase, 'reminder-mail', async () => {
   const urlObj = new URL(request.url);
   const dateOverride = urlObj.searchParams.get('date');
 
@@ -51,7 +55,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .in('date', dateList)
     .neq('status', 'cancelled');
   if (slotsErr) {
-    return json({ error: `failed to fetch slots: ${slotsErr.message}` }, 500);
+    throw new Error(`failed to fetch slots: ${slotsErr.message}`);
   }
 
   // 開始時刻を過ぎていないスロットのみ (授業開始後には送らない)
@@ -61,7 +65,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const slotIds = slots.map((s: any) => s.id);
   if (slotIds.length === 0) {
-    return json({ ok: true, dates: dateList, total: 0, sent: 0, note: 'no upcoming slots' });
+    return { dates: dateList, total: 0, sent: 0, note: 'no upcoming slots' };
   }
 
   const slotInfoById = new Map<string, {
@@ -91,7 +95,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('status', 'confirmed')
     .is('reminder_email_sent_at', null);
   if (rErr) {
-    return json({ error: `failed to fetch reservations: ${rErr.message}` }, 500);
+    throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
 
   const total = (reservations ?? []).length;
@@ -154,7 +158,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-  return json({ ok: true, dates: dateList, total, sent, skipped, failed, details });
+      return { dates: dateList, total, sent, skipped, failed, details };
+    });
+    return json({ ok: true, ...result });
+  } catch (e: any) {
+    return json({ error: e?.message ?? String(e) }, 500);
+  }
 };
 
 // Also allow GET for easy manual testing (still requires secret)

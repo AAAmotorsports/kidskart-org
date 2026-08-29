@@ -1,5 +1,67 @@
 ---
 import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+// 各 cron の直近実行 1 件を取得。無ければ null。
+// window.postgres がまだ 0028 で終わってれば cron_runs テーブルが無い可能性
+// があるので、エラーは silently 握って cronStatus は空扱い。
+type CronRow = {
+  cron_name: string;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  summary: any;
+  error_message: string | null;
+  duration_ms: number | null;
+};
+type CronMeta = {
+  displayName: string;
+  scheduleLabel: string;
+  expectedIntervalHours: number; // 直近発火からこれ以上経ってたら赤
+};
+const CRON_LIST: Array<{ name: string; meta: CronMeta }> = [
+  { name: 'thankyou-mail', meta: { displayName: '当日サンキュー', scheduleLabel: '毎日 18:00 JST', expectedIntervalHours: 30 } },
+  { name: 'reminder-mail', meta: { displayName: '前日リマインド', scheduleLabel: '毎日 18:30 JST', expectedIntervalHours: 30 } },
+  { name: 'followup-mail', meta: { displayName: '1ヶ月後フォロー', scheduleLabel: '毎日 19:00 JST', expectedIntervalHours: 30 } },
+];
+
+const latestByName = new Map<string, CronRow>();
+try {
+  const { data: rows } = await supabase
+    .from('cron_runs')
+    .select('cron_name, started_at, finished_at, status, summary, error_message, duration_ms')
+    .in('cron_name', CRON_LIST.map((c) => c.name))
+    .order('started_at', { ascending: false })
+    .limit(50);
+  for (const r of (rows ?? []) as CronRow[]) {
+    if (!latestByName.has(r.cron_name)) latestByName.set(r.cron_name, r);
+  }
+} catch (_e) {
+  // migration 未適用時などは無視 (cronStatus セクションが空表示になる)
+}
+
+function relTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'たった今';
+  if (diffMin < 60) return `${diffMin} 分前`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH} 時間前`;
+  const diffD = Math.floor(diffH / 24);
+  return `${diffD} 日前`;
+}
+
+function jstTime(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }).format(d);
+}
 ---
 <Base title="管理 — 福岡キッズカートアカデミー">
   <main>
@@ -7,6 +69,63 @@ import Base from '@layouts/Base.astro';
       <h1>管理画面</h1>
       <p class="sub">福岡キッズカートアカデミー · ASMS</p>
     </header>
+
+    <section class="cron-panel">
+      <h2 class="cron-h">🤖 自動メールの動作状況</h2>
+      <ul class="cron-list">
+        {CRON_LIST.map(({ name, meta }) => {
+          const last = latestByName.get(name);
+          const hoursAgo = last ? (Date.now() - new Date(last.started_at).getTime()) / 3600000 : Infinity;
+          const isStale = !last || hoursAgo > meta.expectedIntervalHours;
+          const isError = last?.status === 'error';
+          const state: 'ok' | 'warn' | 'err' = isError ? 'err' : (isStale ? 'warn' : 'ok');
+          const sent = last?.summary?.sent ?? null;
+          const total = last?.summary?.total ?? null;
+          const failed = last?.summary?.failed ?? null;
+          const note = last?.summary?.note ?? null;
+          return (
+            <li class={`cron-item cron-${state}`}>
+              <div class="cron-line-1">
+                <span class="cron-dot" aria-hidden="true" />
+                <span class="cron-name">{meta.displayName}</span>
+                <span class="cron-schedule">{meta.scheduleLabel}</span>
+              </div>
+              <div class="cron-line-2">
+                {last ? (
+                  <>
+                    <span class="cron-when" title={jstTime(last.started_at)}>
+                      最終実行 <strong>{relTime(last.started_at)}</strong>
+                      <span class="cron-when-abs">（{jstTime(last.started_at)}）</span>
+                    </span>
+                    {last.status === 'success' && (
+                      <span class="cron-summary">
+                        {sent != null && <>送信 <strong>{sent}</strong>件</>}
+                        {total != null && total > 0 && <> / 対象 {total}</>}
+                        {failed != null && failed > 0 && <span class="cron-failed"> / 失敗 {failed}</span>}
+                        {note && <span class="cron-note"> — {note}</span>}
+                      </span>
+                    )}
+                    {last.status === 'error' && (
+                      <span class="cron-err-msg">エラー: {last.error_message || '不明'}</span>
+                    )}
+                    {last.status === 'running' && (
+                      <span class="cron-running">実行中...</span>
+                    )}
+                  </>
+                ) : (
+                  <span class="cron-never">まだ実行されていません</span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <p class="cron-help">
+        <strong class="cron-ok">🟢 緑</strong>= 正常 ·
+        <strong class="cron-warn">🟡 黄</strong>= 半日以上動いていない ·
+        <strong class="cron-err">🔴 赤</strong>= 前回エラー
+      </p>
+    </section>
 
     <div class="grid">
       <a class="card" href="/admin/schedule">
@@ -101,4 +220,57 @@ import Base from '@layouts/Base.astro';
   .arrow { color: var(--ink-3); font-size: 1.1rem; }
   .ft { margin-top: 2rem; text-align: center; font-size: .74rem; }
   .ft a { color: var(--sky-deep); text-decoration: none; }
+
+  /* --- Cron status panel ---------------------------------------------- */
+  .cron-panel {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1rem 1.15rem;
+    margin-bottom: 1.5rem;
+  }
+  .cron-h {
+    margin: 0 0 .8rem;
+    font-size: .8rem;
+    font-weight: 800;
+    color: var(--sky-deep);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .cron-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .cron-item {
+    padding: .6rem .8rem;
+    border-radius: 8px;
+    border-left: 4px solid var(--line);
+    background: var(--bg-2);
+  }
+  .cron-item.cron-ok { border-left-color: var(--lime-deep); background: rgba(164,214,94,.08); }
+  .cron-item.cron-warn { border-left-color: var(--sun); background: rgba(255,201,67,.12); }
+  .cron-item.cron-err { border-left-color: var(--rose-deep); background: rgba(229,85,111,.12); }
+  .cron-line-1 { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+  .cron-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .cron-ok .cron-dot { background: var(--lime-deep); }
+  .cron-warn .cron-dot { background: var(--sun); }
+  .cron-err .cron-dot { background: var(--rose-deep); }
+  .cron-name { font-weight: 800; font-size: .85rem; }
+  .cron-schedule { font-size: .68rem; color: var(--ink-3); font-family: var(--mono); }
+  .cron-line-2 { margin-top: .3rem; font-size: .74rem; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+  .cron-when strong { color: var(--ink); }
+  .cron-when-abs { color: var(--ink-4); font-size: .68rem; font-family: var(--mono); }
+  .cron-summary { color: var(--ink-2); }
+  .cron-summary strong { color: var(--ink); font-family: var(--mono); }
+  .cron-failed { color: var(--rose-deep); font-weight: 700; }
+  .cron-note { color: var(--ink-3); font-style: italic; }
+  .cron-err-msg { color: var(--rose-deep); font-weight: 700; font-size: .72rem; }
+  .cron-running { color: var(--sky-deep); font-weight: 700; }
+  .cron-never { color: var(--ink-3); font-style: italic; }
+  .cron-help {
+    margin: .8rem 0 0;
+    font-size: .68rem;
+    color: var(--ink-3);
+    line-height: 1.6;
+  }
+  .cron-help .cron-ok { color: var(--lime-deep); background: none; padding: 0; }
+  .cron-help .cron-warn { color: var(--orange-deep); background: none; padding: 0; }
+  .cron-help .cron-err { color: var(--rose-deep); background: none; padding: 0; }
 </style>
