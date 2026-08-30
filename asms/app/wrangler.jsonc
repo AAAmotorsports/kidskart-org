@@ -34,8 +34,12 @@
   // 動作状況」で最新 dump の存在・サイズ・鮮度を可視化するため。
   // 書き込みは GitHub Actions cron (asms-db-backup.yml) 側でのみ行う。
   // バケットは同一 Cloudflare アカウントに存在するため追加コスト無し。
+  //
+  // ⚠️ バケット名は `kidskartasmsbuckup` (ハイフンなし、`buckup` typo あり)。
+  //    BACKUP.md / CLAUDE.md 初版は `kidskart-asms-backup` と誤記していた
+  //    が、実バケット名はこちら。GitHub Secrets の R2_BUCKET も同じ値。
   "r2_buckets": [
-    { "binding": "BACKUP_BUCKET", "bucket_name": "kidskart-asms-backup" }
+    { "binding": "BACKUP_BUCKET", "bucket_name": "kidskartasmsbuckup" }
   ],
   "observability": {
     "enabled": true

@@ -22,7 +22,7 @@ GitHub Actions: .github/workflows/asms-db-backup.yml
    │ AWS CLI で S3 互換 API 経由
    │
    ▼
-Cloudflare R2 バケット: kidskart-asms-backup
+Cloudflare R2 バケット: kidskartasmsbuckup
    ├── daily/asms-YYYYMMDD.dump      ← 90 日で lifecycle 自動削除
    └── monthly/asms-YYYY-MM.dump     ← 月初 (day=01) にコピー、無期限保存
 ```
@@ -34,7 +34,9 @@ Cloudflare R2 バケット: kidskart-asms-backup
 ### 1. Cloudflare R2 バケット作成
 
 Cloudflare Dashboard → R2 → **Create bucket**:
-- 名前: `kidskart-asms-backup`
+- 名前: `kidskartasmsbuckup` (現行バケット名。ハイフンなし、`buckup` の
+  綴りも意図せずそのまま定着したもの。新規プロジェクトなら
+  `kidskart-asms-backup` 等のわかりやすい名前を推奨)
 - Location: `Automatic` or `Asia-Pacific`
 - **公開しない** (Public URL は絶対に発行しない、機密データなので)
 
@@ -43,7 +45,7 @@ Cloudflare Dashboard → R2 → **Create bucket**:
 Cloudflare Dashboard → R2 → **Manage R2 API Tokens** → Create API Token:
 - 名前: `asms-backup-writer`
 - Permissions: **Object Read & Write**
-- Specify bucket: `kidskart-asms-backup` のみ
+- Specify bucket: `kidskartasmsbuckup` のみ
 - TTL: `Forever` (定期ローテするなら 1 年でも可)
 
 発行された `Access Key ID`, `Secret Access Key`, `Endpoint` (URL) をメモ。
@@ -77,7 +79,7 @@ GitHub → repo → Settings → Secrets and variables → **Actions** → **New
 | `R2_ACCESS_KEY_ID` | 上記 2. で発行 |
 | `R2_SECRET_ACCESS_KEY` | 上記 2. で発行 |
 | `R2_ENDPOINT` | `https://<account_id>.r2.cloudflarestorage.com` |
-| `R2_BUCKET` | `kidskart-asms-backup` |
+| `R2_BUCKET` | `kidskartasmsbuckup` |
 | `RESEND_API_KEY` | 既に他 workflow で使ってる値と同じ |
 | `MAIL_FROM_ADDRESS` | 既存 (通常 `noreply@kidskart.org`) |
 | `MAIL_ADMIN_TO` | 既存 (通常 `info@kidskart.org`) |
@@ -123,7 +125,7 @@ Actions タブ → **ASMS DB Backup** → **Run workflow** → main → **Run**
 1. **R2 から dump ファイルをダウンロード**
    ```bash
    aws s3 cp \
-     s3://kidskart-asms-backup/daily/asms-YYYYMMDD.dump \
+     s3://kidskartasmsbuckup/daily/asms-YYYYMMDD.dump \
      ./restore.dump \
      --endpoint-url https://<account_id>.r2.cloudflarestorage.com
    ```
