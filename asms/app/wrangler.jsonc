@@ -29,6 +29,14 @@
     "directory": "./dist",
     "binding": "ASSETS"
   },
+  // ---- R2 Bindings ------------------------------------------------------
+  // バックアップバケットを read-only で bind。/admin パネルの「バックアップ
+  // 動作状況」で最新 dump の存在・サイズ・鮮度を可視化するため。
+  // 書き込みは GitHub Actions cron (asms-db-backup.yml) 側でのみ行う。
+  // バケットは同一 Cloudflare アカウントに存在するため追加コスト無し。
+  "r2_buckets": [
+    { "binding": "BACKUP_BUCKET", "bucket_name": "kidskart-asms-backup" }
+  ],
   "observability": {
     "enabled": true
   },
