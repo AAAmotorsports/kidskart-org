@@ -281,8 +281,8 @@ Cloudflare Dashboard の Secret を誤って全削除するとメール送信・
 
 - Supabase Free プランのため公式自動バックアップは実質使えない
 - GitHub Actions cron (`.github/workflows/asms-db-backup.yml`) が毎日
-  03:00 JST に `pg_dump` を取り、Cloudflare R2 バケット `kidskart-asms-backup`
-  に保存
+  03:00 JST に `pg_dump` を取り、Cloudflare R2 バケット `kidskartasmsbuckup`
+  (ハイフンなし、`buckup` typo あり ← 実バケット名なのでそのまま使用) に保存
 - daily/ は 90 日で lifecycle 自動削除、monthly/ は無期限保存
 - 失敗時は info@kidskart.org にメール通知
 - **四半期に 1 回は BACKUP.md「復元テスト」を実施** (取れてるだけじゃなく
