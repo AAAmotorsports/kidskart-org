@@ -53,6 +53,24 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back(dateVal ? `チーム加入日を ${dateVal} に設定` : 'チーム加入日を解除しました');
   }
 
+  if (op === 'update_pre_asms') {
+    // エアレジ時代の来店歴 (手入力)。初回日と累計走行回数の 2 項目。
+    const rawDate = ((form.get('pre_asms_first_visit_date') as string) || '').trim();
+    const dateVal = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
+    const rawCount = ((form.get('pre_asms_visit_count') as string) || '').trim();
+    const countVal = rawCount === '' ? null : Math.max(0, Math.min(9999, parseInt(rawCount, 10) || 0));
+    const { error } = await supabase
+      .from('customers')
+      .update({
+        pre_asms_first_visit_date: dateVal,
+        pre_asms_visit_count: countVal,
+      })
+      .eq('id', id);
+    return error
+      ? back('', fmt(error))
+      : back(dateVal || countVal ? 'エアレジ時代の来店歴を更新しました' : 'エアレジ時代の来店歴を解除しました');
+  }
+
   if (op === 'add_progression') {
     const toLevel = form.get('to_level') as string;
     const fromLevel = ((form.get('from_level') as string) || '') || null;
@@ -448,9 +466,45 @@ if (searchQ.length >= 1) {
       </details>
     </section>
 
+    <section class="card pre-asms-card">
+      <h2>📼 エアレジ時代の来店歴 (手入力)</h2>
+      <p class="pre-asms-hint">
+        ASMS 導入前にエアレジで受付していた回数を手動で記録します。以下の
+        <strong>🏁 参加履歴</strong> セクションには ASMS 導入後の記録が並びます。
+      </p>
+      <form method="post" class="pre-asms-form">
+        <input type="hidden" name="op" value="update_pre_asms" />
+        <div class="pre-asms-row">
+          <div class="field">
+            <label>初回来店日</label>
+            <input type="date" name="pre_asms_first_visit_date"
+                   value={(customer as any).pre_asms_first_visit_date ?? ''} />
+          </div>
+          <div class="field">
+            <label>移行前の走行回数</label>
+            <input type="number" name="pre_asms_visit_count" min="0" max="9999" step="1"
+                   value={(customer as any).pre_asms_visit_count ?? ''}
+                   placeholder="例: 5" />
+          </div>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+        {((customer as any).pre_asms_first_visit_date || (customer as any).pre_asms_visit_count) && (
+          <p class="pre-asms-note">
+            📼 エアレジ時代:
+            {(customer as any).pre_asms_first_visit_date && (
+              <> 初回 <strong>{(customer as any).pre_asms_first_visit_date}</strong></>
+            )}
+            {(customer as any).pre_asms_visit_count != null && (
+              <> · <strong>{(customer as any).pre_asms_visit_count}</strong> 回</>
+            )}
+          </p>
+        )}
+      </form>
+    </section>
+
     <section class="card">
       <div class="card-h">
-        <h2>🏁 参加履歴</h2>
+        <h2>🏁 参加履歴 <span class="asms-only">(ASMS 移行後)</span></h2>
         <span class="c-sub">{participations?.length ?? 0}件</span>
       </div>
 
@@ -690,6 +744,31 @@ if (searchQ.length >= 1) {
     border: 1.5px solid var(--line); border-radius: 6px; font-family: var(--mono);
   }
   .team-note { margin: 0; font-size: .78rem; color: var(--lime-deep); font-weight: 700; }
+
+  .pre-asms-card {
+    background: linear-gradient(135deg, rgba(140,100,200,.06), rgba(140,100,200,.02));
+    border-color: rgba(140,100,200,.3);
+  }
+  .pre-asms-hint { font-size: .76rem; color: var(--ink-3); margin: -.2rem 0 .8rem; line-height: 1.6; }
+  .pre-asms-row {
+    display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap;
+  }
+  .pre-asms-row .field { flex: 1 1 160px; margin-bottom: 0; }
+  .pre-asms-row input {
+    padding: .45rem .6rem; font-size: .88rem;
+    border: 1.5px solid var(--line); border-radius: 6px; font-family: var(--mono);
+    width: 100%;
+  }
+  .pre-asms-note {
+    margin: .7rem 0 0;
+    padding: .5rem .7rem;
+    background: rgba(140,100,200,.08);
+    border-left: 3px solid #8c64c8;
+    border-radius: 4px;
+    font-size: .84rem; color: #6b4aa8;
+  }
+  .pre-asms-note strong { font-family: var(--mono); color: #4a2e8a; }
+  .asms-only { font-size: .68rem; color: var(--ink-3); font-weight: 400; margin-left: .3rem; }
   .hd-name { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
   .hd-kana { color: var(--ink-3); font-size: .84rem; }
