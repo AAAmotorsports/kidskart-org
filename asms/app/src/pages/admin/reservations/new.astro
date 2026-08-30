@@ -1,0 +1,433 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+// 今日 (JST) 以降で open 状態のスロットを取得
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const { data: slotsRaw } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, status, courses(id, code, name, price_regular, price_member)')
+  .gte('date', today)
+  .eq('status', 'open')
+  .order('date')
+  .order('start_time');
+
+const slotIds = (slotsRaw ?? []).map((s: any) => s.id);
+const reservedBySlot = new Map<string, number>();
+if (slotIds.length > 0) {
+  const { data: resRows } = await supabase
+    .from('reservations')
+    .select('id, slot_id, reservation_participants(id, attendance_status)')
+    .in('slot_id', slotIds)
+    .neq('status', 'cancelled');
+  for (const r of (resRows ?? []) as any[]) {
+    const active = ((r.reservation_participants as any[]) ?? [])
+      .filter((p) => p.attendance_status !== 'cancelled').length;
+    reservedBySlot.set(r.slot_id, (reservedBySlot.get(r.slot_id) ?? 0) + active);
+  }
+}
+
+const slots = (slotsRaw ?? []).map((s: any) => {
+  const reserved = reservedBySlot.get(s.id) ?? 0;
+  const remaining = Math.max(0, s.capacity - reserved);
+  const weekday = ['日','月','火','水','木','金','土'][new Date(s.date + 'T00:00:00').getDay()];
+  return {
+    id: s.id,
+    label: `${s.date} (${weekday}) ${s.start_time.slice(0,5)}〜${s.end_time?.slice(0,5) ?? ''} ${s.courses?.name ?? ''} [残${remaining}/${s.capacity}]`,
+    priceRegular: s.courses?.price_regular ?? 0,
+    priceMember: s.courses?.price_member ?? 0,
+    remaining,
+  };
+}).filter((s) => s.remaining > 0);
+
+const slotsJson = JSON.stringify(slots.reduce((acc, s) => {
+  acc[s.id] = { priceRegular: s.priceRegular, priceMember: s.priceMember, remaining: s.remaining };
+  return acc;
+}, {} as any));
+---
+<Base title="代理予約入力 — 管理">
+  <main>
+    <header class="hd">
+      <div class="hd-nav">
+        <a href="/admin/reservations">← 予約一覧へ戻る</a>
+      </div>
+      <h1>➕ 代理予約入力</h1>
+      <p class="sub">電話予約・店頭予約・Reserva 移行など、管理者が代わりに予約を作成します</p>
+    </header>
+
+    {slots.length === 0 && (
+      <div class="err">
+        受付可能なスロット (今日以降・open・残席あり) がありません。<br/>
+        <a href="/admin/schedule">スケジュール管理</a>でスロットを追加してください。
+      </div>
+    )}
+
+    {slots.length > 0 && (
+      <form id="proxyForm" novalidate>
+        <section class="sect">
+          <h2>1. スロット選択</h2>
+          <div class="field">
+            <label for="slot_id">開催枠 <span class="req">*</span></label>
+            <select id="slot_id" name="slot_id" required>
+              <option value="">— 選択してください —</option>
+              {slots.map((s) => (
+                <option value={s.id} data-remaining={s.remaining}
+                        data-price-regular={s.priceRegular}
+                        data-price-member={s.priceMember}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        <section class="sect">
+          <h2>2. 予約内容</h2>
+          <div class="row">
+            <div class="field">
+              <label>参加人数 <span class="req">*</span></label>
+              <div class="radios">
+                {[1,2,3].map((n) => (
+                  <label class="ch">
+                    <input type="radio" name="participant_count" value={n} checked={n===1} />
+                    <span>{n} 名</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div class="field">
+              <label>会員種別 <span class="req">*</span></label>
+              <div class="radios">
+                <label class="ch"><input type="radio" name="price_tier" value="regular" checked /><span>一般</span></label>
+                <label class="ch"><input type="radio" name="price_tier" value="member" /><span>会員</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="total-preview">合計: <strong id="totalPreview">¥0</strong></div>
+        </section>
+
+        <section class="sect">
+          <h2>3. 参加者情報</h2>
+          <div id="participantsHost"></div>
+          <template id="participantTpl">
+            <div class="participant" data-p-index="">
+              <h3>参加者 <span class="p-num"></span></h3>
+              <div class="grid-2">
+                <div class="field"><label>お名前 <span class="req">*</span></label><input type="text" name="p_name" required maxlength="40" /></div>
+                <div class="field"><label>フリガナ <span class="req">*</span></label><input type="text" name="p_kana" required maxlength="40" placeholder="ヤマダタロウ" /></div>
+                <div class="field"><label>生年月日 <span class="req">*</span></label><input type="date" name="p_birth" required /></div>
+                <div class="field"><label>性別 <span class="req">*</span></label>
+                  <select name="p_gender" required>
+                    <option value="">選択</option><option value="male">男</option><option value="female">女</option><option value="other">その他</option>
+                  </select>
+                </div>
+                <div class="field"><label>身長 (cm) <span class="req">*</span></label><input type="number" name="p_height" required min="80" max="200" step="1" /></div>
+                <div class="field"><label>カート経験 (任意)</label><input type="text" name="p_experience" maxlength="120" placeholder="初めて / N回など" /></div>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <section class="sect">
+          <h2>4. 保護者情報</h2>
+          <div class="grid-2">
+            <div class="field"><label>お名前 <span class="req">*</span></label><input type="text" name="g_name" required maxlength="40" /></div>
+            <div class="field"><label>フリガナ <span class="req">*</span></label><input type="text" name="g_kana" required maxlength="40" /></div>
+            <div class="field"><label>電話番号 <span class="req">*</span></label><input type="tel" name="g_phone" required maxlength="20" placeholder="09012345678" /></div>
+            <div class="field"><label>メールアドレス <span class="req">*</span></label><input type="email" name="g_email" required maxlength="120" /></div>
+            <div class="field"><label>郵便番号</label><input type="text" id="g_postal" name="g_postal" maxlength="10" placeholder="8110011" /></div>
+            <div class="field field-wide"><label>住所</label><input type="text" id="g_address" name="g_address" maxlength="200" /></div>
+          </div>
+        </section>
+
+        <section class="sect">
+          <h2>5. 緊急連絡先</h2>
+          <label class="ch big">
+            <input type="checkbox" id="sameAsGuardian" checked />
+            <span>👤 <strong>保護者と同じ</strong> (通常はこれで OK)</span>
+          </label>
+          <div id="emerFields" hidden>
+            <div class="grid-2">
+              <div class="field"><label>お名前 <span class="req">*</span></label><input type="text" name="e_name" maxlength="40" /></div>
+              <div class="field"><label>続柄 <span class="req">*</span></label><input type="text" name="e_relation" maxlength="20" placeholder="祖父母／配偶者" /></div>
+              <div class="field field-wide"><label>電話番号 <span class="req">*</span></label><input type="tel" name="e_phone" maxlength="20" /></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="sect">
+          <h2>6. 入力元 (集計用)</h2>
+          <div class="radios">
+            <label class="ch"><input type="radio" name="src" value="PROXY_PHONE" checked /><span>📞 電話予約</span></label>
+            <label class="ch"><input type="radio" name="src" value="PROXY_COUNTER" /><span>🏪 店頭予約</span></label>
+            <label class="ch"><input type="radio" name="src" value="RESERVA" /><span>📋 Reserva 移行</span></label>
+            <label class="ch"><input type="radio" name="src" value="OTHER" /><span>その他</span></label>
+          </div>
+          <div class="field" id="srcOtherWrap" hidden>
+            <label>カスタムコード (英数字大文字, 60文字以内)</label>
+            <input type="text" id="src_other" maxlength="60" placeholder="例: DIRECT" />
+          </div>
+        </section>
+
+        <section class="sect note">
+          <p>
+            💡 <strong>同意書・電子署名について</strong>: 代理入力では「[代理入力] 保護者名」の
+            typed signature を自動で記録します。当日受付で紙同意書に本人サインを取り、
+            必要なら後日カルテから電子化してください。
+          </p>
+        </section>
+
+        <div id="submitError" class="err" hidden></div>
+        <div class="submit-row">
+          <button type="submit" class="btn btn-primary" id="submitBtn">✅ 予約を作成する</button>
+        </div>
+      </form>
+    )}
+  </main>
+</Base>
+
+<script is:inline define:vars={{ slotsJson }}>
+  window.__ASMS_SLOTS = JSON.parse(slotsJson);
+</script>
+
+<script>
+  const form = document.getElementById('proxyForm') as HTMLFormElement | null;
+  if (form) init(form);
+
+  function init(form: HTMLFormElement) {
+    const slotSel = form.querySelector<HTMLSelectElement>('select[name="slot_id"]')!;
+    const totalEl = document.getElementById('totalPreview')!;
+    const partHost = document.getElementById('participantsHost')!;
+    const tpl = document.getElementById('participantTpl') as HTMLTemplateElement;
+    const sameChk = document.getElementById('sameAsGuardian') as HTMLInputElement;
+    const emerFields = document.getElementById('emerFields')!;
+    const emerInputs = Array.from(emerFields.querySelectorAll<HTMLInputElement>('input'));
+    const srcOtherWrap = document.getElementById('srcOtherWrap')!;
+    const srcOtherInput = document.getElementById('src_other') as HTMLInputElement;
+    const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
+    const errBox = document.getElementById('submitError')!;
+
+    const slots = (window as any).__ASMS_SLOTS ?? {};
+
+    const defaultBirth = (() => {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() - 6);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    const renderParticipants = () => {
+      const count = parseInt(getRadio('participant_count') || '1', 10);
+      const captured: Record<string, string>[] = [];
+      partHost.querySelectorAll<HTMLElement>('.participant').forEach((el, i) => {
+        captured[i] = {};
+        el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
+          captured[i][f.name] = f.value;
+        });
+      });
+      partHost.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const frag = tpl.content.cloneNode(true) as DocumentFragment;
+        const wrap = frag.querySelector('.participant') as HTMLElement;
+        wrap.dataset.pIndex = String(i);
+        (frag.querySelector('.p-num') as HTMLElement).textContent = String(i + 1);
+        const birth = wrap.querySelector<HTMLInputElement>('input[name="p_birth"]');
+        if (birth && !captured[i]?.p_birth) birth.value = defaultBirth;
+        wrap.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((f) => {
+          const prev = captured[i]?.[f.name];
+          if (prev != null && prev !== '') f.value = prev;
+        });
+        partHost.appendChild(frag);
+      }
+    };
+
+    const updateTotal = () => {
+      const slotId = slotSel.value;
+      const tier = getRadio('price_tier') || 'regular';
+      const count = parseInt(getRadio('participant_count') || '1', 10);
+      const s = slots[slotId];
+      const per = s ? (tier === 'member' ? s.priceMember : s.priceRegular) : 0;
+      totalEl.textContent = `¥${(per * count).toLocaleString()}`;
+    };
+
+    function getRadio(name: string): string {
+      const el = form.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`);
+      return el ? el.value : '';
+    }
+
+    slotSel.addEventListener('change', updateTotal);
+    form.querySelectorAll<HTMLInputElement>('input[name="participant_count"], input[name="price_tier"]').forEach((el) => {
+      el.addEventListener('change', () => { renderParticipants(); updateTotal(); });
+    });
+
+    const syncSame = () => {
+      const same = sameChk.checked;
+      emerFields.hidden = same;
+      emerInputs.forEach((i) => { i.required = !same; });
+    };
+    sameChk.addEventListener('change', syncSame);
+
+    form.querySelectorAll<HTMLInputElement>('input[name="src"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        srcOtherWrap.hidden = getRadio('src') !== 'OTHER';
+      });
+    });
+
+    // 郵便番号 → 住所 autofill (公式サービス zipcloud)
+    const zipInput = document.getElementById('g_postal') as HTMLInputElement | null;
+    const addrInput = document.getElementById('g_address') as HTMLInputElement | null;
+    if (zipInput && addrInput) {
+      const lookup = async () => {
+        const zip = zipInput.value.replace(/[^0-9]/g, '');
+        if (zip.length !== 7) return;
+        try {
+          const r = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+          const d = await r.json();
+          if (d.status === 200 && d.results?.[0]) {
+            const a = d.results[0];
+            const addr = `${a.address1}${a.address2}${a.address3}`;
+            if (!addrInput.value.trim()) addrInput.value = addr;
+          }
+        } catch { /* ignore */ }
+      };
+      zipInput.addEventListener('blur', lookup);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errBox.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中...';
+
+      try {
+        const payload = collect();
+        const r = await fetch('/api/admin/reservations/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await r.json();
+        if (!r.ok) {
+          throw new Error(body?.error || `HTTP ${r.status}`);
+        }
+        alert(`✅ 予約作成完了\n予約番号: ${body.reservation_number}\n入力元: ${body.referral_code}`);
+        window.location.href = '/admin/reservations';
+      } catch (err: any) {
+        errBox.textContent = `送信に失敗しました: ${err.message || err}`;
+        errBox.hidden = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = '✅ 予約を作成する';
+      }
+    });
+
+    function collect() {
+      const gd = (n: string) => (form.elements.namedItem(n) as HTMLInputElement)?.value?.trim() ?? '';
+      const participants: any[] = [];
+      partHost.querySelectorAll<HTMLElement>('.participant').forEach((el) => {
+        const get = (n: string) => (el.querySelector(`[name="${n}"]`) as HTMLInputElement | HTMLSelectElement)?.value?.trim() ?? '';
+        participants.push({
+          name: get('p_name'),
+          kana: get('p_kana'),
+          birth_date: get('p_birth'),
+          gender: get('p_gender'),
+          height_cm: parseInt(get('p_height') || '0', 10),
+          kart_experience_note: get('p_experience') || null,
+          photo_consent: 'allow',
+        });
+      });
+      const guardian = {
+        name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
+        email: gd('g_email'), postal_code: gd('g_postal'), address: gd('g_address'),
+      };
+      const same = sameChk.checked;
+      const emergency = same
+        ? { name: guardian.name, phone: guardian.phone, relation: '本人' }
+        : { name: gd('e_name'), phone: gd('e_phone'), relation: gd('e_relation') };
+      const srcRadio = getRadio('src');
+      const referral_code = srcRadio === 'OTHER' ? (srcOtherInput.value.trim() || 'OTHER') : srcRadio;
+      return {
+        slot_id: slotSel.value,
+        price_tier: getRadio('price_tier') || 'regular',
+        participants,
+        guardian,
+        emergency,
+        referral_code,
+      };
+    }
+
+    renderParticipants();
+    updateTotal();
+    syncSame();
+  }
+</script>
+
+<style>
+  main { max-width: 720px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+  .hd { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.2rem; }
+  .hd-nav { margin-bottom: .3rem; }
+  .hd-nav a { font-size: .78rem; color: var(--ink-3); text-decoration: none; }
+  h1 { margin: 0 0 .3rem; font-size: 1.35rem; font-weight: 800; }
+  .sub { margin: 0; font-size: .82rem; color: var(--ink-3); }
+
+  .err { background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep); padding: .8rem 1rem; border-radius: 8px; margin: 1rem 0; font-size: .85rem; }
+
+  .sect { background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1rem; margin-bottom: .9rem; }
+  .sect h2 { margin: 0 0 .8rem; font-size: 1rem; font-weight: 800; }
+  .sect h3 { margin: 0 0 .5rem; font-size: .88rem; font-weight: 800; color: var(--sky-deep); }
+  .sect.note { background: rgba(255,201,67,.08); border-color: rgba(255,201,67,.4); }
+  .sect.note p { margin: 0; font-size: .82rem; line-height: 1.7; }
+
+  .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .7rem; }
+  .field label { font-size: .74rem; font-weight: 700; color: var(--ink-2); }
+  .field input, .field select {
+    padding: .55rem .7rem; font-size: .92rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--jp);
+  }
+  .req { color: var(--rose-deep); font-weight: 800; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
+  .field-wide { grid-column: 1 / -1; }
+
+  .radios { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .ch {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .55rem .9rem; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--bg);
+    cursor: pointer; font-size: .88rem; font-weight: 700;
+    position: relative;
+  }
+  .ch.big { padding: .7rem .9rem; }
+  .ch input { position: absolute; opacity: 0; pointer-events: none; }
+  .ch:has(input:checked) {
+    background: var(--sky-mist); border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(58,169,232,.12);
+    color: var(--sky-deep);
+  }
+
+  .participant { background: var(--bg-2); border-radius: 8px; padding: .8rem 1rem; margin-bottom: .7rem; }
+
+  .total-preview { text-align: right; padding: .5rem 0; font-size: 1rem; color: var(--ink-2); }
+  .total-preview strong { font-family: var(--mono); font-size: 1.4rem; color: var(--orange-deep); margin-left: .5rem; }
+
+  .submit-row { margin-top: 1.5rem; text-align: right; }
+  .btn { padding: .8rem 1.4rem; border-radius: 8px;
+    font-family: var(--jp); font-size: .95rem; font-weight: 800;
+    border: none; cursor: pointer; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229,99,26,.3);
+  }
+  .btn:disabled { background: var(--bg-3); color: var(--ink-3); box-shadow: none; cursor: wait; }
+</style>
