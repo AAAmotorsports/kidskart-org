@@ -92,14 +92,27 @@ Actions タブ → **ASMS DB Backup** → **Run workflow** → main → **Run**
 
 ## 日常運用
 
-- 毎日 03:00 JST に自動実行
+- 毎日 03:00 JST に自動実行 (GitHub Actions cron の性質上、数時間の遅延あり)
 - 失敗するとメール (info@kidskart.org) に通知が飛ぶ
 - 通知が来たら Actions ログを見て原因対応 (大抵は Secret 失効か Supabase 側の一時障害)
 
-**確認ポイント (月に 1 回)**:
-- R2 バケットに直近 30 日分の daily があるか目視
-- 月初 (毎月 1 日) に monthly/ にファイルが増えているか
+**日常監視は /admin パネルから**:
+
+管理画面トップに「💾 バックアップの動作状況」パネルを追加済み
+(2026-08-30〜)。Cloudflare Workers から R2 バケットを直接 list し、
+以下を可視化:
+
+- 最新 dump の取得時刻とサイズ (30h 超で黄、48h 超で赤)
+- 直近 daily/ の履歴 (10 件、日付とサイズを一覧)
+- monthly/ の最新月
+
+`BACKUP_BUCKET` (R2 binding) が wrangler.jsonc に定義されていれば
+自動で表示。Cloudflare Dashboard を開かなくても管理画面から
+「取れてる/取れてない」がわかる。
+
+**追加の月次目視 (パネルで足りない部分)**:
 - Storage 使用量は 1 GB 未満 (無料枠 10 GB) に収まっているか
+  → Cloudflare Dashboard → R2 → バケット詳細で確認
 
 ---
 

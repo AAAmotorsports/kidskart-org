@@ -47,6 +47,11 @@ interface Env {
   // leaves the operator's machine.
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD_HASH?: string;
+
+  // R2 bucket binding (kidskart-asms-backup) for backup monitoring on
+  // /admin. Read-only usage from the Worker; writes are still done by
+  // GitHub Actions cron (asms-db-backup.yml) via S3-compatible API.
+  BACKUP_BUCKET?: R2Bucket;
 }
 
 declare namespace App {

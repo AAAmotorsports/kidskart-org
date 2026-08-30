@@ -62,6 +62,51 @@ function jstTime(iso: string): string {
     hour: '2-digit', minute: '2-digit',
   }).format(d);
 }
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+// --- Backup status (R2 kidskart-asms-backup) ---------------------------
+// BACKUP_BUCKET binding が使えれば直近 daily/ を list、そうでなければ
+// パネルに「未接続」を表示。書き込みは GitHub Actions 側なのでここは
+// 完全に read-only。
+type BackupObject = { key: string; date: string; size: number; uploaded: Date };
+let backups: BackupObject[] = [];
+let latestMonthly: BackupObject | null = null;
+let backupError: string | null = null;
+const backupBucket = (Astro.locals as any)?.runtime?.env?.BACKUP_BUCKET;
+if (backupBucket) {
+  try {
+    const dailyList = await backupBucket.list({ prefix: 'daily/', limit: 20 });
+    backups = (dailyList?.objects ?? [])
+      .map((o: any) => {
+        // key: daily/asms-YYYYMMDD.dump → date part を取り出し
+        const m = /asms-(\d{4})(\d{2})(\d{2})\.dump$/.exec(o.key);
+        const date = m ? `${m[1]}-${m[2]}-${m[3]}` : o.key;
+        return { key: o.key, date, size: o.size, uploaded: new Date(o.uploaded) };
+      })
+      .sort((a: BackupObject, b: BackupObject) => (a.date < b.date ? 1 : -1))
+      .slice(0, 10);
+    const monthlyList = await backupBucket.list({ prefix: 'monthly/', limit: 20 });
+    const monthly = (monthlyList?.objects ?? [])
+      .map((o: any) => ({ key: o.key, date: o.key.replace(/^monthly\/asms-|\.dump$/g, ''), size: o.size, uploaded: new Date(o.uploaded) }))
+      .sort((a: BackupObject, b: BackupObject) => (a.date < b.date ? 1 : -1));
+    latestMonthly = monthly[0] ?? null;
+  } catch (e: any) {
+    backupError = e?.message ?? String(e);
+  }
+}
+const latestBackup = backups[0] ?? null;
+const backupHoursAgo = latestBackup ? (Date.now() - latestBackup.uploaded.getTime()) / 3600000 : Infinity;
+const backupState: 'ok' | 'warn' | 'err' =
+  !backupBucket ? 'warn' :
+  !latestBackup ? 'err' :
+  backupHoursAgo > 48 ? 'err' :
+  backupHoursAgo > 30 ? 'warn' : 'ok';
 ---
 <Base title="管理 — 福岡キッズカートアカデミー">
   <main>
@@ -131,6 +176,67 @@ function jstTime(iso: string): string {
         <strong class="cron-warn">🟡 黄</strong>= 半日以上動いていない ·
         <strong class="cron-err">🔴 赤</strong>= 前回エラー
       </p>
+    </section>
+
+    <section class="cron-panel">
+      <h2 class="cron-h">💾 バックアップの動作状況</h2>
+      {!backupBucket && (
+        <p class="cron-help err">
+          BACKUP_BUCKET binding が Worker に接続されていません。<br/>
+          wrangler.jsonc の <code>r2_buckets</code> を確認し、Cloudflare Dashboard で再展開してください。
+        </p>
+      )}
+      {backupError && (
+        <p class="cron-help err">R2 バケットの list に失敗: {backupError}</p>
+      )}
+      {backupBucket && !backupError && (
+        <>
+          <ul class="cron-list">
+            <li class={`cron-item cron-${backupState}`}>
+              <div class="cron-line-1">
+                <span class="cron-dot" aria-hidden="true" />
+                <span class="cron-name">日次バックアップ (Supabase → R2)</span>
+                <span class="cron-schedule">毎日 03:00 JST</span>
+              </div>
+              <div class="cron-line-2">
+                {latestBackup ? (
+                  <>
+                    <span class="cron-when" title={jstTime(latestBackup.uploaded.toISOString())}>
+                      最終取得 <strong>{relTime(latestBackup.uploaded.toISOString())}</strong>
+                      <span class="cron-when-abs">（{jstTime(latestBackup.uploaded.toISOString())}）</span>
+                    </span>
+                    <span class="cron-summary">
+                      サイズ <strong>{fmtSize(latestBackup.size)}</strong> · 日付キー <code>{latestBackup.date}</code>
+                    </span>
+                  </>
+                ) : (
+                  <span class="cron-err-msg">バックアップが 1 件も見つかりません</span>
+                )}
+              </div>
+            </li>
+          </ul>
+
+          {backups.length > 0 && (
+            <div class="backup-days">
+              <div class="bd-hd">直近 daily/ の履歴 ({backups.length} 件, 最大 90 日保存):</div>
+              <div class="bd-grid">
+                {backups.map((b) => (
+                  <div class="bd-cell" title={`${b.key} · ${fmtSize(b.size)}\nアップロード: ${jstTime(b.uploaded.toISOString())}`}>
+                    <div class="bd-date">{b.date.slice(5)}</div>
+                    <div class="bd-size">{fmtSize(b.size)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {latestMonthly && (
+            <p class="cron-help" style="margin-top:.6rem">
+              🗄 monthly/ 最新: <code>{latestMonthly.date}</code> ({fmtSize(latestMonthly.size)}, 無期限保存)
+            </p>
+          )}
+        </>
+      )}
     </section>
 
     <script>
@@ -327,6 +433,29 @@ function jstTime(iso: string): string {
     border-color: var(--sky);
   }
   .cron-retry:disabled { opacity: .5; cursor: wait; }
+
+  .backup-days { margin-top: .7rem; padding-top: .7rem; border-top: 1px dashed var(--line); }
+  .bd-hd { font-size: .74rem; color: var(--ink-3); margin-bottom: .4rem; }
+  .bd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: .3rem;
+  }
+  .bd-cell {
+    background: var(--lime-mist, rgba(164,214,94,.14));
+    border: 1px solid var(--lime, #a4d65e);
+    border-radius: 6px;
+    padding: .3rem .4rem;
+    text-align: center;
+    font-family: var(--mono);
+  }
+  .bd-date { font-size: .78rem; font-weight: 700; color: var(--lime-deep, #4a8c1a); }
+  .bd-size { font-size: .65rem; color: var(--ink-3); }
+  .cron-help.err { color: var(--rose-deep); }
+  .cron-help code {
+    background: var(--bg-2); padding: 0 .3rem; border-radius: 3px;
+    font-size: .78rem; font-family: var(--mono);
+  }
   .cron-err-msg { color: var(--rose-deep); font-weight: 700; font-size: .72rem; }
   .cron-running { color: var(--sky-deep); font-weight: 700; }
   .cron-never { color: var(--ink-3); font-style: italic; }
