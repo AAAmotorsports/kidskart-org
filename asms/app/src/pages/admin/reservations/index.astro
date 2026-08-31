@@ -189,7 +189,7 @@ let query = supabase
     id, reservation_number, status, price_tier, total_amount, created_at, referral_code,
     slots(id, date, start_time, end_time, courses(name, code)),
     guardians(name, kana, phone, email),
-    reservation_participants(id, name_snapshot, age_at_booking, height_cm, attendance_status)
+    reservation_participants(id, name_snapshot, age_at_booking, height_cm, attendance_status, photo_consent)
   `)
   .order('created_at', { ascending: false })
   .limit(200);
@@ -451,9 +451,20 @@ const statusColor: Record<string, string> = {
                       if (p.age_at_booking != null) bits.push(`${p.age_at_booking}歳`);
                       if (p.height_cm != null) bits.push(`${p.height_cm}cm`);
                       const meta = bits.length ? ` (${bits.join(' / ')})` : '';
-                      return `${p.name_snapshot}${meta}${i < parts.length - 1 ? '・' : ''}`;
+                      // 写真同意: allow 以外だけ表示 (制限がある時だけ目立たせる)
+                      let photoTag = '';
+                      if (p.photo_consent === 'face_blur_only') photoTag = ' 👤ぼかしのみ';
+                      else if (p.photo_consent === 'deny') photoTag = ' 🚫撮影不可';
+                      return `${p.name_snapshot}${meta}${photoTag}${i < parts.length - 1 ? '・' : ''}`;
                     }).join('')} ({parts.length}名)
                   </span>
+                  {parts.some((p: any) => p.photo_consent === 'deny') && (
+                    <span class="photo-warn photo-warn-deny">🚫 撮影不可 参加者あり</span>
+                  )}
+                  {!parts.some((p: any) => p.photo_consent === 'deny')
+                    && parts.some((p: any) => p.photo_consent === 'face_blur_only') && (
+                    <span class="photo-warn photo-warn-blur">👤 顔ぼかしのみ参加者あり</span>
+                  )}
                 </div>
                 <div class="res-row-4">
                   <span class="res-amount">¥{(r.total_amount ?? 0).toLocaleString()}</span>
@@ -735,6 +746,23 @@ const statusColor: Record<string, string> = {
   }
   .res-guardian { font-weight: 700; }
   .res-parts { color: var(--ink-3); }
+  .photo-warn {
+    display: inline-block;
+    padding: .15rem .5rem;
+    border-radius: 100px;
+    font-size: .68rem; font-weight: 700;
+    white-space: nowrap;
+  }
+  .photo-warn-deny {
+    background: rgba(229,85,111,.12);
+    color: var(--rose-deep);
+    border: 1px solid rgba(229,85,111,.4);
+  }
+  .photo-warn-blur {
+    background: rgba(255,201,67,.15);
+    color: var(--orange-deep);
+    border: 1px solid rgba(255,201,67,.5);
+  }
   .res-row-4 {
     display: flex; gap: .5rem; align-items: baseline;
     font-size: .74rem; color: var(--ink-3);
