@@ -28,9 +28,16 @@ const [state, next] = await Promise.all([
   dayState(env, addDays(focus.date, 1)),
 ]);
 
-/** RP の空きを「14:00〜 空きあり」の形にまとめる */
+/**
+ * RP の空きを「14:00〜 空きあり」の形にまとめる。
+ *
+ * 休業・走行中止の日は空文字を返す。枠が 0 なのは「満枠」ではなく
+ * 「その日はやっていない」からで、満枠と書くと誤解される
+ * (2026-08 オーナー指摘)。呼ぶ側は空なら行ごと出さないこと。
+ */
 function rpSummary(s: DayState | null): string {
   if (!s) return '';
+  if (['cancelled', 'closed'].includes(s.business.status)) return '';
   const open = s.rp.slots.filter((x) => x.accepting);
   if (open.length === 0) return 'RP はすべて満枠です';
   const first = open[0].time;
@@ -57,6 +64,7 @@ const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
 const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
 const surfaceToday = state?.surface.status ?? null;
 // 営業状況 (休業・中止) と、時間帯 (準備中・営業中・終了) を 1 つのバッジにまとめる
+const nextClosed = ['cancelled', 'closed'].includes(next?.business.status ?? '');
 const badge = openBadge(state?.business.status ?? 'open', focus.phase);
 const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.course_open);
 ---
@@ -118,10 +126,11 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
             const sess = state.sport[key];
             return (
               <div class="sess">
+                {/* 「0 / 2 クラス」は運営の都合の数字で、お客様には意味が伝わらない。
+                    出すのは管理画面だけにする (2026-08 オーナー指摘) */}
                 <div class="sess-head">
                   <strong>{label}</strong>
                   <span class="tiny muted">{sess.start_time}〜{sess.end_time}</span>
-                  <span class="badge">{sess.used_classes} / {sess.max_classes} クラス</span>
                 </div>
                 <div class="cats">
                   {visibleCats(sess.categories).map((c) => (
@@ -140,9 +149,13 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
           <p class="tiny muted" style="margin:.4rem 0 0">
             <strong>○ 走れます</strong>= ご予約なしでお越しいただけます ／
             <strong>✕</strong> 受付停止 ／ <strong>—</strong> 対象外。<br />
-            キッズカート・その他（大型バイク等）は<strong>事前予約制</strong>のため、
+            その他（大型バイク等）は<strong>事前予約制</strong>のため、
             ご予約が入っている日のみ表示しています。ご希望の方は
-            <a href="/reserve/sport">こちらからご予約</a>ください。
+            <a href="/reserve/sport">こちらからご予約</a>ください。<br />
+            <strong>小学生以下のお子様</strong>は
+            <a href="https://kidskart.org/" target="_blank" rel="noopener">
+              キッズカートアカデミー (kidskart.org) →</a>
+            をご覧ください。
           </p>
         </div>
       )}
@@ -198,23 +211,35 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
           {next.business.status !== 'open' && (
             <p class="badge warn">{BUSINESS_LABELS[next.business.status] ?? next.business.status}</p>
           )}
-          <div class="next-grid">
-            {sessions.map(([key, label]) => (
-              <div>
-                <div class="tiny muted">{label}</div>
-                <div class="row">
-                  {visibleCats(next.sport[key].categories).map((c) => (
-                    <span class="next-cat" title={categoryText(c)}>
-                      {c.short_name}
-                      <span class:list={['mark', c.status]} style="font-size:1rem">{STATUS_MARK[c.status]}</span>
-                      {c.requires_reservation && !c.walk_in_ok && <span class="tiny muted">要予約</span>}
-                    </span>
-                  ))}
-                </div>
+          {/* 休業・走行中止の日に ✕ の一覧や「満枠」を出すと、
+              「枠が埋まっている」と誤解される。お休みとだけ伝える */}
+          {nextClosed ? (
+            <p class="tiny muted" style="margin:.4rem 0 0">
+              この日はお休みです。ご予約は承っておりません。
+            </p>
+          ) : (
+            <>
+              <div class="next-grid">
+                {sessions.map(([key, label]) => (
+                  <div>
+                    <div class="tiny muted">{label}</div>
+                    <div class="row">
+                      {visibleCats(next.sport[key].categories).map((c) => (
+                        <span class="next-cat" title={categoryText(c)}>
+                          {c.short_name}
+                          <span class:list={['mark', c.status]} style="font-size:1rem">{STATUS_MARK[c.status]}</span>
+                          {c.requires_reservation && !c.walk_in_ok && <span class="tiny muted">要予約</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p class="tiny muted" style="margin:.5rem 0 0">RP: {rpSummary(next)}</p>
+              {rpSummary(next) && (
+                <p class="tiny muted" style="margin:.5rem 0 0">RP: {rpSummary(next)}</p>
+              )}
+            </>
+          )}
           <p style="margin:.6rem 0 0"><a href="/schedule">今月のスケジュールを見る →</a></p>
         </div>
       )}

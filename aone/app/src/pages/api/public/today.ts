@@ -85,13 +85,18 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
   });
 
   const openSlots = state.rp.slots.filter((s) => s.accepting);
+  // 休業・走行中止の日は「満枠」ではなく「お休み」。枠が 0 なのは
+  // 埋まっているからではないので、満枠と書くと誤解される (2026-08 オーナー指摘)
+  const closedDay = ['cancelled', 'closed'].includes(state.business.status);
   const rp = {
     min_party: state.rp.min_party,
     open_count: openSlots.length,
     total_count: state.rp.slots.length,
     first_open: openSlots[0]?.time ?? null,
     summary:
-      openSlots.length === 0
+      closedDay
+        ? `${isTomorrow ? '明日' : '本日'}はお休みです`
+        : openSlots.length === 0
         ? '本日は満枠です'
         : openSlots.length === state.rp.slots.length
           ? `${openSlots[0].time}〜${openSlots[openSlots.length - 1].time} 空きあり`
