@@ -130,6 +130,32 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ ok: true, ...data });
   }
 
+  // 「変更をメールで送信」— いま入っている内容をそのまま知らせる。
+  // 保存と送信を分けているのは、電話で話しながら何度も直すことがあり、
+  // そのたびにメールが飛ぶと困るため (2026-08 オーナー確認)。
+  // 予約は一切書き換えない。送るだけ。
+  if (action === 'notify') {
+    const id = str(body?.id);
+    if (!id) return json({ error: 'id が必要です' }, 400);
+
+    const { data: rawRow, error } = await supabase
+      .from('aone_reservations').select(MAIL_COLUMNS).eq('id', id).maybeSingle();
+    if (error) return mapRpcError(error);
+    const row = rawRow as unknown as ReservationForMail | null;
+    if (!row) return json({ error: '予約が見つかりません' }, 404);
+    if (!(row.contact_email ?? '').includes('@')) {
+      return json({ error: 'メールアドレスの登録がありません。お電話でご連絡ください' }, 400);
+    }
+
+    const m = changeMail(env, row, originOf(request));
+    const ok = await sendMail(env, {
+      to: row.contact_email!, subject: m.subject, text: m.text,
+      kind: 'confirm', reservationId: id,
+    });
+    if (!ok) return json({ error: '送信できませんでした (送信ログをご確認ください)' }, 502);
+    return json({ ok: true, sent_to: row.contact_email });
+  }
+
   if (action === 'cancel') {
     const { data, response } = await callRpc(supabase, 'aone_cancel_reservation', {
       id: str(body?.id),

@@ -21,13 +21,17 @@ const heatMinutes: number = cfg?.rental_heat_minutes ?? 7;
 const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
 
 const rpOpen = state ? state.rp.slots.filter((s) => s.accepting) : [];
+// 休業・走行中止の日は「満枠」ではなく「お休み」。枠の話をすると誤解される
+const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
 const rpSummary = !state
   ? ''
-  : rpOpen.length === 0
-    ? '本日は満枠です（別の日はご予約いただけます）'
-    : rpOpen.length === state.rp.slots.length
-      ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} 空きあり`
-      : `本日は ${rpOpen[0].time}〜 空きあり`;
+  : closedToday
+    ? '本日はお休みです（別の日はご予約いただけます）'
+    : rpOpen.length === 0
+      ? '本日は満枠です（別の日はご予約いただけます）'
+      : rpOpen.length === state.rp.slots.length
+        ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} 空きあり`
+        : `本日は ${rpOpen[0].time}〜 空きあり`;
 ---
 <Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのレースパック・スポーツ走行・貸切・ナイターの予約メニュー">
   <a class="back-link" href="/">← トップに戻る</a>
@@ -74,6 +78,18 @@ const rpSummary = !state
         当日、走行枠に空きがあればご予約なしでの走行も可能です。
       </p>
       <span class="btn sm">予約する</span>
+    </a>
+
+    {/* 小学生以下はキッズカートアカデミー (kidskart.org) の受付。
+        ここから /reserve/sport に飛ばすと別のものを予約させてしまう
+        (2026-08 オーナー指摘)。メニューカードではなく外部リンクにする */}
+    <a class="menu-card" href="https://kidskart.org/" target="_blank" rel="noopener">
+      <div class="menu-title">小学生以下のお子様 <span class="tag">別サイト</span></div>
+      <p class="small muted">
+        小学生以下のお子様の走行は<strong>キッズカートアカデミー</strong>で承っています。
+        専用の車両とインストラクターをご用意しています。
+      </p>
+      <span class="btn sm">kidskart.org へ →</span>
     </a>
 
     <a class="menu-card" href="/reserve/charter">

@@ -271,15 +271,35 @@ const surface = state?.surface.status ?? '';
                       <input type="number" class="e-karts" min="1" max="30" value={r.vehicle_count ?? ''} />
                     </label>
                   )}
+                  {/* 電話で受けたあとに「この方は特別料金」を入れられるようにする。
+                      空欄のままなら金額は変えない (自動計算のまま) */}
+                  <label class="fld">料金 (円)
+                    <input type="number" class="e-amount" min="0" step="100"
+                           value={r.amount ?? ''} placeholder="空欄なら変更しません" />
+                  </label>
                 </div>
+                <div class="tiny muted" style="margin:-.2rem 0 .4rem">
+                  料金を自動計算と違う額にすると「金額を手入力」の印が付き、
+                  人数や台数を変えても上書きされなくなります。
+                </div>
+                {/* 既定はオフ。電話で話しながら直すことが多く、
+                    そのたびにメールが飛ぶほうが困る (2026-08 オーナー確認)。
+                    あとから知らせたくなったら下の「変更をメールで送信」を押す */}
                 <label class="small mailchk">
-                  <input type="checkbox" class="e-mail" checked={!!r.contact_email} disabled={!r.contact_email} />
-                  変更内容をお客様にメールで知らせる
+                  <input type="checkbox" class="e-mail" disabled={!r.contact_email} />
+                  保存と同時にお客様へメールで知らせる
                   {!r.contact_email && ' (メールアドレスの登録がありません)'}
                 </label>
                 <div class="row">
                   <button class="btn sm primary act-save" data-id={r.id}>この内容に変更する</button>
-                  <span class="tiny muted">受付ルールは無視して保存します (管理者の強制受付)</span>
+                  <button class="btn sm act-notify" data-id={r.id} disabled={!r.contact_email}>
+                    ✉️ 変更をメールで送信
+                  </button>
+                </div>
+                <div class="tiny muted">
+                  受付ルールは無視して保存します (管理者の強制受付)。
+                  「変更をメールで送信」は<strong>いま入っている内容</strong>を
+                  そのままお送りします (料金も入ります)。
                 </div>
               </div>
             </details>
@@ -648,6 +668,25 @@ const surface = state?.surface.status ?? '';
   }));
 
   // 日時・人数の変更。管理画面からは受付ルールを無視して保存する (forced)
+  // 「変更をメールで送信」— 保存とは別に、いまの内容をそのまま知らせる
+  document.querySelectorAll('.act-notify').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('いま入っている予約内容 (料金を含む) をお客様にメールで送ります。よろしいですか？')) return;
+    const label = b.textContent;
+    b.disabled = true;
+    b.textContent = '送信中…';
+    try {
+      const r = await post('/api/admin/reservation', { action: 'notify', id: b.dataset.id });
+      b.textContent = '✓ 送信しました';
+      alert((r && r.sent_to ? r.sent_to : 'お客様') + ' に送信しました。');
+    } catch (e) {
+      alert(e.message);
+      b.textContent = label;
+    } finally {
+      b.disabled = false;
+      setTimeout(() => { b.textContent = label; }, 4000);
+    }
+  }));
+
   document.querySelectorAll('.act-save').forEach((b) => b.addEventListener('click', async () => {
     const box = b.closest('.editbox');
     const pick = (cls) => box.querySelector('.' + cls);
@@ -663,6 +702,7 @@ const surface = state?.surface.status ?? '';
       end_time: val('e-end'),
       party_size: val('e-party'),
       vehicle_count: val('e-karts'),
+      amount: val('e-amount'),
       send_mail: !!(pick('e-mail') && pick('e-mail').checked && !pick('e-mail').disabled),
     };
 

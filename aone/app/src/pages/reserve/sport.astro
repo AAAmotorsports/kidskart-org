@@ -23,15 +23,22 @@ const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
   <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
   <h1>スポーツ走行のご予約</h1>
   <p class="small muted">
-    カート・ミニバイク・キッズカート・その他 (大型バイク等) のスポーツ走行枠です。
+    カート・ミニバイク・その他 (大型バイク等) のスポーツ走行枠です。
     同じカテゴリーは何台入っても 1 クラス扱いです。
   </p>
   <div class="notice info small" style="margin-bottom:1rem">
     マイマシンでの走行です。<strong>前日までに走行枠のご予約</strong>をされてご来場ください。<br />
     当日、走行枠に空きがあればご予約なしでの走行も可能です。<br />
-    <strong>キッズカートのご予約はお電話で承ります</strong>
-    ({env.PUBLIC_SITE_TEL || '092-919-7186'})。車両とスタッフの準備が必要なため、
-    ご希望日をご相談ください。
+  </div>
+
+  {/* 小学生以下はキッズカートアカデミー (kidskart.org) の受付。
+      このページは持ち込み車両の走行枠なので、行き先が違う (2026-08 オーナー指摘) */}
+  <div class="notice small kids" style="margin-bottom:1rem">
+    <strong>小学生以下のお子様</strong>の走行は
+    <a href="https://kidskart.org/" target="_blank" rel="noopener">
+      キッズカートアカデミー (kidskart.org)</a>
+    で承っています。専用の車両とインストラクターをご用意していますので、
+    そちらからお申し込みください。
   </div>
 
   <form id="form" class="card" novalidate>

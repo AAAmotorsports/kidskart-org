@@ -81,6 +81,7 @@ const WIDGET_JS = String.raw`
     '  font-size:.92em;border:1px solid var(--aone-line);background:#fff;color:var(--aone-ink)}',
     '.aone-btn.primary{background:var(--aone-red);border-color:var(--aone-red);color:#fff}',
     '.aone-note{font-size:.78em;color:var(--aone-ink3);margin-top:8px}',
+    '.aone-note a{color:var(--aone-red);font-weight:700;text-decoration:underline}',
     '.aone-cal{width:100%;border-collapse:collapse;font-size:.82em;table-layout:fixed}',
     '.aone-cal th{background:#12233a;color:#fff;padding:4px 0;font-size:.9em;font-weight:700;',
     '  text-align:center}',
@@ -211,9 +212,9 @@ const WIDGET_JS = String.raw`
 
     if (d.business.open) {
       d.sessions.forEach(function (s) {
+        // 「0 / 2 クラス」は運営の都合の数字。お客様には意味が伝わらないので出さない
         html += '<div class="aone-sess"><div class="aone-sess-h"><b>' + esc(s.label) + '</b>'
-          + '<span>' + esc(s.time) + '</span>'
-          + '<span>' + s.used_classes + ' / ' + s.max_classes + ' クラス</span></div>';
+          + '<span>' + esc(s.time) + '</span></div>';
         html += '<div class="aone-cats">';
         s.categories.forEach(function (c) {
           html += '<div class="aone-cat' + (c.walk_in_ok ? ' ok' : '') + '">'
@@ -234,6 +235,12 @@ const WIDGET_JS = String.raw`
         html += '<p class="aone-note">' + esc(hidden.join('・'))
           + ' は事前予約制です（ご予約のある日のみ表示しています）。</p>';
       }
+
+      // 小学生以下はキッズカートアカデミーの受付。スポーツ走行の予約に
+      // 飛ばすと別のものを予約させてしまう (2026-08 オーナー指摘)
+      html += '<p class="aone-note">小学生以下のお子様は '
+        + '<a href="https://kidskart.org/" target="_blank" rel="noopener">'
+        + 'キッズカートアカデミー (kidskart.org) →</a> で承っています。</p>';
 
       html += '<div class="aone-rp"><b>レースパック (RP)</b>' + esc(d.rp.summary)
         + '<span class="aone-note"> ／ ' + d.rp.min_party + ' 名以上・30 分刻み</span></div>';
