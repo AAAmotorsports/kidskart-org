@@ -111,13 +111,28 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
         </div>
       )}
 
+      {/* 休業 (もともとやっていない日) と 走行中止 (天候などでその日だけ止めた)
+          は別物。同じ文面にすると、休業日に「回復したら再開します」と
+          言ってしまう (2026-09 に発生) */}
       {closedToday ? (
         <div class="card">
-          <h2>{dayWord}は走行を中止しています</h2>
-          <p class="muted">
-            天候の回復状況によっては再開する場合があります。お急ぎの場合は
-            お電話 ({env.PUBLIC_SITE_TEL || '092-919-7186'}) でご確認ください。
-          </p>
+          {state.business.status === 'closed' ? (
+            <>
+              <h2>{dayWord}はお休みです</h2>
+              <p class="muted">
+                この日はご予約・走行を承っておりません。
+                <a href="/schedule">今月のスケジュール</a>で営業日をご確認ください。
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>{dayWord}は走行を中止しています</h2>
+              <p class="muted">
+                天候の回復状況によっては再開する場合があります。お急ぎの場合は
+                お電話 ({env.PUBLIC_SITE_TEL || '092-919-7186'}) でご確認ください。
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div class="card">
@@ -215,7 +230,9 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
               「枠が埋まっている」と誤解される。お休みとだけ伝える */}
           {nextClosed ? (
             <p class="tiny muted" style="margin:.4rem 0 0">
-              この日はお休みです。ご予約は承っておりません。
+              {next.business.status === 'closed'
+                ? 'この日はお休みです。ご予約は承っておりません。'
+                : 'この日は走行を中止しています。お急ぎの場合はお電話ください。'}
             </p>
           ) : (
             <>
