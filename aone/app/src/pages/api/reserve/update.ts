@@ -37,6 +37,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     access_token: token,
     date: str(body?.date),
     start_time: str(body?.start_time),
+    // 貸切・ナイターは終了時間もお客様が変えられる。
+    // ここに書き忘れると、画面では変えられるのに保存されない (2026-09 に発生)
+    end_time: str(body?.end_time),
     session: str(body?.session),
     party_size: body?.party_size ? Number(body.party_size) : null,
     vehicle_count: body?.vehicle_count ? Number(body.vehicle_count) : null,
