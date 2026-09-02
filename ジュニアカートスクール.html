@@ -7,8 +7,23 @@
 <meta name="description" content="ジュニアカートスクールの内容は体験・チャレンジクラスへ。">
 <meta name="robots" content="noindex,follow">
 <link rel="canonical" href="https://kidskart.org/#what">
-<meta http-equiv="refresh" content="0; url=https://kidskart.org/#what">
-<script>location.replace("https://kidskart.org/#what");</script>
+<meta http-equiv="refresh" content="1; url=https://kidskart.org/#what">
+<!-- GA4: gtag は redirect 前に必ずロード。cookie_domain=kidskart.org で
+     .kidskart.org スコープの cookie を発行し、reserve.kidskart.org へ
+     移動後もセッション継続 (旧: gtag 無し & location.replace 即発火
+     → reserve 側で kidskart.org 自己参照カウントされていた) -->
+<script src="https://www.googletagmanager.com/gtag/js?id=G-W3HB0DT0Y3"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-W3HB0DT0Y3', {
+    cookie_domain: 'kidskart.org',
+    cookie_flags: 'SameSite=None;Secure',
+    send_page_view: true
+  });
+  setTimeout(function(){ location.replace('https://kidskart.org/#what'); }, 500);
+</script>
 <style>
   body{font-family:'M PLUS Rounded 1c','Zen Kaku Gothic New',sans-serif;background:#eef7fc;color:#163048;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:2rem;text-align:center}
   .card{max-width:480px;background:#fff;border-radius:24px;padding:2.5rem 2rem;box-shadow:0 12px 40px rgba(58,169,232,.18)}
