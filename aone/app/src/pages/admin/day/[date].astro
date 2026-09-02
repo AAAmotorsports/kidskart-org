@@ -282,13 +282,32 @@ const surface = state?.surface.status ?? '';
                   料金を自動計算と違う額にすると「金額を手入力」の印が付き、
                   人数や台数を変えても上書きされなくなります。
                 </div>
+
+                {/* 電話で受けたあとに「メールアドレスも教えてもらった」が起きる。
+                    ここで登録すれば、下の「変更をメールで送信」が押せるようになる */}
+                <div class="grid4">
+                  <label class="fld">お名前
+                    <input type="text" class="e-name" value={r.contact_name ?? ''} />
+                  </label>
+                  <label class="fld">電話
+                    <input type="tel" class="e-phone" value={r.contact_phone ?? ''} />
+                  </label>
+                  <label class="fld">メールアドレス
+                    <input type="email" class="e-email" value={r.contact_email ?? ''}
+                           placeholder="あとから登録できます" />
+                  </label>
+                </div>
+                <div class="tiny muted" style="margin:-.2rem 0 .4rem">
+                  空欄にしても消えません (いまの値のまま)。メールアドレスを登録して保存すると、
+                  リマインド・お礼などの自動メールも届くようになります。
+                </div>
                 {/* 既定はオフ。電話で話しながら直すことが多く、
                     そのたびにメールが飛ぶほうが困る (2026-08 オーナー確認)。
                     あとから知らせたくなったら下の「変更をメールで送信」を押す */}
                 <label class="small mailchk">
                   <input type="checkbox" class="e-mail" disabled={!r.contact_email} />
                   保存と同時にお客様へメールで知らせる
-                  {!r.contact_email && ' (メールアドレスの登録がありません)'}
+                  {!r.contact_email && ' (メールアドレスが未登録です。上の欄で登録して保存すると押せるようになります)'}
                 </label>
                 <div class="row">
                   <button class="btn sm primary act-save" data-id={r.id}>この内容に変更する</button>
@@ -703,6 +722,9 @@ const surface = state?.surface.status ?? '';
       party_size: val('e-party'),
       vehicle_count: val('e-karts'),
       amount: val('e-amount'),
+      name: val('e-name'),
+      phone: val('e-phone'),
+      email: val('e-email'),
       send_mail: !!(pick('e-mail') && pick('e-mail').checked && !pick('e-mail').disabled),
     };
 
