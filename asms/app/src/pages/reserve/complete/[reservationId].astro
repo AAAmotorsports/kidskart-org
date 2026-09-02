@@ -194,6 +194,7 @@ const isTaiken = course.code === 'taiken';
   </main>
 
   <script is:inline define:vars={{
+    reservationId,
     courseCode: course.code || '',
     priceTier: res.price_tier,
     total: res.total_amount,
@@ -202,14 +203,26 @@ const isTaiken = course.code === 'taiken';
   }}>
     // GA4: 予約完了 (最重要 CV)。GA 側で Key Event としてマークする。
     // 承認待ちのケース (isPending=true) はまだ確定していないので送らない。
+    //
+    // 二重発火防止: complete ページはリロード・ブラウザバック・ブックマーク
+    // からの再訪問等で複数回開かれ得るため、reservationId 単位で localStorage
+    // に送信フラグを持ち、同一予約では 1 回だけ発火する。
+    // localStorage が読めない環境 (private mode 等) は 1 回目相当として
+    // 発火させる (計測欠損の方が二重より痛いため)。
     if (!isPending && typeof window.asmsTrack === 'function') {
-      window.asmsTrack('booking_complete', {
-        course: courseCode,
-        price_tier: priceTier,
-        participants: participants,
-        value: total,
-        currency: 'JPY',
-      });
+      const dedupKey = 'asms:bc_sent:' + reservationId;
+      let alreadySent = false;
+      try { alreadySent = !!localStorage.getItem(dedupKey); } catch (_e) { /* private mode */ }
+      if (!alreadySent) {
+        window.asmsTrack('booking_complete', {
+          course: courseCode,
+          price_tier: priceTier,
+          participants: participants,
+          value: total,
+          currency: 'JPY',
+        });
+        try { localStorage.setItem(dedupKey, String(Date.now())); } catch (_e) { /* noop */ }
+      }
     }
     // リピート追加予約 CTA クリック計測。href が別ページなので、
     // GA が飛ぶ前に beacon で送るために sendBeacon 経由ではなく
