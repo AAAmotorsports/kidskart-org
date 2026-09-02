@@ -3,7 +3,7 @@
 # 新しいマイグレーションを足したら、このスクリプトの FILES に追記して実行する。
 set -eu
 cd "$(dirname "$0")"
-FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql 0006_category_walkin.sql 0007_sport_no_limited.sql 0008_admin_only_category.sql 0009_prices.sql 0010_calendar_colors_and_rp_names.sql 0011_month_categories.sql 0012_rental_bookings_public.sql 0013_night_rental_only.sql 0014_pricing_and_cancel_policy.sql 0015_callback_tracking.sql 0016_amount_on_update.sql 0017_amount_manual_flag.sql 0018_amount_manual_fix.sql 0019_charter_and_same_day_rules.sql 0020_charter_course_only.sql 0021_business_and_surface_status.sql 0022_event_entries.sql 0023_public_name_org.sql 0024_only_category_block.sql 0025_cron_log.sql 0026_weekly_sport_closed.sql"
+FILES="0001_initial_schema.sql 0002_seed_holidays.sql 0003_availability_engine.sql 0004_reservation_rpcs.sql 0005_grants_and_rls.sql 0006_category_walkin.sql 0007_sport_no_limited.sql 0008_admin_only_category.sql 0009_prices.sql 0010_calendar_colors_and_rp_names.sql 0011_month_categories.sql 0012_rental_bookings_public.sql 0013_night_rental_only.sql 0014_pricing_and_cancel_policy.sql 0015_callback_tracking.sql 0016_amount_on_update.sql 0017_amount_manual_flag.sql 0018_amount_manual_fix.sql 0019_charter_and_same_day_rules.sql 0020_charter_course_only.sql 0021_business_and_surface_status.sql 0022_event_entries.sql 0023_public_name_org.sql 0024_only_category_block.sql 0025_cron_log.sql 0026_weekly_sport_closed.sql 0027_charter_price_by_hours.sql"
 
 {
   cat <<'HDR'

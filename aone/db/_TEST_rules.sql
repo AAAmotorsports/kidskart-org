@@ -356,17 +356,18 @@ begin
   assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 19800,
     '14-1 RP の金額が 6,600 x 3 にならない';
 
-  -- 貸切 = 11,000 + 11,000 x 台数 (最小 5 台) → 台数未指定なら 66,000 円
+  -- 貸切 = 11,000 + 11,000 x 台数 x 時間 (最小 5 台)
+  -- 09:00〜12:00 の 3 時間・台数未指定 → 11,000 + 11,000 x 5 x 3 = 176,000 円
   r := t_book(jsonb_build_object('kind','charter','date', aone_today()+22, 'start_time','09:00',
                                  'end_time','12:00','party_size',10,'who','料金貸切'));
-  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 66000,
-    '14-2 貸切の金額が 11,000 + 11,000 x 5 にならない: '
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 176000,
+    '14-2 貸切の金額が 11,000 + 11,000 x 5 x 3 時間 にならない: '
       || (select amount from aone_reservations where id = (r->>'id')::uuid)::text;
 
-  -- 台数を指定した貸切 (8 台) → 11,000 + 11,000 x 8 = 99,000 円
+  -- 台数を指定した貸切 (8 台 x 3 時間) → 11,000 + 11,000 x 8 x 3 = 275,000 円
   r := t_book(jsonb_build_object('kind','charter','date', aone_today()+23, 'start_time','09:00',
                                  'end_time','12:00','party_size',16,'vehicle_count',8,'who','料金貸切8'));
-  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 99000,
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 275000,
     '14-3 台数指定の貸切の金額が合わない';
 
   -- =========================================================================
@@ -454,21 +455,21 @@ begin
   assert (select amount from aone_reservations where id = id1) = 52800,
     '16-3d 一度自動計算に揃えたあと追従しなくなる';
 
-  -- 貸切 5 台 (66,000 円) → 8 台 (99,000 円)
+  -- 貸切 3 時間 5 台 (176,000 円) → 8 台 (275,000 円)
   r := t_book(jsonb_build_object('kind','charter','date', aone_today()+27, 'start_time','09:00',
                                  'end_time','12:00','party_size',10,'who','金額追従貸切'));
   id1 := (r->>'id')::uuid;
-  assert (select amount from aone_reservations where id = id1) = 66000, '16-4 貸切の初期金額が違う';
+  assert (select amount from aone_reservations where id = id1) = 176000, '16-4 貸切の初期金額が違う';
   perform aone_update_reservation(jsonb_build_object('id', id1, 'vehicle_count', 8,
                                                      'forced', true, 'actor','admin'));
-  assert (select amount from aone_reservations where id = id1) = 99000,
+  assert (select amount from aone_reservations where id = id1) = 275000,
     '16-5 台数変更で金額が追従しない';
 
   -- 会計済みは触らない
   update aone_reservations set is_paid = true where id = id1;
   perform aone_update_reservation(jsonb_build_object('id', id1, 'vehicle_count', 10,
                                                      'forced', true, 'actor','admin'));
-  assert (select amount from aone_reservations where id = id1) = 99000,
+  assert (select amount from aone_reservations where id = id1) = 275000,
     '16-6 会計済みの金額が変わってしまう';
 
   -- =========================================================================
@@ -554,7 +555,8 @@ begin
   r := t_book(jsonb_build_object('kind','charter','date', aone_today()+34,
                                  'start_time','09:00','end_time','12:00','party_size',10,
                                  'vehicle_count',6,'charter_type','with_karts','who','カート付き'));
-  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 77000,
+  -- 6 台 x 3 時間 → 11,000 + 11,000 x 6 x 3 = 209,000 円
+  assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 209000,
     '18-7 レンタルカート付きの金額が違う';
 
   -- 台数不足はコースのみでも当日不可は効く
@@ -860,8 +862,11 @@ begin
     d_mon  date;
     st     jsonb;
   begin
-    -- 次の日曜と、その翌日
-    d_sun := aone_today() + ((7 - extract(dow from aone_today())::int) % 7 + 7);
+    -- ずっと先の日曜と、その翌日。
+    -- 近い日付を使うと、ほかのグループが置いた臨時休業や予約と当たって
+    -- 「曜日の設定が効いていない」と誤検知する (今日の曜日で当たり外れが変わる)
+    d_sun := (aone_today() + 120)
+             + ((7 - extract(dow from aone_today() + 120)::int) % 7);
     d_mon := d_sun + 1;
     assert extract(dow from d_sun) = 0, '24-0 テスト日が日曜になっていない';
 
@@ -913,6 +918,68 @@ begin
     r := aone_check_availability('sport', d_mon, 'kart', 'pm');
     assert not (r->>'ok')::boolean, '24-12 月曜午後を止められない';
     assert r->>'message' like '月曜日の午後%', '24-13 曜日名が合っていない';
+  end;
+
+  -- =========================================================================
+  raise notice '--- 25. 貸切の料金は時間でも変わる (2026-09 改定)';
+  -- =========================================================================
+  -- 11,000 円 + 台数 x 時間 x 11,000 円
+  declare
+    d_ch date := aone_today() + 70;
+  begin
+    -- 時間の数え方。端数は 1 時間に切り上げる
+    assert aone_charter_hours('13:00', '16:00') = 3, '25-1 3 時間を 3 と数えない';
+    assert aone_charter_hours('09:00', '09:30') = 1, '25-2 30 分が 1 時間にならない';
+    assert aone_charter_hours('09:00', '12:30') = 4, '25-3 3 時間半が 4 時間にならない';
+    assert aone_charter_hours(null, null)      = 1, '25-4 時間不明のとき 1 時間にならない';
+
+    -- 10 台 x 3 時間 → 11,000 + 10 x 3 x 11,000 = 341,000 円
+    -- (2026-09 に 121,000 円と出ていた予約。台数しか見ていなかった)
+    r := t_book(jsonb_build_object('kind','charter','date', d_ch, 'start_time','13:00',
+                                   'end_time','16:00','party_size',40,'vehicle_count',10,
+                                   'who','貸切3時間'));
+    id1 := (r->>'id')::uuid;
+    assert (select amount from aone_reservations where id = id1) = 341000,
+      '25-5 3 時間 10 台の貸切が 341,000 円にならない: '
+        || (select amount from aone_reservations where id = id1)::text;
+
+    -- 時間を延ばせば金額も追従する (人数・台数を変えていなくても)
+    perform aone_update_reservation(jsonb_build_object('id', id1, 'end_time', '17:00',
+                                                       'forced', true, 'actor','admin'));
+    assert (select amount from aone_reservations where id = id1) = 451000,
+      '25-6 時間を延ばしても金額が追従しない: '
+        || (select amount from aone_reservations where id = id1)::text;
+
+    -- 1 時間・最小台数なら従来と同じ 66,000 円
+    r := t_book(jsonb_build_object('kind','charter','date', d_ch + 1, 'start_time','09:00',
+                                   'end_time','10:00','party_size',10,'who','貸切1時間'));
+    assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 66000,
+      '25-7 1 時間 5 台が 66,000 円にならない';
+
+    -- ナイターの貸切も同じ式
+    r := t_book(jsonb_build_object('kind','night','night_kind','charter','date', d_ch + 2,
+                                   'start_time','18:00','end_time','21:00',
+                                   'party_size',10,'vehicle_count',6,'who','ナイター貸切'));
+    assert (select amount from aone_reservations where id = (r->>'id')::uuid) = 209000,
+      ' 25-8 ナイター貸切の金額が違う: '
+        || (select amount from aone_reservations where id = (r->>'id')::uuid)::text;
+
+    -- 手入力した金額は時間を変えても上書きしない
+    r := t_book(jsonb_build_object('kind','charter','date', d_ch + 3, 'start_time','09:00',
+                                   'end_time','12:00','party_size',10,'vehicle_count',5,
+                                   'who','貸切値引き'));
+    id1 := (r->>'id')::uuid;
+    update aone_reservations set amount = 150000 where id = id1;
+    assert (select amount_manual from aone_reservations where id = id1),
+      '25-9 値引きが手入力として記録されない';
+    perform aone_update_reservation(jsonb_build_object('id', id1, 'end_time', '15:00',
+                                                       'forced', true, 'actor','admin'));
+    assert (select amount from aone_reservations where id = id1) = 150000,
+      '25-10 値引きした金額が上書きされてしまう';
+
+    -- RP は時間で変わらない (人数だけ)
+    assert aone_auto_amount('rp', null, 5, null, '10:00', '16:00') = 33000,
+      '25-11 RP の金額に時間が効いてしまっている';
   end;
 
   raise notice 'ALL TESTS PASSED';
