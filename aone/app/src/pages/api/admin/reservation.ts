@@ -111,6 +111,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
     if (response) return response;
 
+    // 電話で受けたあとにメールアドレスを聞けることがある。予約だけに入れると
+    // 顧客名簿は空のままになるので、**空欄のときだけ** 顧客側にも入れる。
+    // 別の値が入っているときは上書きしない (スタッフが直した表記を潰さない)
+    const newEmail = (str(body?.email) ?? '').trim().toLowerCase();
+    const newPhone = (str(body?.phone) ?? '').trim();
+    if (newEmail || newPhone) {
+      const { data: res } = await supabase
+        .from('aone_reservations').select('customer_id').eq('id', str(body?.id)).maybeSingle();
+      const customerId = (res as any)?.customer_id;
+      if (customerId) {
+        const { data: cus } = await supabase
+          .from('aone_customers').select('email,phone').eq('id', customerId).maybeSingle();
+        const patch: Record<string, string> = {};
+        if (newEmail && !((cus as any)?.email ?? '').trim()) patch.email = newEmail;
+        if (newPhone && !((cus as any)?.phone ?? '').trim()) patch.phone = newPhone;
+        if (Object.keys(patch).length > 0) {
+          const { error: cerr } = await supabase
+            .from('aone_customers').update(patch).eq('id', customerId);
+          // 顧客名簿に入らなくても予約の変更は成立している。失敗しても止めない
+          if (cerr) console.warn('[admin/reservation] 顧客への反映に失敗', cerr.message);
+        }
+      }
+    }
+
     // スタッフが変更したときは、お客様に知らせるかどうかを画面で選べる
     if (body?.send_mail === true) {
       const { data: rawRow } = await supabase
