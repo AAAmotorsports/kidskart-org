@@ -27,9 +27,11 @@ const minDate = addDays(today, leadDays);
     お申し込み自体は承り、A-ONE より折り返しご連絡いたします。
   </p>
   <div class="notice info small" style="margin-bottom:1rem">
-    <strong>料金 {basePrice.toLocaleString('ja-JP')} 円 ＋ カート 1 台につき {perKart.toLocaleString('ja-JP')} 円</strong>
+    <strong>料金 {basePrice.toLocaleString('ja-JP')} 円 ＋ カート 1 台 1 時間につき {perKart.toLocaleString('ja-JP')} 円</strong>
     （最小 {minKarts} 台から）<br />
-    例: {minKarts} 台なら {(basePrice + perKart * minKarts).toLocaleString('ja-JP')} 円。
+    例: {minKarts} 台を 3 時間なら
+    {(basePrice + perKart * minKarts * 3).toLocaleString('ja-JP')} 円。
+    30 分などの端数は 1 時間として計算します。
     お支払いは当日現地でお願いします。<br />
     <strong>カート {minKarts} 台未満・当日のお申し込みは承れません。</strong>
   </div>
@@ -148,6 +150,17 @@ const minDate = addDays(today, leadDays);
     return el ? el.value : 'with_karts';
   }
 
+  // 利用時間 (1 時間単位・切り上げ)。DB 側の aone_charter_hours と同じ数え方
+  function hours() {
+    const toMin = (v) => {
+      const m = /^(\d{1,2}):(\d{2})/.exec(v || '');
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const a = toMin($('start').value), b = toMin($('end').value);
+    if (a === null || b === null || b <= a) return 1;
+    return Math.max(1, Math.ceil((b - a) / 60));
+  }
+
   function renderPrice() {
     // コースのみは内容で料金が変わるため、ここでは金額を出さない
     if (charterType() === 'course_only') {
@@ -155,8 +168,9 @@ const minDate = addDays(today, leadDays);
       return;
     }
     const k = Math.max(Number($('karts').value || MIN_KARTS), MIN_KARTS);
-    $('price').textContent = '¥' + (BASE + PER_KART * k).toLocaleString('ja-JP') +
-      ' （基本料 ¥' + BASE.toLocaleString('ja-JP') + ' ＋ ' + k + '台 × ¥' +
+    const h = hours();
+    $('price').textContent = '¥' + (BASE + PER_KART * k * h).toLocaleString('ja-JP') +
+      ' （基本料 ¥' + BASE.toLocaleString('ja-JP') + ' ＋ ' + k + '台 × ' + h + '時間 × ¥' +
       PER_KART.toLocaleString('ja-JP') + '）';
   }
 
@@ -199,6 +213,9 @@ const minDate = addDays(today, leadDays);
   }
 
   $('karts').addEventListener('input', renderPrice);
+  // 時間でも金額が変わるので、開始・終了を変えたら出し直す
+  $('start').addEventListener('input', renderPrice);
+  $('end').addEventListener('input', renderPrice);
   syncType();
 
   $('date').addEventListener('change', loadDay);
