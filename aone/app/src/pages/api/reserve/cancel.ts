@@ -44,7 +44,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const origin = originOf(request);
 
   if (row?.contact_email) {
-    const m = cancelMail(env, row, origin, !!data.cancel_fee);
+    const m = cancelMail(env, row, origin, !!data.cancel_fee, data.cancel_fee_rate ?? 100);
     keepAlive(
       locals,
       sendMail(env, {

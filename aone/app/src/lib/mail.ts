@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from './supabase';
 import {
   jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
   nameWithHonorific, stripHonorific, entryPersonLabel,
+  CANCEL_POLICY_RENTAL, CANCEL_POLICY_SPORT_LINES,
 } from './domain';
 
 export type MailKind = 'confirm' | 'reminder' | 'thanks' | 'followup' | 'broadcast' | 'cancel' | 'admin';
@@ -212,17 +213,16 @@ function myPageUrl(origin: string, r: ReservationForMail): string {
   return `${origin}/r/${r.access_token}`;
 }
 
+// 文面は domain.ts に置いてある。画面とメールで食い違わせないため
 const CANCEL_POLICY_RP = [
   '▼ キャンセル規定',
-  '・ご連絡いただければ、当日でもキャンセル料はいただきません。',
-  '・当日ご連絡のないキャンセル (無断キャンセル) は料金 100% を申し受けます。',
+  ...CANCEL_POLICY_RENTAL.map((l) => `・${l}`),
   '・日程・人数の変更は予約者専用ページからいつでも可能です。',
 ];
 
 const CANCEL_POLICY_SPORT = [
   '▼ キャンセルについて',
-  '・天候の影響が大きいため、当日でもご連絡いただければキャンセル可能です (キャンセル料なし)。',
-  '・当日ご連絡のないキャンセル (無断キャンセル) は料金 100% を申し受けます。',
+  ...CANCEL_POLICY_SPORT_LINES.map((l) => `・${l}`),
 ];
 
 /** 予約直後の完了メール (仕様 11) */
@@ -341,7 +341,9 @@ export function followupMail(env: Env, r: ReservationForMail, origin: string) {
 }
 
 /** キャンセル完了通知 */
-export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee: boolean) {
+export function cancelMail(
+  env: Env, r: ReservationForMail, origin: string, fee: boolean, rate = 100,
+) {
   return {
     subject: `【キャンセル受付】${r.reservation_number}`,
     text: [
@@ -353,7 +355,9 @@ export function cancelMail(env: Env, r: ReservationForMail, origin: string, fee:
       '',
       ...(fee
         ? [
-            '※ 当日ご連絡のないキャンセルのため、規定によりキャンセル料が発生します。',
+            rate >= 100
+              ? '※ ご連絡のないキャンセルのため、規定により料金の 100% を申し受けます。'
+              : `※ 前日 18 時を過ぎてのキャンセルのため、規定により料金の ${rate}% を申し受けます。`,
             '　 詳細は A-ONE よりご連絡いたします。',
             '',
           ]

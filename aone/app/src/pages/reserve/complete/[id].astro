@@ -2,7 +2,9 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { reservationById } from '@lib/queries';
-import { jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, nameWithHonorific } from '@lib/domain';
+import {
+  jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, nameWithHonorific, cancelPolicyLines,
+} from '@lib/domain';
 
 export const prerender = false;
 
@@ -67,7 +69,7 @@ const pending = visible && r.status !== 'confirmed';
         <h2>当日について</h2>
         <ul class="small">
           <li>当日の営業状況 (天候による判断) は <a href="/">トップページ</a> でご確認いただけます。</li>
-          <li>ご連絡いただければ、当日でもキャンセル料はいただきません。当日ご連絡のないキャンセル (無断キャンセル) は料金 100% を申し受けます。</li>
+          {cancelPolicyLines(r.kind).map((l) => <li>{l}</li>)}
           <li>お支払いは原則として当日現地でのお支払いです。</li>
         </ul>
       </div>

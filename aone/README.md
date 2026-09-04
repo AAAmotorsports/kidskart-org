@@ -62,6 +62,7 @@ aone/
 | 当日の RP は 17:00 以降不可 | `rp_same_day_last_start` |
 | 当日の RP は 2 時間後以降のみ | `rp_same_day_lead_minutes` |
 | 貸切はカート 5 台以上から | `charter_min_karts` (レンタルカート付きのみ) |
+| レンタルのキャンセルは前日 18 時まで無料 / 当日 50% / 無断 100% | `aone_cancel_reservation` の `cancel_fee_rate` (スポーツ走行は連絡があれば当日でも無料) |
 | 貸切は 11,000 + 11,000 × 台数 × 時間 | `aone_auto_amount()` / `aone_charter_hours()` (端数は 1 時間に切り上げ) |
 | コース貸切のみは金額を出さず必ず折り返す | `charter_type = 'course_only'` → status `checking` |
 | 貸切は当日不可 (前日まで) | `charter_min_lead_days` |

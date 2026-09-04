@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { reservationByToken } from '@lib/queries';
 import {
   jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, todayJst, addDays,
-  nameWithHonorific, stripHonorific,
+  nameWithHonorific, stripHonorific, cancelPolicyLines,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -126,10 +126,11 @@ const isSport = r?.kind === 'sport';
 
           <div class="card">
             <h2>キャンセル</h2>
-            <p class="small">
-              ご連絡いただければ、当日でもキャンセル料はいただきません。
-              当日ご連絡のないキャンセル (無断キャンセル) は、規定により料金 100% を申し受けます。
-            </p>
+            {/* 規定の文面は domain.ts に 1 か所だけ置いてある。
+                画面とメールで食い違わせないため */}
+            <ul class="small">
+              {cancelPolicyLines(r.kind).map((l) => <li>{l}</li>)}
+            </ul>
             <div class="field">
               <label for="reason">キャンセル理由 (任意)</label>
               <input type="text" id="reason" placeholder="都合が悪くなったため など" />
@@ -263,8 +264,11 @@ const isSport = r?.kind === 'sport';
         if (!res.ok) throw new Error(data.error || 'キャンセルできませんでした');
         msg.hidden = false;
         msg.className = 'notice ok';
+        // 何 % かまで出す。「キャンセル料が発生します」だけだと、
+        // お客様がいくらか分からず問い合わせになる
         msg.textContent = data.cancel_fee
-          ? 'キャンセルを受付けました。規定によりキャンセル料が発生します。詳細は A-ONE よりご連絡します。'
+          ? 'キャンセルを受付けました。規定により料金の ' + (data.cancel_fee_rate || 100)
+            + '% のキャンセル料が発生します。詳細は A-ONE よりご連絡します。'
           : 'キャンセルを受付けました。';
         setTimeout(() => location.reload(), 1400);
       } catch (e) {

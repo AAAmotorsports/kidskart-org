@@ -198,7 +198,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .single();
       const row = rawRow as unknown as ReservationForMail | null;
       if (row?.contact_email) {
-        const m = cancelMail(env, row, originOf(request), !!data.cancel_fee);
+        const m = cancelMail(env, row, originOf(request), !!data.cancel_fee, data.cancel_fee_rate ?? 100);
         keepAlive(locals, sendMail(env, {
           to: row.contact_email!, subject: m.subject, text: m.text,
           kind: 'cancel', reservationId: data.id,

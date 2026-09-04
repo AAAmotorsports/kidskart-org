@@ -1049,6 +1049,85 @@ begin
       '26-17 予定を消しても資料が残る';
   end;
 
+  -- =========================================================================
+  raise notice '--- 27. レンタルのキャンセル規定 (2026-09 改定)';
+  -- =========================================================================
+  -- 前日 18 時まで = 無料 / それ以降 = 50% / 連絡なし = 100%。
+  -- スポーツ走行は天候の影響が大きいので、連絡があれば当日でも無料。
+  --
+  -- ここで見たいのはキャンセルの計算だけなので、予約は直接 insert する
+  -- (前のグループが今日に貸切を入れていると、受付判定で弾かれてしまうため)。
+  declare
+    v_id uuid;
+  begin
+    -- 先の日付なら、いま連絡すれば無料
+    insert into aone_reservations (kind, status, date, start_time, party_size, source, contact_name)
+    values ('rp', 'confirmed', aone_today() + 7, '10:00', 3, 'admin', '規定RP先')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','customer'));
+    assert not (r->>'cancel_fee')::boolean, '27-1 前日 18 時前なのに料金が発生する';
+    assert (r->>'cancel_fee_rate')::int = 0, '27-2 割合が 0 でない';
+
+    -- 当日のキャンセルは 50%
+    insert into aone_reservations (kind, status, date, start_time, party_size, source, contact_name)
+    values ('rp', 'confirmed', aone_today(), '10:00', 3, 'admin', '規定RP当日')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','customer'));
+    assert (r->>'cancel_fee')::boolean, '27-3 当日キャンセルで料金が発生しない';
+    assert (r->>'cancel_fee_rate')::int = 50, '27-4 当日キャンセルが 50% でない: '
+      || (r->>'cancel_fee_rate');
+
+    -- 貸切・ナイターも同じ
+    insert into aone_reservations (kind, status, date, start_time, end_time, party_size,
+                                   vehicle_count, charter_type, source, contact_name)
+    values ('charter', 'confirmed', aone_today(), '13:00', '16:00', 10, 6, 'with_karts',
+            'admin', '規定貸切当日')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','customer'));
+    assert (r->>'cancel_fee_rate')::int = 50, '27-5 貸切の当日キャンセルが 50% でない';
+
+    insert into aone_reservations (kind, night_kind, status, date, start_time, end_time,
+                                   party_size, source, contact_name)
+    values ('night', 'rp', 'confirmed', aone_today(), '18:00', '21:00', 5, 'admin', '規定ナイター当日')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','customer'));
+    assert (r->>'cancel_fee_rate')::int = 50, '27-6 ナイターの当日キャンセルが 50% でない';
+
+    -- 連絡なし (無断) は 100%
+    insert into aone_reservations (kind, status, date, start_time, party_size, source, contact_name)
+    values ('rp', 'confirmed', aone_today(), '11:00', 3, 'admin', '規定RP無断')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'no_show', true, 'actor','staff'));
+    assert (r->>'cancel_fee_rate')::int = 100, '27-7 無断キャンセルが 100% でない';
+    assert (select status from aone_reservations where id = v_id) = 'no_show',
+      '27-8 無断キャンセルとして記録されない';
+    assert exists (select 1 from aone_reservation_events e
+                    where e.reservation_id = v_id
+                      and (e.detail->>'cancel_fee_rate')::int = 100),
+      '27-9 監査ログに割合が残っていない';
+
+    -- スポーツ走行は当日でも無料 (天候の影響が大きいため)
+    insert into aone_reservations (kind, status, date, session, category_code, party_size,
+                                   source, contact_name)
+    values ('sport', 'confirmed', aone_today(), 'pm', 'kart', 1, 'admin', '規定スポーツ当日')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','customer'));
+    assert not (r->>'cancel_fee')::boolean, '27-10 スポーツ走行の当日キャンセルで料金が発生する';
+
+    -- 無断ならスポーツ走行でも 100%
+    insert into aone_reservations (kind, status, date, session, category_code, party_size,
+                                   source, contact_name)
+    values ('sport', 'confirmed', aone_today(), 'am', 'minibike', 1, 'admin', '規定スポーツ無断')
+    returning id into v_id;
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'no_show', true, 'actor','staff'));
+    assert (r->>'cancel_fee_rate')::int = 100, '27-11 スポーツ走行の無断が 100% でない';
+
+    -- 二重キャンセルは料金を足さない
+    r := aone_cancel_reservation(jsonb_build_object('id', v_id, 'actor','staff'));
+    assert (r->>'already')::boolean, '27-12 二重キャンセルが弾かれない';
+    assert (r->>'cancel_fee_rate')::int = 0, '27-13 二重キャンセルで料金が付く';
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

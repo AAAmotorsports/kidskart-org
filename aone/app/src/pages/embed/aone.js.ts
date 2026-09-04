@@ -105,9 +105,8 @@ const WIDGET_JS = String.raw`
     // レンタルのお客様への注記。読み飛ばされると意味がないので枠で囲む
     '.aone-hint{border:1px solid var(--aone-line);border-left:3px solid var(--aone-green);',
     '  border-radius:0 8px 8px 0;padding:8px 10px;background:#f7fbf9;color:var(--aone-ink)}',
-    // 「スポーツ走行 / 受付停止」の 2 行
-    '.aone-msess-items .n .aone-l1{display:block;font-size:.92em;opacity:.85}',
-    '.aone-msess-items .n .aone-l2{display:block}',
+    // ご予約不要のレンタルカート走行ができる日
+    '.aone-rok{color:var(--aone-green);font-weight:800;font-size:.92em;margin-bottom:2px}',
     '.aone-note a{color:var(--aone-red);font-weight:700;text-decoration:underline}',
     '.aone-cal{width:100%;border-collapse:collapse;font-size:.82em;table-layout:fixed}',
     '.aone-cal th{background:#12233a;color:#fff;padding:4px 0;font-size:.9em;font-weight:700;',
@@ -344,9 +343,9 @@ const WIDGET_JS = String.raw`
     // 毎週のお休み (日曜午後など) は「お休み」。毎週のことなので、
     // 「停止」と出し続けると何かあったように見える
     var weekly = cats.some(function (c) { return c.reason === 'weekly_closed'; });
+    // 1 行で。2 行にすると縦に長くなる (2026-09 オーナー確認)
     return open ? '<div class="y">○</div>'
-      : '<div class="n"><span class="aone-l1">スポーツ走行</span>'
-        + '<span class="aone-l2">' + (weekly ? 'お休み' : '受付停止') + '</span></div>';
+      : '<div class="n">スポーツ走行 ' + (weekly ? 'お休み' : '受付停止') + '</div>';
   }
 
   // RP・貸切が AM 枠か PM 枠か (12:00 開始からは PM)
@@ -524,6 +523,12 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
       }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
+      // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
+      // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
+      // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)
+      if (mode !== 'sport' && day.rental_ok && day.date >= d.today) {
+        html += '<div class="aone-rok">レンタルカート ○</div>';
+      }
       day.events.forEach(function (e) {
         // 「イベント」と「８０分耐久レース」を 2 行に分ける。
         // 種別を頭に付けていないもの (臨時休業など) は 1 行のまま
@@ -575,11 +580,14 @@ const WIDGET_JS = String.raw`
     // 「予約できない日」と読み違えないように書き添える
     if (mode !== 'rental') {
       html += '<p class="aone-note aone-hint">'
-        + '<strong>AM / PM の ○・受付停止は、お持ち込み車両 (スポーツ走行) の走行枠です。</strong>'
-        + 'レンタルカートのご利用 (1 ヒート走行・レースパック・貸切) はこの表示とは別で、'
-        + '営業日であればご利用いただけます。'
-        + '「受付停止」と出ている日でも、レンタルカートは走れることがあります。'
-        + '<a href="' + d.links.site + '">今日走れる？</a> でご確認ください。</p>';
+        + '<strong>AM / PM の ○・受付停止・お休みは、お持ち込み車両 (スポーツ走行) の走行枠です。</strong>'
+        + (mode === 'both'
+            ? '<strong class="aone-rok" style="display:inline">レンタルカート ○</strong>'
+              + ' と出ている日は、<strong>ご予約不要のレンタルカート走行ができます</strong>'
+              + ' (1 ヒート走行・レースパック・貸切)。'
+            : 'レンタルカートのご利用 (1 ヒート走行・レースパック・貸切) はこの表示とは別で、'
+              + '営業日であればご利用いただけます。')
+        + '当日の最新状況は <a href="' + d.links.site + '">今日走れる？</a> をご確認ください。</p>';
     }
 
     el.innerHTML = html;

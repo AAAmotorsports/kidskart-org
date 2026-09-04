@@ -79,6 +79,11 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       am_categories: slimCats(d.am_categories),
       pm_categories: slimCats(d.pm_categories),
       rp_free: d.rp_free,
+      // ご予約不要のレンタルカート走行ができる日か。
+      // 営業していて、RP の枠が 1 つでも生きていれば走れる
+      // (終日のレース・臨時休業・走行中止のときは枠が全部止まる)。
+      // 「受付停止」を見たレンタルのお客様が来られないと思ってしまうのを防ぐ
+      rental_ok: d.business === 'open' && d.rp_free > 0,
       // label は「イベント ８０分耐久レース」のように種別を頭に付けたもの。
       // カレンダーのセルでは 2 行に分けて出したいので、name も別に渡す。
       events: (d.blocks ?? [])
