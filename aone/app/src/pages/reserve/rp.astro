@@ -24,10 +24,15 @@ const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
 const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{2}$/)
   ? Astro.url.searchParams.get('time')!
   : '';
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
-<Base title="レースパックのご予約 | A-ONE サーキット">
-  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
-  <h1>レースパック (RP) のご予約</h1>
+<Base title="レースパックのご予約 | A-ONE サーキット" embed={embed}>
+  {!embed && <a class="back-link" href="/reserve">← 予約メニューに戻る</a>}
+  {showTitle && <h1>レースパック (RP) のご予約</h1>}
   <p class="small muted">
     3 名以上のグループでお楽しみいただけるレースパックです。代表者 1 名がご予約ください。
     開始時間は 10:00〜17:00 の 30 分刻み。17:00 以降のご希望は要相談として承ります。
@@ -261,7 +266,8 @@ const initialTime = (Astro.url.searchParams.get('time') ?? '').match(/^\d{2}:\d{
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '予約できませんでした');
       window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'rp' });
-      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+      // 枠で貼られているときは、枠の中ではなくホームページごと完了ページへ移動する
+      window.aoneGo('/reserve/complete/' + data.id + '?t=' + data.access_token);
     } catch (e2) {
       err.hidden = false;
       err.textContent = e2.message;

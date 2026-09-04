@@ -250,6 +250,26 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
 
   {embed && (
     <script is:inline>
+      // 枠の中でリンクを押したとき、枠の中だけが動くと「サイトの中に別のサイト」に
+      // なってしまう。同じサイトへのリンクはホームページごと移動させる。
+      // 予約メニューを枠で貼ったときに、押した先がヘッダー付きで開くのも防げる
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+        if (!a || (a.target && a.target !== '_self')) return;
+        if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        var u;
+        try { u = new URL(a.getAttribute('href'), location.href); } catch (_e) { return; }
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return;   // tel: mailto: はそのまま
+        if (u.origin !== location.origin) {
+          // 別のサイト (kidskart.org など) は新しいタブで開く。枠の中で開かない
+          a.target = '_blank';
+          a.rel = 'noopener';
+          return;
+        }
+        e.preventDefault();
+        window.aoneGo(u.pathname + u.search + u.hash);
+      });
+
       // 中身の高さを親ページに知らせる。これで枠の中にスクロールバーが出ない
       (function () {
         var last = 0;

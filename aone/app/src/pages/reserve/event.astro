@@ -20,12 +20,18 @@ const events = await openEvents(env);
 // ?event=<id> で最初から 1 つ選んだ状態にできる (カレンダーから飛んで来たとき)
 const picked = Astro.url.searchParams.get('event') ?? '';
 const tel = env.PUBLIC_SITE_TEL || '092-919-7186';
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
 <Base
   title="イベント参加申込 | A-ONE サーキット"
-  description="A-ONE サーキットのレース・イベントの参加申込。耐久・スプリント・シリーズ戦の受付中一覧から選んでお申し込みいただけます。">
-  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
-  <h1>イベント参加申込</h1>
+  description="A-ONE サーキットのレース・イベントの参加申込。耐久・スプリント・シリーズ戦の受付中一覧から選んでお申し込みいただけます。"
+  embed={embed}>
+  {!embed && <a class="back-link" href="/reserve">← 予約メニューに戻る</a>}
+  {showTitle && <h1>イベント参加申込</h1>}
 
   {events.length === 0 ? (
     <div class="card">
@@ -255,7 +261,8 @@ const tel = env.PUBLIC_SITE_TEL || '092-919-7186';
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'お申し込みできませんでした');
-        location.href = '/reserve/event/done?n=' + encodeURIComponent(data.entry_number);
+        // 枠で貼られているときはホームページごと移動する
+        window.aoneGo('/reserve/event/done?n=' + encodeURIComponent(data.entry_number));
       } catch (err) {
         fail(err.message);
       }

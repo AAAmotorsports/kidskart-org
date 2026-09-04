@@ -32,10 +32,15 @@ const rpSummary = !state
       : rpOpen.length === state.rp.slots.length
         ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} 空きあり`
         : `本日は ${rpOpen[0].time}〜 空きあり`;
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
-<Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのレースパック・スポーツ走行・貸切・ナイターの予約メニュー">
-  <a class="back-link" href="/">← トップに戻る</a>
-  <h1>ご予約</h1>
+<Base title="予約する | A-ONE サーキット" description="A-ONE サーキットのレースパック・スポーツ走行・貸切・ナイターの予約メニュー" embed={embed}>
+  {!embed && <a class="back-link" href="/">← トップに戻る</a>}
+  {showTitle && <h1>ご予約</h1>}
 
   {state && state.business.status !== 'open' && (
     <div class="notice warn" style="margin-bottom:1rem">
