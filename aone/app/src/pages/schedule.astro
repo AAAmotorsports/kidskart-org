@@ -84,11 +84,12 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
 
 /**
  * 止まっているときの言い方。
- * 毎週のお休み (日曜午後など) は「受付停止」ではなく「お休み」と書く。
- * 毎週のことなので「停止」と出し続けると、何かあったように見える (2026-09 オーナー確認)。
+ * 毎週のお休み (日曜午後など) は「不可」。毎週のことなので「受付停止」と
+ * 出し続けると何かあったように見える、という理由で分けている
+ * (2026-09 オーナー確認。最初「お休み」にしたが「不可」に変更)。
  */
 function sessionClosedLabel(cats: { reason?: string }[]): string {
-  return (cats ?? []).some((c) => c.reason === 'weekly_closed') ? 'お休み' : '受付停止';
+  return (cats ?? []).some((c) => c.reason === 'weekly_closed') ? '不可' : '受付停止';
 }
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
@@ -257,7 +258,7 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
 
       {showSport && (
         <p class="tiny notice info" style="margin-top:.4rem">
-          <strong>AM / PM の ○・受付停止・お休みは、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
+          <strong>AM / PM の ○・受付停止・不可は、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
           {showRental
             ? <>
                 <strong class="rental-ok" style="display:inline">レンタルカート ○</strong>
