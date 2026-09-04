@@ -81,6 +81,15 @@ function isPmBooking(time: string): boolean {
 function sessionOpen(cats: { status: string; requires_reservation: boolean; running: boolean }[]): boolean {
   return (cats ?? []).some((c) => c.status === 'open' && (!c.requires_reservation || c.running));
 }
+
+/**
+ * 止まっているときの言い方。
+ * 毎週のお休み (日曜午後など) は「受付停止」ではなく「お休み」と書く。
+ * 毎週のことなので「停止」と出し続けると、何かあったように見える (2026-09 オーナー確認)。
+ */
+function sessionClosedLabel(cats: { reason?: string }[]): string {
+  return (cats ?? []).some((c) => c.reason === 'weekly_closed') ? 'お休み' : '受付停止';
+}
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
   <div class="spread" style="margin-bottom:.8rem">
@@ -211,7 +220,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                                      (2026-09 オーナー指摘) */
                                   : <div class="ng">
                                       <span class="l1">スポーツ走行</span>
-                                      <span class="l2">受付停止</span>
+                                      <span class="l2">{sessionClosedLabel(cats as any)}</span>
                                     </div>
                             )}
                           </div>

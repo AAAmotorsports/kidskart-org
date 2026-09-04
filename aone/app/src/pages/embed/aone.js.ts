@@ -300,10 +300,13 @@ const WIDGET_JS = String.raw`
     });
     // 空いている枠は ○。止まっているときは**何の受付が止まっているか**を書く。
     // 「受付停止」だけだと、レンタルカートのお客様まで予約できないと
-    // 思ってしまう (2026-09 オーナー指摘)
+    // 思ってしまう (2026-09 オーナー指摘)。
+    // 毎週のお休み (日曜午後など) は「お休み」。毎週のことなので、
+    // 「停止」と出し続けると何かあったように見える
+    var weekly = cats.some(function (c) { return c.reason === 'weekly_closed'; });
     return open ? '<div class="y">○</div>'
       : '<div class="n"><span class="aone-l1">スポーツ走行</span>'
-        + '<span class="aone-l2">受付停止</span></div>';
+        + '<span class="aone-l2">' + (weekly ? 'お休み' : '受付停止') + '</span></div>';
   }
 
   // RP・貸切が AM 枠か PM 枠か (12:00 開始からは PM)

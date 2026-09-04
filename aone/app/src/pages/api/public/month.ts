@@ -51,6 +51,9 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     status: c.status,
     running: c.running,
     requires_reservation: c.requires_reservation,
+    // 毎週のお休み (日曜午後など) と、レース・貸切などによる受付停止を
+    // 書き分けるのに使う
+    reason: c.reason,
   }));
 
   return new Response(JSON.stringify({
