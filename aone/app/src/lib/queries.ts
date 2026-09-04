@@ -479,7 +479,23 @@ export interface OpenEvent {
   vehicle_rules_url: string | null;
   classes: string[];
   note: string | null;
+  /** アップロードした資料 (エントリーリスト・タイムスケジュール等) */
+  files: EventFile[];
   entries: number;
+}
+
+/** イベントの配布資料 1 件 (中身は含まない)。 */
+export interface EventFile {
+  id: string;
+  kind: string;
+  title: string;
+  file_name: string;
+  size_bytes: number;
+  is_public: boolean;
+  sort_order: number;
+  uploaded_at: string;
+  /** 配布用の URL (/files/event/<id>) */
+  url: string;
 }
 
 export async function openEvents(env: Env): Promise<OpenEvent[]> {
@@ -608,6 +624,47 @@ export interface EventEntry {
 }
 
 /** 管理用。日付か開催イベントで絞る。どちらも無ければ今日以降を新しい順に */
+/** 予定を 1 つ読む (イベントの資料ページ用)。 */
+export async function blockById(env: Env, id: string): Promise<any | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin(env)
+      .from('aone_blocks').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  } catch (e) {
+    console.warn('[queries] blockById 失敗', e);
+    return null;
+  }
+}
+
+/**
+ * イベントの配布資料の一覧。中身 (base64) は返さない。
+ * all = true で非公開のものも含める (管理画面用)。
+ */
+export async function eventFiles(env: Env, blockId: string, all = false): Promise<any[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin(env)
+      .rpc('aone_event_file_list', { p_block_id: blockId, p_all: all });
+    if (error) throw error;
+    return (data ?? []) as any[];
+  } catch (e) {
+    console.warn('[queries] eventFiles 失敗', e);
+    return [];
+  }
+}
+
+/** 公開向けのイベント 1 件 (資料つき)。 */
+export async function publicEvent(env: Env, id: string): Promise<any | null> {
+  try {
+    const { data, error } = await getSupabase(env).rpc('aone_public_event', { p_id: id });
+    if (error) throw error;
+    return data ?? null;
+  } catch (e) {
+    console.warn('[queries] publicEvent 失敗', e);
+    return null;
+  }
+}
+
 export async function eventEntries(
   env: Env,
   opt: { date?: string; blockId?: string; limit?: number } = {},

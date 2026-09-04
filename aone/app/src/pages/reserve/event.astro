@@ -194,12 +194,14 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
           (i === 0 ? ' checked' : '') + ' /> ' + c + '</label>';
       }).join('');
 
-      // 規則書のリンクはイベントごとに登録されたものだけ出す
+      // 規則書のリンクはイベントごとに登録されたものだけ出す。
+      // アップロードした資料 (エントリーリスト・タイムスケジュール) も同じ場所に並べる
       const links = [];
       if (e.rules_url) links.push(['特別規則書', e.rules_url]);
       if (e.vehicle_rules_url) links.push(['車輌規則', e.vehicle_rules_url]);
+      (e.files || []).forEach(function (f) { links.push([f.title, f.url]); });
       $('rules-links').innerHTML = links.map(function (l) {
-        return '<a href="' + l[1] + '" target="_blank" rel="noopener">' + l[0] + 'を読む →</a>';
+        return '<a href="' + l[1] + '" target="_blank" rel="noopener">' + l[0] + 'を見る →</a>';
       }).join('');
 
       $('msg').hidden = true;

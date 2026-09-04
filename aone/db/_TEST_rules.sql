@@ -982,6 +982,73 @@ begin
       '25-11 RP の金額に時間が効いてしまっている';
   end;
 
+  -- =========================================================================
+  raise notice '--- 26. イベントの配布資料 (PDF)';
+  -- =========================================================================
+  declare
+    d_ev  date := aone_today() + 100;
+    ev_id uuid;
+    f_id  uuid;
+    files jsonb;
+  begin
+    insert into aone_blocks (date, kind, title, scope, is_public, entry_open,
+                             entry_type, entry_price, entry_unit)
+    values (d_ev, 'event', '資料テスト戦', 'all', true, true, 'sprint', 7000, 'person')
+    returning id into ev_id;
+
+    assert aone_event_file_list(ev_id) = '[]'::jsonb, '26-1 まだ無いのに資料が出る';
+
+    insert into aone_event_files (block_id, kind, title, file_name, size_bytes, data)
+    values (ev_id, 'entry_list', 'エントリーリスト', 'entry.pdf', 1234, 'JVBERi0=')
+    returning id into f_id;
+    insert into aone_event_files (block_id, kind, title, file_name, size_bytes, data, sort_order)
+    values (ev_id, 'timetable', 'タイムスケジュール', 'time.pdf', 2345, 'JVBERi0=', 1);
+
+    files := aone_event_file_list(ev_id);
+    assert jsonb_array_length(files) = 2, '26-2 資料が 2 件にならない';
+    assert files->0->>'title' = 'エントリーリスト', '26-3 並び順が違う';
+    assert files->0->>'url' = '/files/event/' || f_id, '26-4 配布 URL が組み立てられていない';
+    assert (files->0->'size_bytes')::int = 1234, '26-5 大きさが出ない';
+    -- 中身 (base64) は一覧に混ぜない。一覧を開くだけで何 MB も流れてしまう
+    assert not (files->0 ? 'data'), '26-6 一覧に中身が入っている';
+
+    -- 非公開にすると一覧から消える。管理画面 (p_all) には残る
+    update aone_event_files set is_public = false where id = f_id;
+    assert jsonb_array_length(aone_event_file_list(ev_id)) = 1,
+      '26-7 非公開にしても公開一覧に出る';
+    assert jsonb_array_length(aone_event_file_list(ev_id, true)) = 2,
+      '26-8 管理画面から非公開のものが見えない';
+    update aone_event_files set is_public = true where id = f_id;
+
+    -- 受付中イベントの一覧にも資料が付く (申込ページで出すため)
+    r := (select x from jsonb_array_elements(aone_open_events()) x
+           where x->>'id' = ev_id::text);
+    assert r is not null, '26-9 受付中イベントに出てこない';
+    assert jsonb_array_length(r->'files') = 2, '26-10 一覧に資料が付いていない';
+
+    -- 公開向けの 1 件読み
+    r := aone_public_event(ev_id);
+    assert r->>'title' = '資料テスト戦', '26-11 公開イベントが読めない';
+    assert (r->>'accepting')::boolean, '26-12 受付中にならない';
+    assert jsonb_array_length(r->'files') = 2, '26-13 資料が付いてこない';
+
+    -- 公開していない予定は出さない
+    update aone_blocks set is_public = false where id = ev_id;
+    assert aone_public_event(ev_id) is null, '26-14 非公開の予定が公開ページに出る';
+    update aone_blocks set is_public = true where id = ev_id;
+
+    -- 締切を過ぎても資料は見せる (リザルト等)。ただし受付は閉じる
+    update aone_blocks set entry_deadline = aone_today() - 1 where id = ev_id;
+    r := aone_public_event(ev_id);
+    assert not (r->>'accepting')::boolean, '26-15 締切後も受付中のまま';
+    assert jsonb_array_length(r->'files') = 2, '26-16 締切後に資料が見られない';
+
+    -- 予定を消したら資料も消える
+    delete from aone_blocks where id = ev_id;
+    assert (select count(*) from aone_event_files where block_id = ev_id) = 0,
+      '26-17 予定を消しても資料が残る';
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

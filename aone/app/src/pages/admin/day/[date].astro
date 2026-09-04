@@ -543,6 +543,9 @@ const surface = state?.surface.status ?? '';
                 entry_note: b.entry_note ?? '',
               })}>編集</button>
               <button class="btn sm blk-del" data-id={b.id}>削除</button>
+              {b.entry_open && (
+                <a class="btn sm ghost" href={`/admin/event/${b.id}`}>資料 (PDF)</a>
+              )}
             </div>
           </div>
         ))}
