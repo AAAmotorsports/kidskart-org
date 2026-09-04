@@ -93,6 +93,15 @@ const WIDGET_JS = String.raw`
     '  font-size:.92em;border:1px solid var(--aone-line);background:#fff;color:var(--aone-ink)}',
     '.aone-btn.primary{background:var(--aone-red);border-color:var(--aone-red);color:#fff}',
     '.aone-note{font-size:.78em;color:var(--aone-ink3);margin-top:8px}',
+    // 予約不要のレンタルカート走行
+    '.aone-rent{border:1px solid var(--aone-line);border-radius:10px;padding:10px 12px;margin-top:10px}',
+    '.aone-rent.ok{border-color:#b9e3cf;background:var(--aone-green-bg)}',
+    '.aone-rent-line{font-weight:700;font-size:1.02em;margin-top:4px}',
+    '.aone-rent-line .y{color:var(--aone-green);font-size:1.2em;margin-right:4px}',
+    '.aone-rent-line .n{color:var(--aone-red);font-size:1.2em;margin-right:4px}',
+    '.aone-rent-warn{font-size:.8em;font-weight:700;color:var(--aone-red);margin-top:3px}',
+    '.aone-tag{font-size:.72em;font-weight:700;margin-left:6px;padding:1px 6px;border-radius:999px;',
+    '  background:#fff;border:1px solid var(--aone-line);color:var(--aone-ink3)}',
     // レンタルのお客様への注記。読み飛ばされると意味がないので枠で囲む
     '.aone-hint{border:1px solid var(--aone-line);border-left:3px solid var(--aone-green);',
     '  border-radius:0 8px 8px 0;padding:8px 10px;background:#f7fbf9;color:var(--aone-ink)}',
@@ -192,6 +201,11 @@ const WIDGET_JS = String.raw`
     });
   }
 
+  /** 2200 → 「2,200 円」。予約システム側の表示と揃える */
+  function yen(n) {
+    return (n == null ? '—' : Number(n).toLocaleString('ja-JP')) + ' 円';
+  }
+
   function get(url) {
     return fetch(url, { credentials: 'omit' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -259,9 +273,30 @@ const WIDGET_JS = String.raw`
       html += '<p class="aone-note">小学生以下のお子様は '
         + '<a href="https://kidskart.org/" target="_blank" rel="noopener">'
         + 'キッズカートアカデミー (kidskart.org) →</a> で承っています。</p>';
-
       html += '<div class="aone-rp"><b>レースパック (RP)</b>' + esc(d.rp.summary)
         + '<span class="aone-note"> ／ ' + d.rp.min_party + ' 名以上・30 分刻み</span></div>';
+    }
+
+    // 予約不要のレンタルカート走行。いちばん多いお問い合わせなのに、
+    // これまでどこにも出していなかった (2026-09 オーナー指摘)。
+    // スポーツ走行の ○✕ と混ざらないよう、独立した枠で出す。
+    // 休業・走行中止の日は出さない (上で「お休みです」と伝えているし、
+    // 休業日に ✕ を並べると「埋まっている」に見える)
+    if (d.rental && (!d.business || d.business.open)) {
+      var rt = d.rental;
+      html += '<div class="aone-rent' + (rt.available ? ' ok' : '') + '">'
+        + '<b>レンタルカート走行</b><span class="aone-tag">ご予約不要</span>'
+        + '<div class="aone-rent-line">'
+        + (rt.available
+            ? '<span class="y">○</span> 走れます'
+              + '<span class="aone-note"> — 営業時間内にお越しください</span>'
+            : '<span class="n">✕</span> ' + esc(rt.note || 'ご利用いただけません'))
+        + '</div>'
+        + (rt.available && rt.note
+            ? '<div class="aone-rent-warn">※ ' + esc(rt.note) + '</div>' : '')
+        + '<div class="aone-note">1 ヒート ' + yen(rt.price) + ' / ' + rt.minutes + ' 分。'
+        + 'ヘルメット・グローブは無料でお貸しします。</div>'
+        + '</div>';
     }
 
     if (d.blocks && d.blocks.length) {

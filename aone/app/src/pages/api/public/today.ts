@@ -106,6 +106,29 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
 
   const badge = openBadge(state.business.status, phase);
 
+  // 予約不要のレンタルカート走行 (1 ヒート)。
+  // いちばん多いお問い合わせなのに、これまでどこにも出していなかった
+  // (2026-09 オーナー指摘)。走れるかどうかは
+  //   ・営業しているか
+  //   ・終日止める予定 (レース・イベント・臨時休業) が入っていないか
+  // で決まる。時間帯を区切る貸切は「その時間だけ」なので ✕ にはしない
+  const businessOpen = !['cancelled', 'closed'].includes(state.business.status);
+  const fullDayBlock = state.blocks.find((b) => b.is_public && b.scope === 'all');
+  const rental = {
+    available: businessOpen && !fullDayBlock,
+    price: cfg?.rental_heat_price ?? 2200,
+    minutes: cfg?.rental_heat_minutes ?? 7,
+    label: 'レンタルカート走行',
+    // 走れないとき・注意がいるときだけ一言。無ければ null
+    note: !businessOpen
+      ? `${BUSINESS_LABELS[state.business.status] ?? state.business.status}のためご利用いただけません`
+      : fullDayBlock
+        ? `${fullDayBlock.public_label}のためご利用いただけません`
+        : state.charter.confirmed_charter
+          ? '貸切の時間帯はご利用いただけません'
+          : null,
+  };
+
   return new Response(JSON.stringify({
     date: state.date,
     label: jaDate(state.date),
@@ -137,6 +160,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     } : null,
     sessions,
     rp,
+    rental,
     blocks: state.blocks
       .filter((b) => b.is_public)
       .map((b) => ({

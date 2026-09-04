@@ -62,6 +62,25 @@ function visibleCats<T extends { requires_reservation: boolean; running: boolean
 const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
 // 走行中止・休業の日は「走れない」。営業確認中はまだ走れる可能性がある
 const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
+
+// 予約不要のレンタルカート走行。走れるかどうかは
+//   ・営業しているか
+//   ・終日止める予定 (レース・イベント・臨時休業) が入っていないか
+// で決まる。時間帯を区切る貸切は「その時間だけ」なので ✕ にはしない。
+// /api/public/today の rental と同じ判定 (ウィジェットと食い違わせない)
+const fullDayBlock = publicBlocks.find((b) => b.scope === 'all');
+const rental = {
+  available: !closedToday && !fullDayBlock,
+  price: (cfg?.rental_heat_price as number) ?? 2200,
+  minutes: (cfg?.rental_heat_minutes as number) ?? 7,
+  note: closedToday
+    ? `${BUSINESS_LABELS[state?.business.status ?? ''] ?? 'お休み'}のためご利用いただけません`
+    : fullDayBlock
+      ? `${fullDayBlock.public_label}のためご利用いただけません`
+      : state?.charter.confirmed_charter
+        ? '貸切の時間帯はご利用いただけません'
+        : null,
+};
 const surfaceToday = state?.surface.status ?? null;
 // 営業状況 (休業・中止) と、時間帯 (準備中・営業中・終了) を 1 つのバッジにまとめる
 const nextClosed = ['cancelled', 'closed'].includes(next?.business.status ?? '');
@@ -197,6 +216,32 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
         </div>
       )}
 
+      {/* 予約不要のレンタルカート走行。いちばん多いお問い合わせなのに、
+          これまでどこにも出していなかった (2026-09 オーナー指摘)。
+          スポーツ走行の ○✕ と混ざらないよう、独立した枠で出す。
+          休業・走行中止の日は出さない — 見出しで「お休みです」と伝えているし、
+          休業日に ✕ を並べると「埋まっている」に見える (2026-08 オーナー指摘) */}
+      {!closedToday && (
+      <div class:list={['card', 'rental-card', rental.available && 'ok']}>
+        <h2>レンタルカート走行 <span class="tag">ご予約不要</span></h2>
+        {rental.available ? (
+          <p class="rental-line"><strong class="mark">○</strong> 走れます
+            <span class="muted"> — 営業時間内にお越しください</span></p>
+        ) : (
+          <p class="rental-line"><strong class="mark ng">✕</strong>
+            <span> {rental.note}</span></p>
+        )}
+        {rental.available && rental.note && (
+          <p class="tiny warn-note" style="margin:.3rem 0 0">※ {rental.note}</p>
+        )}
+        <p class="tiny muted" style="margin:.35rem 0 0">
+          1 ヒート {rental.price.toLocaleString('ja-JP')} 円 / {rental.minutes} 分。
+          ヘルメット・グローブは無料でお貸しします。
+          グループでレースをしたい方は上のレースパックをご覧ください。
+        </p>
+      </div>
+      )}
+
       {publicBlocks.length > 0 && (
         <div class="card">
           <h2>{dayWord}の予定</h2>
@@ -283,6 +328,12 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
   .cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.5rem}
   .cat{text-align:center;border:1px solid var(--line);border-radius:10px;padding:.5rem .2rem;background:var(--bg-2)}
   .cat.walkin{background:var(--green-soft);border-color:#b9e3cf}
+  /* 予約不要のレンタルカート走行。ここを見に来る人がいちばん多い */
+  .rental-card.ok{border-color:#b9e3cf;background:var(--green-soft)}
+  .rental-line{margin:.2rem 0;font-size:1.02rem;font-weight:700}
+  .rental-line .mark{font-size:1.25rem;color:#14724a;margin-right:.3rem}
+  .rental-line .mark.ng{color:var(--red)}
+  .warn-note{color:var(--red-deep);font-weight:700}
   .walkin-txt{color:#14724a;font-weight:700}
   .cat-name{font-size:.78rem;font-weight:700;color:var(--ink-2);margin-bottom:.2rem}
   .rp-strip{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
