@@ -174,6 +174,12 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
               {d.surface && !isPast && (
                 <div class="tiny sf">{SURFACE_LABELS[d.surface] ?? d.surface}</div>
               )}
+              {/* ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
+                  AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
+                  レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘) */}
+              {showRental && !isPast && d.business === 'open' && d.rp_free > 0 && (
+                <div class="tiny rental-ok">レンタルカート ○</div>
+              )}
               {publicBlocks.map((b) => (
                 /* 「イベント」と名前を 2 行に。種別を頭に付けないもの (臨時休業など) は 1 行 */
                 <div class="tiny ev">
@@ -218,10 +224,8 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
                                   /* 何の受付が止まっているのかを書く。「受付停止」だけだと、
                                      レンタルカートのお客様まで予約できないと思ってしまう
                                      (2026-09 オーナー指摘) */
-                                  : <div class="ng">
-                                      <span class="l1">スポーツ走行</span>
-                                      <span class="l2">{sessionClosedLabel(cats as any)}</span>
-                                    </div>
+                                  /* 1 行で。2 行にすると縦に長くなる (2026-09 オーナー確認) */
+                                  : <div class="ng">スポーツ走行 {sessionClosedLabel(cats as any)}</div>
                             )}
                           </div>
                         </div>
@@ -253,11 +257,18 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
 
       {showSport && (
         <p class="tiny notice info" style="margin-top:.4rem">
-          <strong>AM / PM の ○・受付停止は、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
-          <strong>レンタルカート</strong>のご利用（1 ヒート走行・レースパック・貸切）は
-          この表示とは別で、<strong>営業日であればご利用いただけます</strong>。
-          「受付停止」と出ている日でも、レンタルカートは走れることがあります。
-          <a href="/">今日走れる？</a> でその日の状況をご確認いただくか、
+          <strong>AM / PM の ○・受付停止・お休みは、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
+          {showRental
+            ? <>
+                <strong class="rental-ok" style="display:inline">レンタルカート ○</strong>
+                {' '}と出ている日は、<strong>ご予約不要のレンタルカート走行ができます</strong>
+                （1 ヒート走行・レースパック・貸切）。
+              </>
+            : <>
+                <strong>レンタルカート</strong>のご利用（1 ヒート走行・レースパック・貸切）は
+                この表示とは別で、<strong>営業日であればご利用いただけます</strong>。
+              </>}
+          当日の最新状況は <a href="/">今日走れる？</a> をご確認いただくか、
           お電話でお問い合わせください。
         </p>
       )}
@@ -354,9 +365,8 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
   .sess-items{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
   .sess-items .ok{color:#14724a}
   .sess-items .ng{color:var(--ink-4)}
-  /* 「スポーツ走行 / 受付停止」の 2 行。何が止まっているのかを分かるようにする */
-  .sess-items .ng .l1{display:block;font-size:.9em;opacity:.85}
-  .sess-items .ng .l2{display:block}
+  /* ご予約不要のレンタルカート走行ができる日 */
+  .rental-ok{color:#14724a;font-weight:800;font-size:.92em;margin-bottom:.15rem}
   /* すでに入っている RP・貸切 (旧スケジュールページの「RP ○○様」に相当) */
   .bk{line-height:1.35;border-left:3px solid var(--red);padding-left:.25rem;font-weight:700;
     color:var(--red-deep);max-width:100%}

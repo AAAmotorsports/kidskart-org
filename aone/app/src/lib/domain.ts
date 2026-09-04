@@ -428,6 +428,29 @@ export function hhmm(t: string | null | undefined): string {
   return t ? t.slice(0, 5) : '';
 }
 
+/**
+ * キャンセル規定。文面が画面とメールで食い違わないよう、ここ 1 か所に置く。
+ *
+ * レンタル (レースパック・貸切・ナイター) は 2026-09 にオーナー確認で改定:
+ *   前日 18 時までの連絡は無料 / 当日のキャンセルは 50% / 連絡なしは 100%。
+ * スポーツ走行は天候の影響が大きいので、これまでどおり当日でも無料。
+ */
+export const CANCEL_POLICY_RENTAL = [
+  '前日 18 時までにご連絡いただければ、キャンセル料はいただきません。',
+  '当日のキャンセルは、料金の 50% を申し受けます。',
+  'ご連絡のないキャンセル (無断キャンセル) は、料金 100% を申し受けます。',
+] as const;
+
+export const CANCEL_POLICY_SPORT_LINES = [
+  '天候の影響が大きいため、当日でもご連絡いただければキャンセル可能です (キャンセル料なし)。',
+  '当日ご連絡のないキャンセル (無断キャンセル) は、料金 100% を申し受けます。',
+] as const;
+
+/** その予約に当てはまるキャンセル規定。持ち込みのスポーツ走行だけ別。 */
+export function cancelPolicyLines(kind: string | null | undefined): readonly string[] {
+  return kind === 'sport' ? CANCEL_POLICY_SPORT_LINES : CANCEL_POLICY_RENTAL;
+}
+
 export function yen(n: number | null | undefined): string {
   return n == null ? '—' : `¥${n.toLocaleString('ja-JP')}`;
 }
