@@ -128,6 +128,20 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
     .choice input{accent-color:var(--red)}
     .choice label:has(input:checked){border-color:var(--red);background:#fdeef0;color:var(--red-deep)}
     .choice label:has(input:disabled){opacity:.4;cursor:not-allowed}
+    /* 説明つきの選択肢 (貸切の種別など)。
+       丸いピルの中で名前と説明を横に並べると、幅の狭い画面で名前のほうが
+       押しつぶされ「コー / ス貸 / 切の / み」と 1 文字ずつ折り返される。
+       説明があるときは 1 行 1 つにして、名前の下に説明を置く */
+    .choice label:has(small){
+      flex:1 1 100%;display:grid;grid-template-columns:auto 1fr;align-items:start;
+      gap:.15rem .55rem;border-radius:12px;padding:.6rem .85rem;
+    }
+    .choice label:has(small) input{grid-row:1 / span 2;align-self:start;margin-top:.2rem}
+    .choice label:has(small) > span{grid-column:2;grid-row:1}
+    .choice label:has(small) small{
+      grid-column:2;grid-row:2;font-size:.82rem;font-weight:600;
+      line-height:1.55;color:var(--ink-2);
+    }
 
     /* ---- バッジ / 記号 ---- */
     .badge{display:inline-flex;align-items:center;gap:.25rem;padding:.12rem .55rem;border-radius:100px;
