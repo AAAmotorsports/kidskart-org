@@ -213,7 +213,11 @@ npm run build
 | `/api/public/today` | 今日の走行状況 (個人情報なし・CORS 許可) |
 | `/api/public/month?ym=YYYY-MM` | 月間スケジュール |
 | `/embed/aone.js` | 上記を描画する貼り付けウィジェット / 予約フォームの枠 |
+<<<<<<< HEAD
 | `/reserve/*?embed=1` | 枠の中に出す用の表示 (ヘッダー・フッターなし・noindex)。`data-kind` は `sport` / `rp` / `charter` / `night` / `event` / `menu` |
+=======
+| `/reserve/sport?embed=1` | 枠の中に出す用の表示 (ヘッダー・フッターなし・noindex) |
+>>>>>>> origin/main
 
 ## 画面一覧
 
