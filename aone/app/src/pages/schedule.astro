@@ -163,7 +163,6 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
               {d.surface && !isPast && (
                 <div class="tiny sf">{SURFACE_LABELS[d.surface] ?? d.surface}</div>
               )}
-              {entryHref && <div class="tiny entry">参加申込 受付中 →</div>}
               {publicBlocks.map((b) => (
                 /* 「イベント」と名前を 2 行に。種別を頭に付けないもの (臨時休業など) は 1 行 */
                 <div class="tiny ev">
@@ -173,6 +172,9 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                   <span class="l2">{b.public_label}</span>
                 </div>
               ))}
+              {/* 何のイベントかを先に出してから申込へ誘う。
+                  貼り付けウィジェットと並び順を揃える (食い違って見えるため) */}
+              {entryHref && <div class="tiny entry">参加申込 受付中 →</div>}
               {isPast ? null : (
                 <div class="tiny sessions">
                   {([['AM', d.am_categories, false], ['PM', d.pm_categories, true]] as const).map(

@@ -42,6 +42,13 @@ export interface ReservationForMail {
   contact_phone?: string | null;
   access_token: string;
   amount?: number | null;
+  /**
+   * カテゴリーの表示名 (ミニバイク等)。category_code から辿ったもの。
+   * これが無いとスポーツ走行のメールに車両の種類が載らず、
+   * 「カート: 1 台」だけが目に入って**カートを予約したように読める**
+   * (2026-09 オーナー指摘: ミニバイクで予約したのにカートで届いた)。
+   */
+  aone_categories?: { name?: string | null } | null;
 }
 
 /**
@@ -52,7 +59,7 @@ export interface ReservationForMail {
 export const MAIL_COLUMNS =
   'id,reservation_number,kind,status,date,session,start_time,end_time,category_code,' +
   'night_kind,charter_type,party_size,vehicle_count,request_note,contact_name,contact_email,contact_phone,' +
-  'access_token,amount';
+  'access_token,amount,aone_categories(name)';
 
 export interface SendArgs {
   to: string;
@@ -165,6 +172,16 @@ function needsCallback(status: string): boolean {
 /** お客様への折り返し期限 (時間)。過ぎたら電話してくださいとご案内する */
 const CALLBACK_HOURS = 48;
 
+/** カテゴリーの表示名。取れなければコードをそのまま (空なら null)。 */
+function categoryName(r: ReservationForMail): string | null {
+  return r.aone_categories?.name || r.category_code || null;
+}
+
+/** 貸切かどうか (ナイターの貸切を含む)。台数の呼び方を分けるのに使う。 */
+function isCharter(r: ReservationForMail): boolean {
+  return r.kind === 'charter' || (r.kind === 'night' && r.night_kind === 'charter');
+}
+
 function detailLines(r: ReservationForMail): string[] {
   const lines = [
     `予約番号: ${r.reservation_number}`,
@@ -177,8 +194,15 @@ function detailLines(r: ReservationForMail): string[] {
     `時間: ${timeRangeLabel(r)}`,
     `人数: ${r.party_size} 名`,
   ];
-  // 貸切 (ナイターの貸切を含む) は台数で料金が変わるので必ず出す
-  if (r.vehicle_count != null) lines.push(`カート: ${r.vehicle_count} 台`);
+  // スポーツ走行は「何で走るか」がいちばん大事。これを出さないと、
+  // 下の台数と合わせて「カートの予約」に見えてしまう
+  const cat = categoryName(r);
+  if (cat) lines.push(`車両: ${cat}`);
+  // 貸切 (ナイターの貸切を含む) は台数で料金が変わるので必ず出す。
+  // スポーツ走行の台数は「持ち込む車両の数」なのでカートとは書かない
+  if (r.vehicle_count != null) {
+    lines.push(isCharter(r) ? `カート: ${r.vehicle_count} 台` : `台数: ${r.vehicle_count} 台`);
+  }
   if (r.amount != null) lines.push(`料金: ¥${r.amount.toLocaleString('ja-JP')} (現地でのお支払い)`);
   if ((r.request_note ?? '').trim()) lines.push(`ご要望: ${r.request_note!.trim()}`);
   return lines;
@@ -403,9 +427,10 @@ export function adminChangeMail(
   add('日付', jaDate(before.date), jaDate(after.date));
   add('時間', timeRangeLabel(before), timeRangeLabel(after));
   add('人数', `${before.party_size} 名`, `${after.party_size} 名`);
-  add('カート台数', before.vehicle_count ? `${before.vehicle_count} 台` : null,
+  add(isCharter(after) ? 'カート台数' : '台数',
+      before.vehicle_count ? `${before.vehicle_count} 台` : null,
       after.vehicle_count ? `${after.vehicle_count} 台` : null);
-  add('カテゴリー', before.category_code, after.category_code);
+  add('車両', categoryName(before), categoryName(after));
   add('金額', before.amount != null ? `¥${before.amount.toLocaleString('ja-JP')}` : null,
       after.amount != null ? `¥${after.amount.toLocaleString('ja-JP')}` : null);
   add('状態', STATUS_LABELS[before.status] ?? before.status, STATUS_LABELS[after.status] ?? after.status);
