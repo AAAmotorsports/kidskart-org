@@ -194,6 +194,21 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
         </div>
       )}
 
+      {/* 予約不要のレンタルカート走行。いちばん多いお問い合わせなのに、
+          これまでどこにも出していなかった (2026-09 オーナー指摘)。
+          スポーツ走行の ○✕ と混ざらないよう、独立した枠で出す。
+          休業・走行中止の日は出さない — 見出しで「お休みです」と伝えているし、
+          休業日に ✕ を並べると「埋まっている」に見える (2026-08 オーナー指摘) */}
+      {!closedToday && (
+      <div class:list={['card', 'rental-card', rental.available && 'ok']}>
+        <h2>レンタルカート走行 <span class="tag">ご予約不要</span></h2>
+        {rental.available ? (
+          <p class="rental-line"><strong class="mark">○</strong> 走れます
+            <span class="muted"> — 営業時間内にお越しください</span></p>
+        ) : (
+          <p class="rental-line"><strong class="mark ng">✕</strong>
+            <span> {rental.note}</span></p>
+        )}
       {!closedToday && (
         <div class="card">
           <h2>レースパック (RP)</h2>
@@ -216,28 +231,13 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
         </div>
       )}
 
-      {/* 予約不要のレンタルカート走行。いちばん多いお問い合わせなのに、
-          これまでどこにも出していなかった (2026-09 オーナー指摘)。
-          スポーツ走行の ○✕ と混ざらないよう、独立した枠で出す。
-          休業・走行中止の日は出さない — 見出しで「お休みです」と伝えているし、
-          休業日に ✕ を並べると「埋まっている」に見える (2026-08 オーナー指摘) */}
-      {!closedToday && (
-      <div class:list={['card', 'rental-card', rental.available && 'ok']}>
-        <h2>レンタルカート走行 <span class="tag">ご予約不要</span></h2>
-        {rental.available ? (
-          <p class="rental-line"><strong class="mark">○</strong> 走れます
-            <span class="muted"> — 営業時間内にお越しください</span></p>
-        ) : (
-          <p class="rental-line"><strong class="mark ng">✕</strong>
-            <span> {rental.note}</span></p>
-        )}
         {rental.available && rental.note && (
           <p class="tiny warn-note" style="margin:.3rem 0 0">※ {rental.note}</p>
         )}
         <p class="tiny muted" style="margin:.35rem 0 0">
           1 ヒート {rental.price.toLocaleString('ja-JP')} 円 / {rental.minutes} 分。
           ヘルメット・グローブは無料でお貸しします。
-          グループでレースをしたい方は上のレースパックをご覧ください。
+          グループでレースをしたい方は下のレースパックをご覧ください。
         </p>
       </div>
       )}

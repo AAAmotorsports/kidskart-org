@@ -273,8 +273,6 @@ const WIDGET_JS = String.raw`
       html += '<p class="aone-note">小学生以下のお子様は '
         + '<a href="https://kidskart.org/" target="_blank" rel="noopener">'
         + 'キッズカートアカデミー (kidskart.org) →</a> で承っています。</p>';
-      html += '<div class="aone-rp"><b>レースパック (RP)</b>' + esc(d.rp.summary)
-        + '<span class="aone-note"> ／ ' + d.rp.min_party + ' 名以上・30 分刻み</span></div>';
     }
 
     // 予約不要のレンタルカート走行。いちばん多いお問い合わせなのに、
@@ -297,6 +295,13 @@ const WIDGET_JS = String.raw`
         + '<div class="aone-note">1 ヒート ' + yen(rt.price) + ' / ' + rt.minutes + ' 分。'
         + 'ヘルメット・グローブは無料でお貸しします。</div>'
         + '</div>';
+    }
+
+    // レースパックはレンタルカートの下。予約が要るものより、
+    // ふらっと来て走れるものを先に見せる (2026-09 オーナー確認)
+    if (d.business.open && d.rp) {
+      html += '<div class="aone-rp"><b>レースパック (RP)</b>' + esc(d.rp.summary)
+        + '<span class="aone-note"> ／ ' + d.rp.min_party + ' 名以上・30 分刻み</span></div>';
     }
 
     if (d.blocks && d.blocks.length) {
