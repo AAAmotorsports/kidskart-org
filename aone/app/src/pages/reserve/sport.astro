@@ -18,10 +18,15 @@ const focus = dayFocus({
   course_close: cfg?.course_close_time,
 }, today);
 const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
-<Base title="スポーツ走行のご予約 | A-ONE サーキット">
-  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
-  <h1>スポーツ走行のご予約</h1>
+<Base title="スポーツ走行のご予約 | A-ONE サーキット" embed={embed}>
+  {!embed && <a class="back-link" href="/reserve">← 予約メニューに戻る</a>}
+  {showTitle && <h1>スポーツ走行のご予約</h1>}
   <p class="small muted">
     カート・ミニバイク・その他 (大型バイク等) のスポーツ走行枠です。
     同じカテゴリーは何台入っても 1 クラス扱いです。
@@ -164,12 +169,16 @@ const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
     [['am', 'AM'], ['pm', 'PM']].forEach(([key, label]) => {
       const s = state.sport[key];
       const usable = s.categories.some((c) => c.status === 'open' || c.status === 'limited');
+      // 「0 of 2 クラス」は初見で意味が分からない (2026-08 オーナー指摘)。
+      // お客様に必要なのは「あと何組入れるか」なので、残りの数で書く
+      const left = Math.max(0, s.max_classes - s.used_classes);
+      const note = !usable ? '受付停止' : left > 0 ? 'あと ' + left + ' 組' : '満枠';
       const l = document.createElement('label');
       l.innerHTML =
         '<input type="radio" name="session" value="' + key + '"' +
         (usable ? '' : ' disabled') + (session === key && usable ? ' checked' : '') + '> ' +
         label + ' <span class="tiny muted">' + s.start_time + '〜' + s.end_time +
-        ' / ' + s.used_classes + '&nbsp;of&nbsp;' + s.max_classes + ' クラス</span>';
+        ' / ' + note + '</span>';
       sw.appendChild(l);
     });
     // 選択中の時間帯が使えないなら、使える方へ寄せる
@@ -257,7 +266,8 @@ const initialDate = Astro.url.searchParams.get('date') ?? focus.date;
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '予約できませんでした');
       window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'sport' });
-      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+      // 枠で貼られているときは、枠の中ではなくホームページごと完了ページへ移動する
+      window.aoneGo('/reserve/complete/' + data.id + '?t=' + data.access_token);
     } catch (e2) {
       err.hidden = false;
       err.textContent = e2.message;
