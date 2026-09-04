@@ -70,6 +70,8 @@ const filterLabel = date ? jaDate(date) : blockId ? '指定イベント' : '今�
                 {ENTRY_TYPE_LABELS[e.entry_type] ?? e.entry_type}
                 {' ／ '}
                 {entryPriceLabel(e.price, e.unit) ?? '参加費 未設定 (要問合せ表示)'}
+                {' ／ '}
+                資料 {(e.files ?? []).length} 件
               </div>
             </div>
             <div class="cnt"><strong>{e.entries}</strong><span class="tiny"> 件</span></div>

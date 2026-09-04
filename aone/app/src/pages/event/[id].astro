@@ -1,0 +1,109 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { publicEvent } from '@lib/queries';
+import { jaDate, ENTRY_TYPE_LABELS, entryPriceLabel } from '@lib/domain';
+
+export const prerender = false;
+
+// イベントの案内ページ (お客様向け)。
+//
+// エントリーリスト・タイムスケジュールは A-ONE が PDF を作って管理画面から
+// アップロードする。ここはそれを並べて配るだけ。
+// rk-a1.com からはこの URL を貼ってもらう。
+const env = envFrom(Astro.locals);
+const id = Astro.params.id ?? '';
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示
+const embed = Astro.url.searchParams.get('embed') === '1';
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
+
+const ev = /^[0-9a-f-]{36}$/i.test(id) ? await publicEvent(env, id) : null;
+const files: any[] = ev?.files ?? [];
+const kb = (n: number) => (n >= 1024 * 1024
+  ? `${(n / 1024 / 1024).toFixed(1)} MB`
+  : `${Math.max(1, Math.round(n / 1024))} KB`);
+---
+<Base title={ev ? `${ev.title} | A-ONE サーキット` : 'イベント | A-ONE サーキット'} embed={embed}>
+  {!ev ? (
+    <>
+      <h1>イベントが見つかりません</h1>
+      <p class="small muted">
+        URL が違っているか、公開が終了した可能性があります。
+        <a href="/schedule">スケジュール</a>からお探しください。
+      </p>
+    </>
+  ) : (
+    <>
+      {!embed && <a class="back-link" href="/reserve/event">← イベント参加申込に戻る</a>}
+      {showTitle && <h1>{ev.title}</h1>}
+
+      <div class="card">
+        <div class="ev-meta">
+          <div><span class="l">開催日</span><b>{jaDate(ev.date)}</b></div>
+          {ev.start_time && (
+            <div><span class="l">時間</span>{ev.start_time}{ev.end_time ? `〜${ev.end_time}` : '〜'}</div>
+          )}
+          {ev.entry_type && (
+            <div><span class="l">様式</span>{ENTRY_TYPE_LABELS[ev.entry_type] ?? ev.entry_type}</div>
+          )}
+          {ev.entry_type && (
+            <div><span class="l">参加費</span>{entryPriceLabel(ev.price, ev.unit) ?? 'お問い合わせください'}</div>
+          )}
+          {ev.entry_type && <div><span class="l">申込締切</span>{jaDate(ev.deadline)}</div>}
+        </div>
+        {ev.note && <p class="small" style="margin:.6rem 0 0">{ev.note}</p>}
+      </div>
+
+      <div class="card">
+        <h2>資料</h2>
+        {files.length === 0 && !ev.rules_url && !ev.vehicle_rules_url ? (
+          <p class="small muted">
+            準備中です。エントリーリストやタイムスケジュールは、できしだいこちらに掲載します。
+          </p>
+        ) : (
+          <div class="docs">
+            {ev.rules_url && (
+              <a class="doc" href={ev.rules_url} target="_blank" rel="noopener">
+                <span class="doc-ic">📄</span>
+                <span class="doc-t">特別規則書</span>
+              </a>
+            )}
+            {ev.vehicle_rules_url && (
+              <a class="doc" href={ev.vehicle_rules_url} target="_blank" rel="noopener">
+                <span class="doc-ic">📄</span>
+                <span class="doc-t">車輌規則</span>
+              </a>
+            )}
+            {files.map((f) => (
+              <a class="doc" href={f.url} target="_blank" rel="noopener">
+                <span class="doc-ic">📄</span>
+                <span class="doc-t">{f.title}<span class="doc-s">PDF ／ {kb(f.size_bytes)}</span></span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {ev.accepting ? (
+        <a class="btn primary big" href={`/reserve/event?event=${ev.id}`}>このイベントに申し込む</a>
+      ) : ev.entry_type ? (
+        <div class="notice small">
+          このイベントの受付は終了しました。お問い合わせはお電話でお願いします。
+        </div>
+      ) : null}
+    </>
+  )}
+</Base>
+
+<style>
+  .ev-meta{display:flex;flex-direction:column;gap:.35rem;font-size:.95rem}
+  .ev-meta .l{display:inline-block;min-width:5.5em;color:var(--ink-3);font-size:.85rem}
+  .docs{display:flex;flex-direction:column;gap:.5rem}
+  .doc{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem;text-decoration:none;
+    border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  .doc:hover{border-color:var(--red);box-shadow:0 2px 10px rgba(215,38,61,.1)}
+  .doc-ic{font-size:1.3rem}
+  .doc-t{font-weight:700;display:flex;flex-direction:column}
+  .doc-s{font-weight:500;font-size:.78rem;color:var(--ink-3)}
+  .btn.big{display:block;text-align:center;padding:.9rem;font-size:1.05rem}
+</style>

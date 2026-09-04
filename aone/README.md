@@ -214,6 +214,8 @@ npm run build
 | `/api/public/month?ym=YYYY-MM` | 月間スケジュール |
 | `/embed/aone.js` | 上記を描画する貼り付けウィジェット / 予約フォームの枠 |
 <<<<<<< HEAD
+| `/event/<予定id>` | イベントの案内 (エントリーリスト・タイムスケジュールの PDF + 申込ボタン) |
+| `/files/event/<id>` | アップロードした PDF の配布 (公開のものだけ) |
 | `/reserve/*?embed=1` | 枠の中に出す用の表示 (ヘッダー・フッターなし・noindex)。`data-kind` は `sport` / `rp` / `charter` / `night` / `event` / `menu` |
 =======
 | `/reserve/sport?embed=1` | 枠の中に出す用の表示 (ヘッダー・フッターなし・noindex) |

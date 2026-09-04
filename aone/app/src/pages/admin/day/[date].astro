@@ -9,7 +9,7 @@ import {
   BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
   BLOCK_KIND_LABELS, BLOCK_SCOPE_LABELS, STATUS_MARK, blockLabel,
   CONTACT_METHOD_LABELS, CHARTER_TYPE_LABELS, jaDateTime,
-  nameWithHonorific,
+  nameWithHonorific, ENTRY_TYPE_LABELS, ENTRY_TYPE_ORDER, RACE_CLASSES,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -530,8 +530,22 @@ const surface = state?.surface.status ?? '';
                 category_code: b.category_code ?? '',
                 allow_categories: b.allow_categories ?? [],
                 is_public: b.is_public, memo: b.memo ?? '',
+                // 参加申込の設定。ここに載せ忘れると編集欄が空で開き、
+                // 保存した時点で受付が切れて規則書の URL も消える
+                entry_open: b.entry_open ?? false,
+                entry_type: b.entry_type ?? '',
+                entry_price: b.entry_price ?? null,
+                entry_unit: b.entry_unit ?? 'person',
+                entry_deadline: b.entry_deadline ?? '',
+                entry_classes: b.entry_classes ?? [],
+                entry_rules_url: b.entry_rules_url ?? '',
+                entry_vehicle_rules_url: b.entry_vehicle_rules_url ?? '',
+                entry_note: b.entry_note ?? '',
               })}>編集</button>
               <button class="btn sm blk-del" data-id={b.id}>削除</button>
+              {b.entry_open && (
+                <a class="btn sm ghost" href={`/admin/event/${b.id}`}>資料 (PDF)</a>
+              )}
             </div>
           </div>
         ))}
@@ -588,6 +602,62 @@ const surface = state?.surface.status ?? '';
             </div>
           </div>
           <label class="tiny"><input type="checkbox" id="b-public" checked /> 公開スケジュールに掲載する</label>
+
+          {/* 参加申込の受付。ここを出していなかったため、この画面で予定を編集すると
+              受付設定と規則書の URL が消えていた (2026-09 オーナー指摘) */}
+          <div class="entry-box">
+            <label class="tiny"><input type="checkbox" id="b-entry" /> <strong>この予定の参加申込を受け付ける</strong></label>
+            <div id="b-entry-fields" hidden>
+              <div class="two" style="margin-top:.5rem">
+                <div class="field">
+                  <label for="b-entry-type">申込の様式</label>
+                  <select id="b-entry-type">
+                    {ENTRY_TYPE_ORDER.map((t) => <option value={t}>{ENTRY_TYPE_LABELS[t]}</option>)}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="b-entry-deadline">申込締切</label>
+                  <input type="date" id="b-entry-deadline" />
+                  <div class="tiny muted">空欄なら開催日の前日</div>
+                </div>
+              </div>
+              <div class="two">
+                <div class="field">
+                  <label for="b-entry-price">参加費 (円)</label>
+                  <input type="number" id="b-entry-price" min="0" step="100" placeholder="空欄 = 要問合せ" />
+                </div>
+                <div class="field">
+                  <label for="b-entry-unit">単位</label>
+                  <select id="b-entry-unit">
+                    <option value="team">1 チームあたり</option>
+                    <option value="person">1 人あたり</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field" id="b-wrap-entry-classes">
+                <label>参加クラス</label>
+                <div class="choice">
+                  {RACE_CLASSES.map((c) => (
+                    <label><input type="checkbox" class="b-entry-class" value={c} /> {c}</label>
+                  ))}
+                </div>
+                <div class="tiny muted">申込フォームで選べるクラスです。</div>
+              </div>
+              <div class="field">
+                <label for="b-entry-rules">特別規則書 PDF の URL</label>
+                <input type="url" id="b-entry-rules" placeholder="https://rk-a1.com/wp-content/uploads/..." />
+              </div>
+              <div class="field">
+                <label for="b-entry-vrules">車輌規則 PDF の URL</label>
+                <input type="url" id="b-entry-vrules" placeholder="https://rk-a1.com/wp-content/uploads/..." />
+              </div>
+              <div class="field">
+                <label for="b-entry-note">申込フォームに出す補足 (任意)</label>
+                <input type="text" id="b-entry-note" placeholder="レンタルカートは A-ONE でご用意します など" />
+              </div>
+            </div>
+          </div>
+
           <div class="field" style="margin-top:.4rem">
             <input type="text" id="b-memo" placeholder="スタッフメモ (任意)" />
           </div>
@@ -952,6 +1022,17 @@ const surface = state?.surface.status ?? '';
   $('b-scope').addEventListener('change', bSyncScope);
   bSyncScope();
 
+  // 参加申込。様式で聞くことが変わる (耐久はチーム単位 / クラスはシリーズ戦だけ)
+  function bSyncEntry() {
+    $('b-entry-fields').hidden = !$('b-entry').checked;
+    const t = $('b-entry-type').value;
+    $('b-entry-unit').value = t === 'endurance' ? 'team' : 'person';
+    $('b-wrap-entry-classes').hidden = t !== 'series';
+  }
+  $('b-entry').addEventListener('change', bSyncEntry);
+  $('b-entry-type').addEventListener('change', bSyncEntry);
+  bSyncEntry();
+
   // 編集中の予定 id。null なら新規追加
   let bEditId = null;
   function bReset() {
@@ -960,6 +1041,12 @@ const surface = state?.surface.status ?? '';
     $('b-start').value = ''; $('b-end').value = ''; $('b-category').value = '';
     $('b-public').checked = true; $('b-memo').value = '';
     document.querySelectorAll('.b-allow').forEach((el) => { el.checked = false; });
+    $('b-entry').checked = false;
+    $('b-entry-type').value = 'sprint';
+    $('b-entry-price').value = ''; $('b-entry-deadline').value = '';
+    $('b-entry-rules').value = ''; $('b-entry-vrules').value = ''; $('b-entry-note').value = '';
+    document.querySelectorAll('.b-entry-class').forEach((el) => { el.checked = true; });
+    bSyncEntry();
     $('b-save').textContent = '予定を追加';
     $('b-summary').textContent = '予定を追加する';
     $('b-cancel').hidden = true;
@@ -978,6 +1065,19 @@ const surface = state?.surface.status ?? '';
     document.querySelectorAll('.b-allow').forEach((el) => {
       el.checked = (b.allow_categories || []).indexOf(el.value) >= 0;
     });
+    // 参加申込の設定も出す。出さないまま保存すると受付が切れて規則書も消える
+    $('b-entry').checked = !!b.entry_open;
+    $('b-entry-type').value = b.entry_type || 'sprint';
+    $('b-entry-price').value = b.entry_price == null ? '' : String(b.entry_price);
+    $('b-entry-unit').value = b.entry_unit || 'person';
+    $('b-entry-deadline').value = b.entry_deadline || '';
+    $('b-entry-rules').value = b.entry_rules_url || '';
+    $('b-entry-vrules').value = b.entry_vehicle_rules_url || '';
+    $('b-entry-note').value = b.entry_note || '';
+    document.querySelectorAll('.b-entry-class').forEach((el) => {
+      el.checked = (b.entry_classes || []).indexOf(el.value) >= 0;
+    });
+    bSyncEntry();
     $('b-save').textContent = '変更を保存';
     $('b-summary').textContent = '予定を編集する: ' + (b.title || '');
     $('b-cancel').hidden = false;
@@ -1004,6 +1104,16 @@ const surface = state?.surface.status ?? '';
           .map((el) => el.value).join(','),
         is_public: $('b-public').checked,
         memo: $('b-memo').value,
+        entry_open: $('b-entry').checked,
+        entry_type: $('b-entry-type').value,
+        entry_price: $('b-entry-price').value,
+        entry_unit: $('b-entry-unit').value,
+        entry_deadline: $('b-entry-deadline').value,
+        entry_classes: Array.from(document.querySelectorAll('.b-entry-class:checked'))
+          .map((el) => el.value).join(','),
+        entry_rules_url: $('b-entry-rules').value,
+        entry_vehicle_rules_url: $('b-entry-vrules').value,
+        entry_note: $('b-entry-note').value,
       });
       location.reload();
     } catch (e) {
@@ -1028,6 +1138,9 @@ const surface = state?.surface.status ?? '';
   .ic{font-size:1.05em;margin-right:.15rem}
   /* 電話が鳴ったらまずここ。1 画面の中で一番見つけやすくしておく */
   .entry-card{border:2px solid var(--red);box-shadow:0 4px 14px rgba(215,38,61,.12)}
+  /* 予定の「参加申込の受付」まとまり (カレンダー画面と同じ見た目) */
+  .entry-box{border:1px solid var(--line);border-left:3px solid var(--red);border-radius:0 6px 6px 0;
+    padding:.7rem .9rem;margin:.7rem 0 .3rem;background:var(--bg-2)}
   .entry-head{background:var(--red);color:#fff;margin:-1rem -1rem .7rem;padding:.6rem 1rem;
     border-radius:10px 10px 0 0;font-size:1.05rem}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}

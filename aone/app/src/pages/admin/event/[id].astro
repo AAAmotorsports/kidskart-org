@@ -1,0 +1,220 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom } from '@lib/supabase';
+import { blockById, eventFiles, eventEntries } from '@lib/queries';
+import {
+  jaDate, hhmm, yen, BLOCK_KIND_LABELS,
+  ENTRY_TYPE_LABELS, entryPriceLabel,
+} from '@lib/domain';
+
+export const prerender = false;
+
+// イベント 1 つの資料ページ (管理)。
+//
+// エントリーリストとタイムスケジュールは A-ONE 側で PDF を作るので、
+// ここからアップロードして公開する (2026-09 オーナー確認)。
+// 中身は DB に入る。置き場所を別に増やさない理由は db/0028 に書いてある。
+const env = envFrom(Astro.locals);
+const id = Astro.params.id ?? '';
+
+const block = await blockById(env, id);
+if (!block) return Astro.redirect('/admin/entries');
+
+const [files, entries] = await Promise.all([
+  eventFiles(env, id, true),
+  eventEntries(env, { blockId: id }),
+]);
+const live = entries.filter((e) => e.status !== 'cancelled');
+
+const FILE_KINDS: Array<[string, string]> = [
+  ['entry_list', 'エントリーリスト'],
+  ['timetable', 'タイムスケジュール'],
+  ['rules', '特別規則書'],
+  ['vehicle_rules', '車輌規則'],
+  ['result', 'リザルト'],
+  ['other', 'その他の資料'],
+];
+const kindLabel = (k: string) => FILE_KINDS.find(([c]) => c === k)?.[1] ?? k;
+const kb = (n: number) => (n >= 1024 * 1024
+  ? `${(n / 1024 / 1024).toFixed(1)} MB`
+  : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+const title = block.public_label || block.title;
+const deadline = block.entry_deadline ?? null;
+---
+<Base title={`${title} | A-ONE 管理`} admin>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">📄 {title}</h1>
+    <div class="row">
+      <a class="btn sm ghost" href={`/admin/day/${block.date}`}>その日の運営</a>
+      <a class="btn sm ghost" href={`/admin/entries?event=${block.id}`}>申込一覧</a>
+      <a class="btn sm ghost" href="/admin/calendar">カレンダー</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="meta">
+      <div><b>{jaDate(block.date)}</b></div>
+      <div>{BLOCK_KIND_LABELS[block.kind] ?? block.kind}</div>
+      {block.start_time && (
+        <div>{hhmm(block.start_time)}{block.end_time ? `〜${hhmm(block.end_time)}` : '〜'}</div>
+      )}
+      {block.entry_open
+        ? <div>参加申込: <b>受付中</b>（{ENTRY_TYPE_LABELS[block.entry_type] ?? block.entry_type}
+            {' / '}{entryPriceLabel(block.entry_price, block.entry_unit)}
+            {deadline && ` / 締切 ${jaDate(deadline)}`}）</div>
+        : <div class="muted">参加申込: 受け付けていません</div>}
+      <div>申込 <b>{live.length}</b> 件（参加費 {yen(live.reduce((a, e) => a + (e.amount ?? 0), 0))}）</div>
+    </div>
+    {block.is_public
+      ? <p class="small muted" style="margin:.6rem 0 0">
+          公開ページ: <a href={`/event/${block.id}`} target="_blank" rel="noopener">/event/{block.id}</a>
+          （お客様に案内する URL です）
+        </p>
+      : <p class="small warn-text" style="margin:.6rem 0 0">
+          この予定は<strong>公開スケジュールに載せない</strong>設定です。
+          公開ページは開けません（資料も配られません）。
+          公開したいときは、その日の運営画面で「公開スケジュールに掲載する」を入れてください。
+        </p>}
+  </div>
+
+  <!-- ============ アップロード ============ -->
+  <div class="card">
+    <h2>資料をアップロード</h2>
+    <p class="small muted">
+      エントリーリスト・タイムスケジュールなどの <strong>PDF</strong> を選んでください（1 つ 10 MB まで）。
+      アップロードすると、お客様の申込ページと公開ページからすぐ見られるようになります。
+    </p>
+    <form id="up" enctype="multipart/form-data">
+      <div class="two">
+        <div class="field">
+          <label for="f-kind">資料の種類</label>
+          <select id="f-kind">
+            {FILE_KINDS.map(([c, l]) => <option value={c}>{l}</option>)}
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-title">お客様に見せる題名</label>
+          <input type="text" id="f-title" placeholder="空欄なら種類の名前をそのまま使います" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-file">PDF ファイル</label>
+        <input type="file" id="f-file" accept="application/pdf,.pdf" required />
+      </div>
+      <div id="up-out" class="notice" hidden></div>
+      <button type="submit" class="btn primary" id="up-go">アップロードする</button>
+    </form>
+  </div>
+
+  <!-- ============ 一覧 ============ -->
+  <div class="card">
+    <h2>登録されている資料（{files.length}）</h2>
+    {files.length === 0 && <p class="muted small">まだありません。</p>}
+    {files.map((f: any) => (
+      <div class="file-row" data-id={f.id}>
+        <div class="file-main">
+          <div>
+            <span class="badge">{kindLabel(f.kind)}</span>
+            <b class="f-title">{f.title}</b>
+            {!f.is_public && <span class="badge off">非公開</span>}
+          </div>
+          <div class="tiny muted">
+            {f.file_name} ／ {kb(f.size_bytes)} ／ {f.uploaded_at} に登録
+          </div>
+        </div>
+        <div class="row">
+          <a class="btn sm ghost" href={f.url} target="_blank" rel="noopener">開く</a>
+          <button class="btn sm ghost f-rename">題名</button>
+          <button class="btn sm ghost f-toggle" data-pub={String(f.is_public)}>
+            {f.is_public ? '非公開にする' : '公開する'}
+          </button>
+          <button class="btn sm ghost f-del">削除</button>
+        </div>
+      </div>
+    ))}
+  </div>
+</Base>
+
+<script is:inline define:vars={{ BLOCK_ID: id }}>
+  const $ = (i) => document.getElementById(i);
+
+  async function post(body) {
+    const res = await fetch('/api/admin/event-file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || '失敗しました');
+    return d;
+  }
+
+  $('up').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('up-out');
+    out.hidden = true;
+    const file = $('f-file').files[0];
+    if (!file) {
+      out.hidden = false; out.className = 'notice ng'; out.textContent = 'PDF を選んでください';
+      return;
+    }
+    const fd = new FormData();
+    fd.append('block_id', BLOCK_ID);
+    fd.append('kind', $('f-kind').value);
+    fd.append('title', $('f-title').value);
+    fd.append('file', file);
+
+    const btn = $('up-go');
+    btn.disabled = true;
+    btn.textContent = 'アップロード中…';
+    try {
+      const res = await fetch('/api/admin/event-file', { method: 'POST', body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'アップロードできませんでした');
+      location.reload();
+    } catch (err) {
+      out.hidden = false;
+      out.className = 'notice ng';
+      out.textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = 'アップロードする';
+    }
+  });
+
+  document.querySelectorAll('.f-del').forEach((b) => b.addEventListener('click', async () => {
+    const row = b.closest('.file-row');
+    if (!confirm('この資料を削除します。よろしいですか？')) return;
+    try { await post({ action: 'delete', id: row.dataset.id }); location.reload(); }
+    catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.f-toggle').forEach((b) => b.addEventListener('click', async () => {
+    const row = b.closest('.file-row');
+    try {
+      await post({ action: 'toggle', id: row.dataset.id, is_public: b.dataset.pub !== 'true' });
+      location.reload();
+    } catch (e) { alert(e.message); }
+  }));
+
+  document.querySelectorAll('.f-rename').forEach((b) => b.addEventListener('click', async () => {
+    const row = b.closest('.file-row');
+    const now = row.querySelector('.f-title').textContent;
+    const title = prompt('お客様に見せる題名', now);
+    if (title === null || !title.trim()) return;
+    try { await post({ action: 'rename', id: row.dataset.id, title: title.trim() }); location.reload(); }
+    catch (e) { alert(e.message); }
+  }));
+</script>
+
+<style>
+  .meta{display:flex;flex-direction:column;gap:.25rem;font-size:.92rem}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+  .file-row{display:flex;justify-content:space-between;align-items:center;gap:.8rem;
+    padding:.6rem 0;border-top:1px solid var(--line);flex-wrap:wrap}
+  .file-row:first-of-type{border-top:0}
+  .file-main{min-width:0}
+  .file-main b{margin-left:.4rem}
+  .badge.off{background:var(--bg-3);color:var(--ink-3)}
+  .warn-text{color:var(--red-deep)}
+  @media (max-width:560px){ .two{grid-template-columns:1fr} }
+</style>
