@@ -18,10 +18,15 @@ const maxDate = addDays(today, 365);
 // 貸切は当日不可 (カートの準備が要る)。受付できる最も早い日を初期値にする
 const leadDays: number = cfg?.charter_min_lead_days ?? 1;
 const minDate = addDays(today, leadDays);
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
-<Base title="貸切のお申し込み | A-ONE サーキット">
-  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
-  <h1>貸切のお申し込み</h1>
+<Base title="貸切のお申し込み | A-ONE サーキット" embed={embed}>
+  {!embed && <a class="back-link" href="/reserve">← 予約メニューに戻る</a>}
+  {showTitle && <h1>貸切のお申し込み</h1>}
   <p class="small muted">
     コースを貸切でご利用いただけます。他のご予約が入っている時間帯の場合も
     お申し込み自体は承り、A-ONE より折り返しご連絡いたします。
@@ -265,7 +270,8 @@ const minDate = addDays(today, leadDays);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '申し込みできませんでした');
       window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'charter' });
-      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+      // 枠で貼られているときは、枠の中ではなくホームページごと完了ページへ移動する
+      window.aoneGo('/reserve/complete/' + data.id + '?t=' + data.access_token);
     } catch (e2) {
       err.hidden = false;
       err.textContent = e2.message;

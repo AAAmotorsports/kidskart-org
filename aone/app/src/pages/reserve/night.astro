@@ -24,10 +24,15 @@ const rpMinParty: number = cfg?.rp_min_party ?? 3;
 const today = todayJst();
 const maxDate = addDays(today, 365);
 const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
+// ?embed=1 … rk-a1.com の中に枠で貼るときの表示 (ヘッダー・フッターを出さない)
+const embed = Astro.url.searchParams.get('embed') === '1';
+// 埋め込み先のページには、たいてい同じ見出しが既にある。二重に出さない。
+// ホームページ側に見出しが無いときは ?embed=1&title=1 で出せる
+const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
 ---
-<Base title="ナイター走行のご相談 | A-ONE サーキット">
-  <a class="back-link" href="/reserve">← 予約メニューに戻る</a>
-  <h1>ナイター走行のご相談</h1>
+<Base title="ナイター走行のご相談 | A-ONE サーキット" embed={embed}>
+  {!embed && <a class="back-link" href="/reserve">← 予約メニューに戻る</a>}
+  {showTitle && <h1>ナイター走行のご相談</h1>}
   <p class="small muted">
     ナイター走行は事前予約・要相談です。ご希望をお送りいただくと、A-ONE より
     折り返しご連絡いたします (この時点では予約は確定しません)。
@@ -208,7 +213,8 @@ const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '送信できませんでした');
       window.aoneTrack && window.aoneTrack('booking_complete', { kind: 'night' });
-      location.href = '/reserve/complete/' + data.id + '?t=' + data.access_token;
+      // 枠で貼られているときは、枠の中ではなくホームページごと完了ページへ移動する
+      window.aoneGo('/reserve/complete/' + data.id + '?t=' + data.access_token);
     } catch (e2) {
       err.hidden = false;
       err.textContent = e2.message;
