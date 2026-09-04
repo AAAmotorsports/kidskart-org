@@ -93,6 +93,12 @@ const WIDGET_JS = String.raw`
     '  font-size:.92em;border:1px solid var(--aone-line);background:#fff;color:var(--aone-ink)}',
     '.aone-btn.primary{background:var(--aone-red);border-color:var(--aone-red);color:#fff}',
     '.aone-note{font-size:.78em;color:var(--aone-ink3);margin-top:8px}',
+    // レンタルのお客様への注記。読み飛ばされると意味がないので枠で囲む
+    '.aone-hint{border:1px solid var(--aone-line);border-left:3px solid var(--aone-green);',
+    '  border-radius:0 8px 8px 0;padding:8px 10px;background:#f7fbf9;color:var(--aone-ink)}',
+    // 「スポーツ走行 / 受付停止」の 2 行
+    '.aone-msess-items .n .aone-l1{display:block;font-size:.92em;opacity:.85}',
+    '.aone-msess-items .n .aone-l2{display:block}',
     '.aone-note a{color:var(--aone-red);font-weight:700;text-decoration:underline}',
     '.aone-cal{width:100%;border-collapse:collapse;font-size:.82em;table-layout:fixed}',
     '.aone-cal th{background:#12233a;color:#fff;padding:4px 0;font-size:.9em;font-weight:700;',
@@ -292,8 +298,15 @@ const WIDGET_JS = String.raw`
     var open = cats.some(function (c) {
       return c.status === 'open' && (!c.requires_reservation || c.running);
     });
-    // 空いている枠は ○、止まっている枠は理由が分かるように「受付停止」
-    return open ? '<div class="y">○</div>' : '<div class="n">受付停止</div>';
+    // 空いている枠は ○。止まっているときは**何の受付が止まっているか**を書く。
+    // 「受付停止」だけだと、レンタルカートのお客様まで予約できないと
+    // 思ってしまう (2026-09 オーナー指摘)。
+    // 毎週のお休み (日曜午後など) は「お休み」。毎週のことなので、
+    // 「停止」と出し続けると何かあったように見える
+    var weekly = cats.some(function (c) { return c.reason === 'weekly_closed'; });
+    return open ? '<div class="y">○</div>'
+      : '<div class="n"><span class="aone-l1">スポーツ走行</span>'
+        + '<span class="aone-l2">' + (weekly ? 'お休み' : '受付停止') + '</span></div>';
   }
 
   // RP・貸切が AM 枠か PM 枠か (12:00 開始からは PM)
@@ -518,6 +531,16 @@ const WIDGET_JS = String.raw`
     html += '<p class="aone-note"><strong>日付をクリックするとご予約に進めます。</strong>'
       + note
       + '<a href="' + reserveLink(d, mode) + '" style="font-weight:800">ご予約はこちら →</a></p>';
+    // AM / PM の ○・受付停止はスポーツ走行の枠。レンタルのお客様が
+    // 「予約できない日」と読み違えないように書き添える
+    if (mode !== 'rental') {
+      html += '<p class="aone-note aone-hint">'
+        + '<strong>AM / PM の ○・受付停止は、お持ち込み車両 (スポーツ走行) の走行枠です。</strong>'
+        + 'レンタルカートのご利用 (1 ヒート走行・レースパック・貸切) はこの表示とは別で、'
+        + '営業日であればご利用いただけます。'
+        + '「受付停止」と出ている日でも、レンタルカートは走れることがあります。'
+        + '<a href="' + d.links.site + '">今日走れる？</a> でご確認ください。</p>';
+    }
 
     el.innerHTML = html;
 
