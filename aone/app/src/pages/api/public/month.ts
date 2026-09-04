@@ -44,6 +44,15 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
   const origin = new URL(request.url).origin;
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
+  // ウィジェットが使う 4 つだけに絞る。message や reason は運営向けの文言なので出さない
+  const slimCats = (cats: any[] | undefined) => (cats ?? []).map((c) => ({
+    code: c.code,
+    short_name: c.short_name,
+    status: c.status,
+    running: c.running,
+    requires_reservation: c.requires_reservation,
+  }));
+
   return new Response(JSON.stringify({
     ym,
     year: Number(m[1]),
@@ -61,6 +70,11 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       surface_label: d.surface ? (SURFACE_LABELS[d.surface] ?? d.surface) : null,
       am_open: d.sport_am === 'true',
       pm_open: d.sport_pm === 'true',
+      // ★ カテゴリーを渡さないと、ウィジェットは「予約が入っているクラス」
+      //   (ミニバイク等) を出せず ○ のままになる。/schedule と食い違う
+      //   (2026-09 オーナー指摘)。公開スケジュールに出しているものと同じ内容
+      am_categories: slimCats(d.am_categories),
+      pm_categories: slimCats(d.pm_categories),
       rp_free: d.rp_free,
       // label は「イベント ８０分耐久レース」のように種別を頭に付けたもの。
       // カレンダーのセルでは 2 行に分けて出したいので、name も別に渡す。
