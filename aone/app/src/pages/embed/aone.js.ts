@@ -9,6 +9,18 @@ export const prerender = false;
 //   <div data-aone="today"></div>
 //   <script src="https://<予約システム>/embed/aone.js" async></script>
 //
+// 予約フォームを埋め込む場合はこちら (data-kind で種類を選ぶ):
+//
+//   <div data-aone="reserve" data-kind="sport">
+//     <a href="https://<予約システム>/reserve/sport">スポーツ走行のご予約へ進む</a>
+//   </div>
+//   <script src="https://<予約システム>/embed/aone.js" async></script>
+//
+// 中の a タグは、script が読み込めなかったときの逃げ道 (読み込めれば消える)。
+// フォームだけは枠 (iframe) で貼る。フォームの中身をここに書き写すと、
+// 本体を直したときに片方だけ古くなるため。二重スクロールにならないよう、
+// 枠の高さは中身の高さに合わせて自動で伸びる (postMessage で受け取る)。
+//
 // iframe ではなく WordPress ページの DOM を直接描画するので、
 //   * スマホで高さが崩れない
 //   * 戻るボタンや画面遷移が不自然にならない
@@ -555,6 +567,59 @@ const WIDGET_JS = String.raw`
       });
   }
 
+  // ---------------------------------------------------------------------------
+  // 予約フォームの埋め込み (枠)
+  // ---------------------------------------------------------------------------
+  var FORM_PATHS = {
+    sport: '/reserve/sport',
+    rp: '/reserve/rp',
+    charter: '/reserve/charter',
+    night: '/reserve/night',
+    event: '/reserve/event',
+    menu: '/reserve'
+  };
+  var FRAMES = [];
+  var listening = false;
+
+  function listen() {
+    if (listening) return;
+    listening = true;
+    window.addEventListener('message', function (e) {
+      if (e.origin !== ORIGIN) return;
+      var d = e.data;
+      if (!d || typeof d !== 'object') return;
+
+      if (d.aone === 'height' && d.value > 0) {
+        for (var i = 0; i < FRAMES.length; i++) {
+          if (FRAMES[i].contentWindow === e.source) FRAMES[i].style.height = d.value + 'px';
+        }
+      } else if (d.aone === 'navigate' && typeof d.url === 'string'
+                 && d.url.indexOf(ORIGIN + '/') === 0) {
+        // 予約が終わったら、枠の中ではなくホームページごと完了ページへ移動する。
+        // そうしないと控えの URL がアドレスバーに出ず、お客様が保存できない
+        window.location.href = d.url;
+      }
+    });
+  }
+
+  function mountForm(el, kind) {
+
+    var path = FORM_PATHS[kind] || FORM_PATHS.sport;
+    var f = document.createElement('iframe');
+    // ホームページ側に見出しが無いときは data-title="show" で出せる
+    f.src = ORIGIN + path + '?embed=1'
+      + (el.getAttribute('data-title') === 'show' ? '&title=1' : '');
+    f.title = 'A-ONE サーキット ご予約';
+    f.setAttribute('scrolling', 'no');
+    f.setAttribute('loading', 'eager');
+    // 高さは中身に合わせて後から伸びる。最初の値は「だいたいこれくらい」
+    f.style.cssText = 'width:100%;border:0;display:block;overflow:hidden;height:780px';
+    listen();
+    el.innerHTML = '';
+    el.appendChild(f);
+    FRAMES.push(f);
+  }
+
   function boot() {
     injectCss();
     Array.prototype.forEach.call(document.querySelectorAll('[data-aone]'), function (el) {
@@ -562,6 +627,11 @@ const WIDGET_JS = String.raw`
       el.setAttribute('data-aone-ready', '1');
       el.className = (el.className ? el.className + ' ' : '') + 'aone-w';
       var kind = el.getAttribute('data-aone');
+
+      if (kind === 'reserve') {
+        mountForm(el, el.getAttribute('data-kind') || 'sport');
+        return;
+      }
 
       if (kind === 'month') {
         loadMonth(el, el.getAttribute('data-ym') || '');

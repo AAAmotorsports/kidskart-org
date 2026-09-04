@@ -191,12 +191,20 @@ npm run build
 
 ## WordPress (rk-a1.com) との連携
 
-`WORDPRESS.md` を参照。iframe ではなく **公開 JSON API + 貼り付けウィジェット**で、
-ホームページの見た目のままデータだけ同期する方式にしている。
+`WORDPRESS.md` を参照。表示するものは iframe ではなく **公開 JSON API + 貼り付け
+ウィジェット**で、ホームページの見た目のままデータだけ同期する。
+予約フォームだけは本体を二重に書かないよう iframe だが、高さの自動追従と
+完了時の親ごと移動で iframe の欠点は潰してある。
 
 ```html
 <div data-aone="today"></div>   <!-- 今日走れる？ -->
 <div data-aone="month"></div>   <!-- 月間スケジュール -->
+
+<!-- 予約フォーム (中の a は script が落ちたときの逃げ道) -->
+<div data-aone="reserve" data-kind="sport">
+  <a href="https://<予約システム>/reserve/sport">スポーツ走行のご予約へ進む</a>
+</div>
+
 <script src="https://<予約システム>/embed/aone.js" async></script>
 ```
 
@@ -204,7 +212,8 @@ npm run build
 |---|---|
 | `/api/public/today` | 今日の走行状況 (個人情報なし・CORS 許可) |
 | `/api/public/month?ym=YYYY-MM` | 月間スケジュール |
-| `/embed/aone.js` | 上記を描画する貼り付けウィジェット |
+| `/embed/aone.js` | 上記を描画する貼り付けウィジェット / 予約フォームの枠 |
+| `/reserve/sport?embed=1` | 枠の中に出す用の表示 (ヘッダー・フッターなし・noindex) |
 
 ## 画面一覧
 
