@@ -200,6 +200,8 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
       if (e.rules_url) links.push(['特別規則書', e.rules_url]);
       if (e.vehicle_rules_url) links.push(['車輌規則', e.vehicle_rules_url]);
       (e.files || []).forEach(function (f) { links.push([f.title, f.url]); });
+      // 資料をまとめて見たい人のために、案内ページへの入口も出す
+      links.push(['このイベントの詳細', '/event/' + e.id]);
       $('rules-links').innerHTML = links.map(function (l) {
         return '<a href="' + l[1] + '" target="_blank" rel="noopener">' + l[0] + 'を見る →</a>';
       }).join('');

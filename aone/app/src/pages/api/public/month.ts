@@ -91,9 +91,10 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
         }),
       counts: d.counts,
       bookings: bookings[d.date] ?? [],
-      // 申込受付中なら、その申込フォームの URL
+      // 申込受付中なら、そのイベントの案内ページ (資料 + 申込ボタン)。
+      // 申込フォームに直行させると資料にたどり着けない
       entry_url: entryByDate.has(d.date)
-        ? `${origin}/reserve/event?event=${entryByDate.get(d.date)}`
+        ? `${origin}/event/${entryByDate.get(d.date)}`
         : null,
     })),
     links: {
