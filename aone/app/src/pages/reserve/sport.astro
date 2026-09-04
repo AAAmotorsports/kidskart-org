@@ -36,15 +36,10 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
     当日、走行枠に空きがあればご予約なしでの走行も可能です。<br />
   </div>
 
-  {/* 小学生以下はキッズカートアカデミー (kidskart.org) の受付。
-      このページは持ち込み車両の走行枠なので、行き先が違う (2026-08 オーナー指摘) */}
-  <div class="notice small kids" style="margin-bottom:1rem">
-    <strong>小学生以下のお子様</strong>の走行は
-    <a href="https://kidskart.org/" target="_blank" rel="noopener">
-      キッズカートアカデミー (kidskart.org)</a>
-    で承っています。専用の車両とインストラクターをご用意していますので、
-    そちらからお申し込みください。
-  </div>
+  {/* キッズカートの案内はこのページには出さない (2026-09 オーナー指摘)。
+      予約メニュー (/reserve) とトップには残してある。
+      このページは持ち込み車両の走行枠を選びに来た人が見るところなので、
+      別の受付の話が挟まると迷わせる */}
 
   <form id="form" class="card" novalidate>
     <div class="field">
