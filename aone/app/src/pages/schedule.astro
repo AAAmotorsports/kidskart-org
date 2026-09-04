@@ -38,9 +38,11 @@ const bookings = showRental
       `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`)
   : {};
 
-// 参加申込を受け付けているイベントは、その日から申込フォームへ飛ばす
+// 参加申込を受け付けているイベントは、その日からイベントの案内ページへ飛ばす。
+// 申込フォームに直行させると、エントリーリスト・タイムスケジュール・規則書に
+// たどり着く道が無くなる (案内ページに申し込むボタンがある)
 const openEvs = await openEvents(env);
-const entryByDate = new Map(openEvs.map((e) => [e.date, `/reserve/event?event=${e.id}`]));
+const entryByDate = new Map(openEvs.map((e) => [e.date, `/event/${e.id}`]));
 
 const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -144,7 +146,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
           return (
             <Cell
               href={entryHref ?? (linkable ? `${reserveHref}?date=${d.date}` : undefined)}
-              title={entryHref ? '参加申込へ' : linkable ? 'この日のご予約へ' : undefined}
+              title={entryHref ? 'イベントの詳細・参加申込へ' : linkable ? 'この日のご予約へ' : undefined}
               class:list={[
               'cal-cell',
               d.date === today && 'today',
