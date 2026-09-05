@@ -338,14 +338,12 @@ const WIDGET_JS = String.raw`
       return c.status === 'open' && (!c.requires_reservation || c.running);
     });
     // 空いている枠は ○。止まっているときは**何の受付が止まっているか**を書く。
-    // 「受付停止」だけだと、レンタルカートのお客様まで予約できないと
+    // 「不可」だけだと、レンタルカートのお客様まで予約できないと
     // 思ってしまう (2026-09 オーナー指摘)。
-    // 毎週のお休み (日曜午後など) は「不可」。毎週のことなので、
-    // 「受付停止」と出し続けると何かあったように見える
-    var weekly = cats.some(function (c) { return c.reason === 'weekly_closed'; });
-    // 1 行で。2 行にすると縦に長くなる (2026-09 オーナー確認)
+    // 理由 (毎週のお休み / レース / 貸切 / 満枠) では書き分けない。
+    // 言い方が増えるほど分かりにくい。1 行で出す
     return open ? '<div class="y">○</div>'
-      : '<div class="n">スポーツ走行 ' + (weekly ? '不可' : '受付停止') + '</div>';
+      : '<div class="n">スポーツ走行 不可</div>';
   }
 
   // RP・貸切が AM 枠か PM 枠か (12:00 開始からは PM)
@@ -590,7 +588,7 @@ const WIDGET_JS = String.raw`
     // 「予約できない日」と読み違えないように書き添える
     if (mode !== 'rental') {
       html += '<p class="aone-note aone-hint">'
-        + '<strong>AM / PM の ○・受付停止・不可は、お持ち込み車両 (スポーツ走行) の走行枠です。</strong>'
+        + '<strong>AM / PM の ○・不可は、お持ち込み車両 (スポーツ走行) の走行枠です。</strong>'
         + (mode === 'both'
             ? '<strong class="aone-rok" style="display:inline">レンタルカート ○</strong>'
               + ' と出ている日は、<strong>ご予約不要のレンタルカート走行ができます</strong>'

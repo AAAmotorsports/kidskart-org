@@ -51,8 +51,9 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     status: c.status,
     running: c.running,
     requires_reservation: c.requires_reservation,
-    // 毎週のお休み (日曜午後など) と、レース・貸切などによる受付停止を
-    // 書き分けるのに使う
+    // 止まっている理由 (weekly_closed / block / full など)。
+    // 表示は理由で書き分けず一律「スポーツ走行 不可」にしているが、
+    // 貼り付け先が自前で描くときのために渡しておく
     reason: c.reason,
   }));
 
