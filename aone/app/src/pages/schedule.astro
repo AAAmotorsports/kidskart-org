@@ -201,7 +201,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                   {rentalMark((d.rp_free_am ?? 0) > 0, (d.rp_free_pm ?? 0) > 0)}
                 </div>
               )}
-              {publicBlocks.map((b) => (
+              {publicBlocks.map((b, i) => (
                 /* 「イベント」と名前を 2 行に。種別を頭に付けないもの (臨時休業など) は 1 行 */
                 <div class="tiny ev">
                   {blockLabel(b.kind, b.public_label) !== b.public_label && (
@@ -209,18 +209,28 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                   )}
                   {/* 午前だけ / 午後だけの予定は、名前の横に AM / PM を出す
                       (2026-09 オーナー確認) */}
-                  <span class="l2">{b.public_label}
-                    {blockSessionTag(b.scope) && (
-                      <span class="sess-tag">{blockSessionTag(b.scope)}</span>
-                    )}
+                  <span class="l2">
+                    <span class="nm">{b.public_label}</span>
+                    {/* 参加申込は、そのイベント名のすぐ右に短く付ける。赤い帯を
+                        2 本並べると、どちらを押すのか迷って押し間違える
+                        (2026-09 オーナー指摘)。
+                        AM の印と 1 つにまとめて、離ればなれに折り返させない */}
+                    <span class="side">
+                      {blockSessionTag(b.scope) && (
+                        <span class="sess-tag">{blockSessionTag(b.scope)}</span>
+                      )}
+                      {entryHref && i === publicBlocks.length - 1 && (twoWays
+                        ? <a class="entry" href={entryHref}>参加申込 →</a>
+                        : <span class="entry">参加申込 →</span>)}
+                    </span>
                   </span>
                 </div>
               ))}
-              {/* 何のイベントかを先に出してから申込へ誘う。
-                  貼り付けウィジェットと並び順を揃える (食い違って見えるため) */}
-              {entryHref && (twoWays
-                ? <a class="tiny entry as-link" href={entryHref}>参加申込 受付中 →</a>
-                : <div class="tiny entry">参加申込 受付中 →</div>)}
+              {/* 予定を出していない日 (非公開の予定で申込だけ受けている) は
+                  付ける先が無いので、これまでどおり 1 本の帯で出す */}
+              {entryHref && publicBlocks.length === 0 && (twoWays
+                ? <a class="tiny entry entry-bar as-link" href={entryHref}>参加申込 受付中 →</a>
+                : <div class="tiny entry entry-bar">参加申込 受付中 →</div>)}
               {twoWays && (
                 <a class="tiny book-link" href={`${reserveHref}?date=${d.date}`}>
                   {/* 何をどの時間帯で予約できるのかを、その場で分かるようにする
@@ -379,25 +389,40 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   .cal-cell.sat .cal-day{color:var(--blue)}
   .wx{color:#8a5a06;font-weight:700}
   .sf{color:var(--muted)}
-  /* 押せることが分からないとクリックされないので、はっきり出す */
-  .entry{background:var(--red);color:#fff;border-radius:4px;padding:.05rem .25rem;
-    font-weight:800;text-align:center;margin-bottom:.1rem}
-  /* イベントの日は行き先が 2 つある (参加申込 / その日のご予約)。
-     どちらも押せることが分かるようにする */
-  .entry.as-link{display:block;text-decoration:none}
+  /* 押せることが分からないとクリックされないので、はっきり出す。
+     イベント名のすぐ右に短く置く — 赤い帯が 2 本並ぶと押し間違える */
+  .entry{flex:0 0 auto;margin-left:.25rem;background:var(--red);color:#fff;
+    border-radius:3px;padding:.1rem .3rem;font-weight:800;font-size:.82em;
+    text-decoration:none;white-space:nowrap;line-height:1.3}
+  /* 予定を出していない日だけ、これまでどおり 1 本の帯 */
+  .entry-bar{display:block;margin:0 0 .1rem;padding:.05rem .25rem;border-radius:4px;
+    font-size:1em;text-align:center;white-space:normal}
   .book-link{display:block;text-align:center;font-weight:800;text-decoration:none;
     border:1px solid var(--red);color:var(--red-deep);border-radius:4px;
     padding:.05rem .25rem;margin-bottom:.1rem;background:#fff}
   .book-link:hover{background:#fdeef0}
   /* 「AM」「PM」の小さな印。予定名の横と、予約の入口の頭に付ける */
-  .sess-tag{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:3px;
+  .sess-tag{display:inline-block;flex:0 0 auto;margin-left:.25rem;padding:0 .25rem;
+    border-radius:3px;
     background:var(--bg-3);color:var(--ink-2);font-size:.82em;font-weight:800;
     vertical-align:.05em}
   .sess-tag.on{margin:0 .25rem 0 0;background:var(--red);color:#fff}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     max-width:100%}
   .ev .l1{display:block;opacity:.85}
-  .ev .l2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  /* 名前は 2 行で切るが、右の「参加申込」は切らせない。
+     だから clamp は名前だけに掛け、行そのものは flex にする */
+  /* 名前だけを 2 行で切り、AM / PM の印と「参加申込」は切らせない。
+     ★ 印を名前と同じ箱に入れると、名前が 2 行になった日は印が 3 行目に落ちて
+       そのまま消える (clamp の overflow:hidden に食われる)。
+     下ぞろえにすると、名前が折り返しても印と申込が最後の行の右に並ぶ */
+  .ev .l2{display:flex;flex-wrap:wrap;align-items:flex-end}
+  /* 名前が要るぶんだけ。1 1 にすると行いっぱいに伸びて、
+     AM の印が名前から遠く離れてしまう */
+  .ev .side{flex:0 0 auto;display:inline-flex;align-items:center}
+  .ev .side:empty{display:none}
+  .ev .nm{flex:0 1 auto;min-width:8em;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
     overflow:hidden;overflow-wrap:anywhere}
   /* カレンダーセル内の ○✕ 行 (Base の .slots とは別物なので名前を分ける) */
   .modes{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;overflow:hidden;
