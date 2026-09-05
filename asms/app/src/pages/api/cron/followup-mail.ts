@@ -8,10 +8,16 @@ export const prerender = false;
 //
 // 毎日 19:00 JST に GitHub Actions cron から叩かれる。
 // 対象: 30 日前 (JST) に開催されて、その後 1 度も新予約がない保護者の予約。
-// 各対象予約に対して「その後お子さまいかがですか？」の再エンゲージメント
-// メールを保護者に送る。二重送信防止のため reservations.followup_email_sent_at
-// を記録。保護者単位で「1 回だけ」の運用 (再エンゲージメントメールを短期に
-// 何度も送るのは嫌がられるので、reservation 単位で判定するけど実質同じ)。
+// 各対象保護者に対して「その後お子さまいかがですか？」の再エンゲージメント
+// メールを送る。二重送信防止のため reservations.followup_email_sent_at
+// を記録。
+//
+// 送信単位: **guardian 単位で 1 通** (2026-09-02 変更)。
+// 同一保護者が同日に複数予約していた場合、全予約分を 1 通に集約する。
+// 参加者名は合算、コース名は " / " 連結、次ステップ提案は代表参加者の
+// skill_level で判定。DB の predicate flag (followup_email_sent_at) は
+// 従来通り予約単位で持ち、送信成功時は group 内全予約を 1 UPDATE で
+// 同時セット (Postgres 単一 UPDATE は atomic)。
 //
 // 発火頻度は日次だが、対象は「30 日前ぴったりに開催した予約」なので、
 // 毎日せいぜい 1-3 件しか送られない。
@@ -124,81 +130,127 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
 
+  // 同一保護者の複数予約を 1 通に集約する。フォローアップは営業性の
+  // 強い再エンゲージメントメールなので、同じ保護者に 2 通並列で送るのは
+  // 疲弊感を招く。DB の予約単位 idempotency flag はそのまま維持しつつ、
+  // 送信処理だけ guardian でまとめる。
+  const groupsByGuardian = new Map<string, any[]>();
+  const orphaned: any[] = [];
   for (const r of (candidates ?? []) as any[]) {
-    try {
-      const guardian = r.guardians;
-      if (!guardian?.email) {
-        skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
-        continue;
-      }
-      // 30 日以内に新規予約がある保護者はスキップ (=リピーター、再エンゲ不要)
-      if (r.guardian_id && laterActiveGuardians.has(r.guardian_id)) {
+    if (!r.guardian_id) { orphaned.push(r); continue; }
+    const arr = groupsByGuardian.get(r.guardian_id) ?? [];
+    arr.push(r);
+    groupsByGuardian.set(r.guardian_id, arr);
+  }
+  for (const r of orphaned) {
+    skipped++;
+    details.push({ id: r.id, result: 'skipped', note: 'no guardian_id' });
+  }
+
+  for (const [guardianId, groupReservations] of groupsByGuardian) {
+    const rep = groupReservations[0];
+    const guardian = rep.guardians;
+
+    // Guardian が 30 日以内に新規予約を持つ (=リピーター化) → group 全体 skip
+    if (laterActiveGuardians.has(guardianId)) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'guardian has later reservation' });
-        continue;
       }
-      const slotInfo = slotInfoById.get(r.slot_id);
-      if (!slotInfo) {
+      continue;
+    }
+    if (!guardian?.email) {
+      for (const r of groupReservations) {
         skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'slot info missing' });
-        continue;
+        details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
       }
-      const activeParticipants = (r.reservation_participants as any[]).filter(
+      continue;
+    }
+
+    // group 内全予約の active 参加者・コース名を集約
+    const allParticipantNames: string[] = [];
+    const courseNames: string[] = [];
+    let representativeSlotInfo: { courseCode: string; courseName: string } | null = null;
+    let representativeSkill: SkillLevel = 'first_time';
+    let representativeSkillSet = false;
+    for (const r of groupReservations) {
+      const slotInfo = slotInfoById.get(r.slot_id);
+      if (!slotInfo) continue;
+      if (!representativeSlotInfo) representativeSlotInfo = slotInfo;
+      if (slotInfo.courseName && !courseNames.includes(slotInfo.courseName)) {
+        courseNames.push(slotInfo.courseName);
+      }
+      const active = (r.reservation_participants as any[]).filter(
         (p: any) => p.attendance_status !== 'cancelled' && p.attendance_status !== 'no_show'
       );
-      if (activeParticipants.length === 0) {
+      for (const p of active) {
+        allParticipantNames.push(p.name_snapshot);
+        if (!representativeSkillSet) {
+          representativeSkill = (p.customers?.current_skill_level as SkillLevel) ?? 'first_time';
+          representativeSkillSet = true;
+        }
+      }
+    }
+    if (allParticipantNames.length === 0 || !representativeSlotInfo) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no attended participants' });
-        continue;
       }
+      continue;
+    }
 
-      // 参加者の skill_level から代表的な次のステップ提案を決める
-      // (簡略化: 最初の参加者の skill を使う)
-      const firstParticipant = activeParticipants[0];
-      const skill: SkillLevel = firstParticipant.customers?.current_skill_level ?? 'first_time';
-      const courseKind = classifyCourse(slotInfo.courseCode);
-      const nextStep = nextStepFor(courseKind, skill, origin);
+    // 次ステップ提案 = 代表参加者の skill × 代表コース種別 (最小変更方針、
+    // 混在時は代表 1 名で判定。「詳しくはリンクから」で十分)
+    const courseKind = classifyCourse(representativeSlotInfo.courseCode);
+    const nextStep = nextStepFor(courseKind, representativeSkill, origin);
 
-      // まだ Google 口コミ依頼を送ったことがない保護者だけ、opportunistic に依頼
-      const askReview = !guardian.google_review_asked_at && !!googleReviewUrl;
+    // Google 口コミ依頼: 未依頼の保護者にだけ 1 度 opportunistic に
+    const askReview = !guardian.google_review_asked_at && !!googleReviewUrl;
 
+    try {
       await sendFollowupEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
-        participantNames: activeParticipants.map((p: any) => p.name_snapshot),
-        courseName: slotInfo.courseName,
+        participantNames: allParticipantNames,
+        courseName: courseNames.join(' / '), // 複数コース混在時は "/" 連結
         nextStep,
         googleReviewUrl: askReview ? googleReviewUrl : '',
       });
 
+      // group 内全予約の flag を 1 UPDATE で同時セット (Postgres 単一
+      // UPDATE 文は atomic なので部分更新にならない)
+      const ids = groupReservations.map((r: any) => r.id);
       const { error: updErr } = await supabase
         .from('reservations')
         .update({ followup_email_sent_at: new Date().toISOString() })
-        .eq('id', r.id);
+        .in('id', ids);
       if (updErr) {
-        console.warn('[followup-mail] failed to mark sent for', r.id, updErr.message);
+        console.warn('[followup-mail] failed to mark sent for group', ids, updErr.message);
       }
-      if (askReview && r.guardian_id) {
+      if (askReview && guardianId) {
         const { error: revErr } = await supabase
           .from('guardians')
           .update({ google_review_asked_at: new Date().toISOString() })
-          .eq('id', r.guardian_id);
+          .eq('id', guardianId);
         if (revErr) {
-          console.warn('[followup-mail] failed to mark review-asked for', r.guardian_id, revErr.message);
+          console.warn('[followup-mail] failed to mark review-asked for', guardianId, revErr.message);
         }
       }
 
-      sent++;
-      details.push({
-        id: r.id,
-        result: 'sent',
-        note: askReview ? 'with review CTA' : undefined,
-      });
+      const noteBits: string[] = [];
+      if (groupReservations.length > 1) noteBits.push(`grouped=${groupReservations.length}`);
+      if (askReview) noteBits.push('review-cta');
+      const noteStr = noteBits.join(' ') || undefined;
+      for (const r of groupReservations) {
+        sent++;
+        details.push({ id: r.id, result: 'sent', note: noteStr });
+      }
     } catch (e: any) {
-      failed++;
-      details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
-      console.warn('[followup-mail] failed for', r.id, e);
+      for (const r of groupReservations) {
+        failed++;
+        details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
+      }
+      console.warn('[followup-mail] failed for group', groupReservations.map((r: any) => r.id), e);
     }
   }
 
