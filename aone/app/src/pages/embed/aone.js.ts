@@ -123,18 +123,23 @@ const WIDGET_JS = String.raw`
     '.aone-body{display:block}',
     '.aone-dow{display:none}',
     '.aone-cal td.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--aone-red)}',
-    // 参加申込を受け付けている日は、押せることが分かるようにする
-    // イベントの日は行き先が 2 つある (参加申込 / その日のご予約)
-    '.aone-entry.aone-as-link{display:block;text-decoration:none}',
+
     // 「AM」「PM」の小さな印。予定名の横と、予約の入口の頭に付ける
-    '.aone-stag{display:inline-block;margin-left:4px;padding:0 4px;border-radius:3px;',
+    '.aone-stag{display:inline-block;flex:0 0 auto;margin-left:4px;padding:0 4px;',
+    '  border-radius:3px;',
     '  background:var(--aone-line);color:var(--aone-ink);font-size:.82em;font-weight:800}',
     '.aone-stag.on{margin:0 4px 0 0;background:var(--aone-red);color:#fff}',
     '.aone-book{display:block;text-align:center;font-weight:800;text-decoration:none;',
     '  border:1px solid var(--aone-red);color:var(--aone-red);border-radius:4px;',
     '  padding:1px 4px;margin-bottom:2px;background:#fff;font-size:.92em}',
-    '.aone-entry{background:var(--aone-red);color:#fff;border-radius:4px;padding:1px 4px;',
-    '  font-weight:800;font-size:.9em;margin-top:2px;text-align:center}',
+    // 参加申込。イベント名のすぐ右に短く置く — 赤い帯が 2 本並ぶと押し間違える
+    '.aone-entry{flex:0 0 auto;margin-left:4px;background:var(--aone-red);color:#fff;',
+    '  border-radius:3px;',
+    '  padding:1px 5px;font-weight:800;font-size:.82em;text-decoration:none;',
+    '  white-space:nowrap;line-height:1.3}',
+    // 予定を出していない日だけ、これまでどおり 1 本の帯
+    '.aone-entry-bar{display:block;margin:2px 0 0;padding:1px 4px;border-radius:4px;',
+    '  font-size:.9em;text-align:center;white-space:normal}',
     '.aone-d{font-weight:800}',
     '.aone-cal td.sun .aone-d,.aone-cal td.holiday .aone-d{color:var(--aone-red)}',
     '.aone-cal td.sat .aone-d{color:#2f6fb5}',
@@ -144,6 +149,21 @@ const WIDGET_JS = String.raw`
     // 1 行目 = 時刻や種別、2 行目 = 名前
     '.aone-l1{display:block;font-weight:700;opacity:.85}',
     '.aone-l2{display:block}',
+    // 予定の行だけ、名前は 2 行で切るが右の「参加申込」は切らせない。
+    // だから clamp は名前だけに掛け、行そのものは flex にする。
+    // ★ .aone-l2 は予約の名前でも使っていて、そちらは clamp のままにしたい
+    // 名前だけを 2 行で切り、AM / PM の印と「参加申込」は切らせない。
+    // ★ 印を名前と同じ箱に入れると、名前が 2 行になった日は印が 3 行目に落ちて
+    //   そのまま消える (clamp の overflow:hidden に食われる)。
+    // 下ぞろえにすると、名前が折り返しても印と申込が最後の行の右に並ぶ
+    '.aone-e .aone-l2{display:flex;flex-wrap:wrap;align-items:flex-end}',
+    // 名前が要るぶんだけ。1 1 にすると行いっぱいに伸びて、
+    // AM の印が名前から遠く離れてしまう
+    '.aone-side{flex:0 0 auto;display:inline-flex;align-items:center}',
+    '.aone-side:empty{display:none}',
+    // 名前をここまでは削らない。PC の狭いマスでは、代わりに
+    // 印と「参加申込」が次の行に回る (名前が読めないほうが困る)
+    '.aone-nm{flex:0 1 auto;min-width:8em}',
     '.aone-e{background:#e8f1fb;color:#1d5386;border-radius:4px;padding:0 3px;font-weight:700;',
     '  font-size:.92em}',
     '.aone-wxs{color:#8a5a06;font-weight:700;font-size:.92em}',
@@ -541,20 +561,13 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
       }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
-      // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
-      // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
-      // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)
-      if (mode !== 'sport' && day.date >= d.today) {
-        // 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
-        // (古い API のときは day 単位の rental_ok しか来ない)
-        var rAm = day.rental_am != null ? day.rental_am : day.rental_ok;
-        var rPm = day.rental_pm != null ? day.rental_pm : day.rental_ok;
-        var rMark = (rAm && rPm) ? 'レンタルカート ○'
-          : rPm ? 'レンタルカート ○ 午後のみ'
-          : rAm ? 'レンタルカート ○ 午前のみ' : null;
-        if (rMark) html += '<div class="aone-rok">' + rMark + '</div>';
-      }
-      day.events.forEach(function (e) {
+      // 参加申込は、そのイベント名のすぐ右に短く付ける。赤い帯を 2 本並べると、
+      // どちらを押すのか迷って押し間違える (2026-09 オーナー指摘)
+      var entryChip = !day.entry_url ? ''
+        : twoWays
+          ? '<a class="aone-entry" href="' + esc(day.entry_url) + '">参加申込 →</a>'
+          : '<span class="aone-entry">参加申込 →</span>';
+      day.events.forEach(function (e, i) {
         // 「イベント」と「８０分耐久レース」を 2 行に分ける。
         // 種別を頭に付けていないもの (臨時休業など) は 1 行のまま
         var name = e.name || e.label;
@@ -563,16 +576,34 @@ const WIDGET_JS = String.raw`
         var eTag = e.scope === 'am' ? 'AM' : e.scope === 'pm' ? 'PM' : null;
         html += '<div class="aone-e" title="' + esc(e.label) + '">'
           + (head ? '<span class="aone-l1">' + esc(head) + '</span>' : '')
-          + '<span class="aone-l2 aone-clamp">' + esc(name)
+          + '<span class="aone-l2">'
+          + '<span class="aone-nm aone-clamp">' + esc(name) + '</span>'
+          // AM の印と「参加申込」は 1 つにまとめる。別々の要素だと、
+          // 幅が足りないときに離ればなれに折り返す
+          + '<span class="aone-side">'
           + (eTag ? '<span class="aone-stag">' + eTag + '</span>' : '')
-          + '</span></div>';
+          + (i === day.events.length - 1 ? entryChip : '')
+          + '</span></span></div>';
       });
-      // 押せることが分からないとクリックされないので、はっきり出す
-      if (day.entry_url) {
+      // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
+      // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
+      // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)。
+      // ★ 予約ボタンのすぐ上に置く。ボタンの見出しとして読ませたい (2026-09 オーナー依頼)
+      if (mode !== 'sport' && day.date >= d.today) {
+        // 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
+        // (rAm / rPm は入口の判定で作ったものを使い回す)
+        var rMark = (rAm && rPm) ? 'レンタルカート ○'
+          : rPm ? 'レンタルカート ○ 午後のみ'
+          : rAm ? 'レンタルカート ○ 午前のみ' : null;
+        if (rMark) html += '<div class="aone-rok">' + rMark + '</div>';
+      }
+      // 予定を出していない日 (非公開の予定で申込だけ受けている) は付ける先が
+      // 無いので、これまでどおり 1 本の帯で出す
+      if (day.entry_url && !day.events.length) {
         html += twoWays
-          ? '<a class="aone-entry aone-as-link" href="' + esc(day.entry_url) + '">'
+          ? '<a class="aone-entry aone-entry-bar" href="' + esc(day.entry_url) + '">'
             + '参加申込 受付中 →</a>'
-          : '<div class="aone-entry">参加申込 受付中 →</div>';
+          : '<div class="aone-entry aone-entry-bar">参加申込 受付中 →</div>';
       }
       if (twoWays) {
         // 何をどの時間帯で予約できるのかを、その場で分かるようにする
