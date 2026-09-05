@@ -1,10 +1,10 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { monthState, rentalBookings, openEvents } from '@lib/queries';
+import { monthState, rentalBookings, openEvents, type MonthDay } from '@lib/queries';
 import {
   todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS, monthOptions,
-  rentalMark,
+  rentalMark, sessionTag, blockSessionTag,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -30,6 +30,25 @@ const showRental = mode === 'rental' || mode === 'both';
 const showSport = mode === 'sport' || mode === 'both';
 const reserveHref =
   mode === 'rental' ? '/reserve/rp' : mode === 'sport' ? '/reserve/sport' : '/reserve';
+// 予約の入口に出す文言。何の予約に進むのかを書く
+const bookLabel =
+  mode === 'rental' ? 'レンタルカートの予約'
+    : mode === 'sport' ? 'スポーツ走行の予約' : 'この日のご予約';
+// 入口に出す「午前だけ / 午後だけ」の判定。表示モードごとに、そのモードで
+// 予約できるものだけを見る。文言が「レンタルカートの予約」と product を
+// 名指しするので、それが取れない日に出すと嘘になる (2026-09 オーナー確認)
+const bookAm = (d: MonthDay) => (mode === 'sport'
+  ? isOpen(d.sport_am)
+  : mode === 'rental'
+    ? (d.rp_free_am ?? 0) > 0
+    : (d.rp_free_am ?? 0) > 0 || isOpen(d.sport_am));
+const bookPm = (d: MonthDay) => (mode === 'sport'
+  ? isOpen(d.sport_pm)
+  : mode === 'rental'
+    ? (d.rp_free_pm ?? 0) > 0
+    : (d.rp_free_pm ?? 0) > 0 || isOpen(d.sport_pm));
+/** その日の予約が午前だけ / 午後だけのときの印。行き先 (モード) に合わせて見る */
+const bookTag = (d: MonthDay) => sessionTag(bookAm(d), bookPm(d));
 
 const days = await monthState(env, year, month);
 
@@ -147,8 +166,7 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
           // イベントの日でも、空いている時間帯があれば予約したい人がいる。
           // セルごとイベントページに飛ばすと予約にたどり着けない (2026-09 オーナー指摘)。
           // その日は行き先が 2 つあるので、セルはリンクにせず中にボタンを 2 つ置く
-          const bookable = !isPast && !closed
-            && (d.rp_free > 0 || isOpen(d.sport_am) || isOpen(d.sport_pm));
+          const bookable = !isPast && !closed && (bookAm(d) || bookPm(d));
           const twoWays = !!entryHref && bookable;
           const linkable = !twoWays && (!!entryHref || (!isPast && !closed));
           const Cell = linkable ? 'a' : 'div';
@@ -189,7 +207,13 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                   {blockLabel(b.kind, b.public_label) !== b.public_label && (
                     <span class="l1">{BLOCK_KIND_LABELS[b.kind] ?? b.kind}</span>
                   )}
-                  <span class="l2">{b.public_label}</span>
+                  {/* 午前だけ / 午後だけの予定は、名前の横に AM / PM を出す
+                      (2026-09 オーナー確認) */}
+                  <span class="l2">{b.public_label}
+                    {blockSessionTag(b.scope) && (
+                      <span class="sess-tag">{blockSessionTag(b.scope)}</span>
+                    )}
+                  </span>
                 </div>
               ))}
               {/* 何のイベントかを先に出してから申込へ誘う。
@@ -199,7 +223,10 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                 : <div class="tiny entry">参加申込 受付中 →</div>)}
               {twoWays && (
                 <a class="tiny book-link" href={`${reserveHref}?date=${d.date}`}>
-                  この日のご予約へ →
+                  {/* 何をどの時間帯で予約できるのかを、その場で分かるようにする
+                      (2026-09 オーナー確認) */}
+                  {bookTag(d) && <span class="sess-tag on">{bookTag(d)}</span>}
+                  {bookLabel} →
                 </a>
               )}
               {isPast ? null : (
@@ -362,6 +389,11 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
     border:1px solid var(--red);color:var(--red-deep);border-radius:4px;
     padding:.05rem .25rem;margin-bottom:.1rem;background:#fff}
   .book-link:hover{background:#fdeef0}
+  /* 「AM」「PM」の小さな印。予定名の横と、予約の入口の頭に付ける */
+  .sess-tag{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:3px;
+    background:var(--bg-3);color:var(--ink-2);font-size:.82em;font-weight:800;
+    vertical-align:.05em}
+  .sess-tag.on{margin:0 .25rem 0 0;background:var(--red);color:#fff}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     max-width:100%}
   .ev .l1{display:block;opacity:.85}

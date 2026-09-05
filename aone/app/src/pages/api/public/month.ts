@@ -99,6 +99,8 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
             name,
             kind: b.kind,
             kind_label: BLOCK_KIND_LABELS[b.kind] ?? b.kind,
+            // 予定名の横に AM / PM を出すのに使う
+            scope: b.scope ?? null,
           };
         }),
       counts: d.counts,

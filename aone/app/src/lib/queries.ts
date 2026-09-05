@@ -110,7 +110,11 @@ export interface MonthDay {
   /** 午前 / 午後それぞれで、レンタルカートが走れるか (空いている RP 枠の数) */
   rp_free_am: number;
   rp_free_pm: number;
-  blocks: Array<{ title: string; public_label: string; kind: string; is_public: boolean }>;
+  blocks: Array<{
+    title: string; public_label: string; kind: string; is_public: boolean;
+    /** all / am / pm / time / category / only_category。予定名の横に AM / PM を出すのに使う */
+    scope?: string; start_time?: string | null; end_time?: string | null;
+  }>;
   counts: { sport: number; rp: number; charter: number; night: number; people: number };
 }
 

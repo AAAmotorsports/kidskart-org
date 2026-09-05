@@ -126,6 +126,10 @@ const WIDGET_JS = String.raw`
     // 参加申込を受け付けている日は、押せることが分かるようにする
     // イベントの日は行き先が 2 つある (参加申込 / その日のご予約)
     '.aone-entry.aone-as-link{display:block;text-decoration:none}',
+    // 「AM」「PM」の小さな印。予定名の横と、予約の入口の頭に付ける
+    '.aone-stag{display:inline-block;margin-left:4px;padding:0 4px;border-radius:3px;',
+    '  background:var(--aone-line);color:var(--aone-ink);font-size:.82em;font-weight:800}',
+    '.aone-stag.on{margin:0 4px 0 0;background:var(--aone-red);color:#fff}',
     '.aone-book{display:block;text-align:center;font-weight:800;text-decoration:none;',
     '  border:1px solid var(--aone-red);color:var(--aone-red);border-radius:4px;',
     '  padding:1px 4px;margin-bottom:2px;background:#fff;font-size:.92em}',
@@ -508,9 +512,16 @@ const WIDGET_JS = String.raw`
       var openDay = day.date >= d.today
         && day.business !== 'cancelled' && day.business !== 'closed';
       var bookHref = reserveLink(d, mode) + '?date=' + day.date;
-      var bookable = openDay && (
-        (day.rental_am != null ? (day.rental_am || day.rental_pm) : day.rental_ok)
-        || day.am_open || day.pm_open);
+      // 入口に出す「午前だけ / 午後だけ」の判定。表示モードごとに、そのモードで
+      // 予約できるものだけを見る。文言が「レンタルカートの予約」と product を
+      // 名指しするので、それが取れない日に出すと嘘になる
+      var rAm = day.rental_am != null ? day.rental_am : day.rental_ok;
+      var rPm = day.rental_pm != null ? day.rental_pm : day.rental_ok;
+      var bAm = mode === 'sport' ? day.am_open
+        : mode === 'rental' ? rAm : (rAm || day.am_open);
+      var bPm = mode === 'sport' ? day.pm_open
+        : mode === 'rental' ? rPm : (rPm || day.pm_open);
+      var bookable = openDay && (bAm || bPm);
       var twoWays = !!day.entry_url && bookable;
       var href = twoWays ? null : (day.entry_url || (openDay ? bookHref : null));
       var title = day.entry_url ? 'イベントの詳細・参加申込へ' : 'この日のご予約へ';
@@ -548,9 +559,13 @@ const WIDGET_JS = String.raw`
         // 種別を頭に付けていないもの (臨時休業など) は 1 行のまま
         var name = e.name || e.label;
         var head = e.label !== name ? e.kind_label : '';
+        // 午前だけ / 午後だけの予定は、名前の横に AM / PM を出す
+        var eTag = e.scope === 'am' ? 'AM' : e.scope === 'pm' ? 'PM' : null;
         html += '<div class="aone-e" title="' + esc(e.label) + '">'
           + (head ? '<span class="aone-l1">' + esc(head) + '</span>' : '')
-          + '<span class="aone-l2 aone-clamp">' + esc(name) + '</span></div>';
+          + '<span class="aone-l2 aone-clamp">' + esc(name)
+          + (eTag ? '<span class="aone-stag">' + eTag + '</span>' : '')
+          + '</span></div>';
       });
       // 押せることが分からないとクリックされないので、はっきり出す
       if (day.entry_url) {
@@ -560,7 +575,13 @@ const WIDGET_JS = String.raw`
           : '<div class="aone-entry">参加申込 受付中 →</div>';
       }
       if (twoWays) {
-        html += '<a class="aone-book" href="' + esc(bookHref) + '">この日のご予約へ →</a>';
+        // 何をどの時間帯で予約できるのかを、その場で分かるようにする
+        var bTag = (bAm && !bPm) ? 'AM' : (bPm && !bAm) ? 'PM' : null;
+        var bLabel = mode === 'rental' ? 'レンタルカートの予約'
+          : mode === 'sport' ? 'スポーツ走行の予約' : 'この日のご予約';
+        html += '<a class="aone-book" href="' + esc(bookHref) + '">'
+          + (bTag ? '<span class="aone-stag on">' + bTag + '</span>' : '')
+          + bLabel + ' →</a>';
       }
 
       if (day.date >= d.today) {
