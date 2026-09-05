@@ -56,7 +56,10 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   <div class="spread" style="margin-bottom:.8rem">
     <h1 style="margin:0">{jaDate(today)}</h1>
     <div class="row">
-      <a class="btn primary sm" href={`/admin/day/${today}`}>今日の運営画面</a>
+      {/* 電話が鳴ったら押すボタン。いちばん左・いちばん目立つ場所に置く
+          (日別画面まで降りなくても、ここから登録を始められる。2026-09 オーナー依頼) */}
+      <a class="btn primary sm" href="/admin/reserve">📞 予約を登録</a>
+      <a class="btn sm" href={`/admin/day/${today}`}>今日の運営画面</a>
       <a class="btn sm" href={`/admin/sheet?date=${today}`}>受付シート</a>
       <a class="btn sm" href="/admin/calendar">カレンダー</a>
       <a class="btn sm" href="/admin/entries">参加申込</a>

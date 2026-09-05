@@ -1,0 +1,303 @@
+---
+import { KIND_LABELS } from '@lib/domain';
+
+// 電話・店頭予約の代理入力フォーム (仕様 12)。
+// 日別の運営画面と、専用の登録ページ (/admin/reserve) の両方で使う。
+// ★ 2 か所に同じフォームを書かない — 片方だけ直して腐るのを防ぐ。
+//   実際、日別画面のイベント編集で「フォームには足したが送信データに足し忘れ」
+//   という取りこぼしを一度やっている (CLAUDE.md 8.0.1)
+interface Props {
+  /** 最初に選んでおく日 */
+  date: string;
+  categories: Array<{ code: string; name: string }>;
+  /**
+   * 登録できたあとの動き。
+   * reload = その日の一覧を出し直す (日別画面)。
+   * reset  = 連絡先だけ消して次の入力に備える (電話が続けて鳴る専用ページ)
+   */
+  after?: 'reload' | 'reset';
+}
+const { date, categories, after = 'reload' } = Astro.props;
+---
+<div class="card entry-card" data-reserve-form data-date={date} data-after={after}>
+  <h2 class="entry-head"><span class="ic">📞</span> 電話・店頭予約の入力</h2>
+  <p class="tiny muted">Web 予約と同じ台帳に入ります。入力した瞬間に Web 側の空きへ反映されます。</p>
+  <div class="field">
+    <label for="n-kind">種別</label>
+    <select id="n-kind">
+      {Object.entries(KIND_LABELS).map(([code, label]) => <option value={code}>{label}</option>)}
+    </select>
+  </div>
+  <div class="field">
+    <label>対象日 <span class="tiny muted">(複数可 — 連日・毎週のまとめ登録に)</span></label>
+    <div class="row" style="margin-bottom:.35rem">
+      <input type="date" id="n-date-add" style="max-width:11rem" />
+      <button type="button" class="btn sm" id="n-date-btn">日を追加</button>
+    </div>
+    <div id="n-dates" class="row"></div>
+  </div>
+
+  <div class="field" id="wrap-session">
+    <label>時間帯 <span class="tiny muted">(複数可)</span></label>
+    <div class="choice">
+      <label><input type="checkbox" class="n-sess" value="am" checked /> AM</label>
+      <label><input type="checkbox" class="n-sess" value="pm" /> PM</label>
+    </div>
+  </div>
+  <div class="field" id="wrap-category">
+    <label for="n-category">カテゴリー</label>
+    <select id="n-category">{categories.map((c) => <option value={c.code}>{c.name}</option>)}</select>
+  </div>
+  <div class="field" id="wrap-nightkind">
+    <label for="n-nightkind">ナイターの内訳</label>
+    <select id="n-nightkind">
+      <option value="rp">レースパック</option>
+      <option value="charter">貸切</option>
+    </select>
+    <div class="tiny muted">ナイターはレンタル (RP・貸切) のみお受けします。</div>
+  </div>
+  <div class="two" id="wrap-times">
+    <div class="field">
+      <label for="n-start">開始</label>
+      <input type="time" id="n-start" step="1800" value="14:00" />
+    </div>
+    <div class="field" id="wrap-end">
+      <label for="n-end">終了</label>
+      <input type="time" id="n-end" step="1800" />
+    </div>
+  </div>
+  <div class="two" id="wrap-counts">
+    <div class="field">
+      <label for="n-party">人数</label>
+      <input type="number" id="n-party" min="1" value="1" />
+    </div>
+    <div class="field" id="wrap-vehicles">
+      <label for="n-vehicles">カート台数</label>
+      <input type="number" id="n-vehicles" min="1" />
+      <div class="tiny muted">5 台以上から</div>
+    </div>
+  </div>
+  <div class="field">
+    <label for="n-name">お名前</label>
+    <input type="text" id="n-name" placeholder="山田 太郎" />
+    <div class="tiny muted">「様」は付けなくて大丈夫です (表示するときに付きます)</div>
+  </div>
+  <div class="two">
+    <div class="field">
+      <label for="n-phone">電話</label>
+      <input type="tel" id="n-phone" />
+    </div>
+    <div class="field">
+      <label for="n-email">メール (任意)</label>
+      <input type="email" id="n-email" />
+    </div>
+  </div>
+  <div class="field">
+    <label for="n-memo">スタッフメモ</label>
+    <input type="text" id="n-memo" placeholder="初走行 / 常連 / 支払済 など" />
+  </div>
+  <div class="two">
+    <div class="field">
+      <label for="n-source">入力経路</label>
+      <select id="n-source">
+        <option value="phone">電話</option>
+        <option value="counter">店頭</option>
+        <option value="admin">管理</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="n-amount">料金 (任意)</label>
+      <input type="number" id="n-amount" min="0" step="100" />
+    </div>
+  </div>
+  <label class="tiny"><input type="checkbox" id="n-mail" /> 予約控えメールを送る</label><br />
+  <label class="tiny"><input type="checkbox" id="n-forced" /> 受付上限を無視して強制受付する</label>
+  <div class="field" style="margin-top:.4rem">
+    <input type="text" id="n-forced-reason" placeholder="強制受付の理由 (記録に残ります)" />
+  </div>
+  <div id="n-out" class="notice" hidden></div>
+  <button class="btn primary sm" id="n-save">この内容で登録</button>
+</div>
+
+<script>
+  // 代理入力。
+  // 電話口で「土日どっちも」「毎週土曜で 3 回」と言われることがあるので、
+  // 日付と時間帯を複数選んでまとめて登録できるようにする。
+  // カテゴリー・人数・連絡先は共通、予約は 1 日 1 件ずつ独立して作る
+  // (1 日だけキャンセル・変更できるようにするため)。
+  const root = document.querySelector<HTMLElement>('[data-reserve-form]');
+  if (root) {
+    const date = root.dataset.date!;
+    const after = root.dataset.after ?? 'reload';
+    const $ = (id: string) => document.getElementById(id) as any;
+
+    async function post(url: string, body: unknown) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as any).error || '通信に失敗しました');
+      return data as any;
+    }
+
+    let pickedDates = [date];
+
+    function renderDates() {
+      const wrap = $('n-dates');
+      wrap.innerHTML = '';
+      pickedDates.sort();
+      pickedDates.forEach((d: string) => {
+        const chip = document.createElement('span');
+        chip.className = 'badge info date-chip';
+        chip.innerHTML = d.slice(5).replace('-', '/') +
+          (pickedDates.length > 1 ? ' <b data-del="' + d + '" style="cursor:pointer">×</b>' : '');
+        wrap.appendChild(chip);
+      });
+      wrap.querySelectorAll('[data-del]').forEach((b: any) => {
+        b.addEventListener('click', () => {
+          pickedDates = pickedDates.filter((x) => x !== b.dataset.del);
+          renderDates();
+        });
+      });
+    }
+
+    $('n-date-btn').addEventListener('click', () => {
+      const v = $('n-date-add').value;
+      if (!v) return;
+      if (pickedDates.indexOf(v) === -1) pickedDates.push(v);
+      $('n-date-add').value = '';
+      renderDates();
+    });
+    renderDates();
+
+    function syncKindFields() {
+      const kind = $('n-kind').value;
+      $('wrap-session').hidden = kind !== 'sport';
+      // ナイターはレンタル (RP・貸切) のみなので、カテゴリーではなく内訳を選ぶ
+      $('wrap-category').hidden = kind !== 'sport';
+      $('wrap-nightkind').hidden = kind !== 'night';
+      $('wrap-times').hidden = kind === 'sport';
+
+      // 終了時刻とカート台数は貸切だけの項目。
+      // レースパックは人数だけ選べばよく、出しておくと入れる物だと思われる
+      const isCharter = kind === 'charter'
+        || (kind === 'night' && $('n-nightkind').value === 'charter');
+      $('wrap-end').hidden = !isCharter;
+      $('wrap-vehicles').hidden = !isCharter;
+      // 片方だけになったら 1 列にして、空欄が並んでいるように見せない
+      $('wrap-times').classList.toggle('one', !isCharter);
+      $('wrap-counts').classList.toggle('one', !isCharter);
+      if (!isCharter) { $('n-end').value = ''; $('n-vehicles').value = ''; }
+    }
+    $('n-kind').addEventListener('change', syncKindFields);
+    $('n-nightkind').addEventListener('change', syncKindFields);
+    syncKindFields();
+
+    $('n-save').addEventListener('click', async () => {
+      const out = $('n-out');
+      out.hidden = true;
+      const kind = $('n-kind').value;
+      const btn = $('n-save');
+
+      if (pickedDates.length === 0) {
+        out.hidden = false; out.className = 'notice ng';
+        out.textContent = '対象日を 1 つ以上選んでください';
+        return;
+      }
+
+      // 登録する組み合わせを作る (スポーツ走行は 日付 × 時間帯)
+      const sessions = Array.from(document.querySelectorAll('.n-sess:checked'))
+        .map((el: any) => el.value);
+      if (kind === 'sport' && sessions.length === 0) {
+        out.hidden = false; out.className = 'notice ng';
+        out.textContent = '時間帯を 1 つ以上選んでください';
+        return;
+      }
+      const combos: Array<{ date: string; session: string | undefined }> = [];
+      pickedDates.forEach((d) => {
+        if (kind === 'sport') sessions.forEach((s: string) => combos.push({ date: d, session: s }));
+        else combos.push({ date: d, session: undefined });
+      });
+
+      btn.disabled = true;
+      btn.textContent = '登録中…';
+      const okList: string[] = [];
+      const ngList: string[] = [];
+
+      for (const c of combos) {
+        const label = c.date.slice(5).replace('-', '/') +
+          (c.session ? (c.session === 'am' ? ' AM' : ' PM') : '');
+        try {
+          const r = await post('/api/admin/reservation', {
+            action: 'create',
+            kind,
+            date: c.date,
+            session: c.session,
+            category_code: kind === 'sport' ? $('n-category').value : undefined,
+            night_kind: kind === 'night' ? $('n-nightkind').value : undefined,
+            start_time: kind === 'sport' ? undefined : $('n-start').value,
+            end_time: (kind === 'charter' || (kind === 'night' && $('n-nightkind').value === 'charter'))
+              ? $('n-end').value : undefined,
+            party_size: Number($('n-party').value || 1),
+            vehicle_count: $('n-vehicles').value ? Number($('n-vehicles').value) : undefined,
+            name: $('n-name').value,
+            phone: $('n-phone').value,
+            email: $('n-email').value,
+            staff_memo: $('n-memo').value,
+            source: $('n-source').value,
+            amount: $('n-amount').value ? Number($('n-amount').value) : undefined,
+            forced: $('n-forced').checked,
+            forced_reason: $('n-forced-reason').value,
+            send_mail: $('n-mail').checked,
+          });
+          okList.push(label + ' (' + r.reservation_number + ')');
+        } catch (e: any) {
+          ngList.push(label + ': ' + e.message);
+        }
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'この内容で登録';
+      out.hidden = false;
+      if (ngList.length === 0) {
+        out.className = 'notice ok';
+        out.textContent = okList.length + ' 件登録しました — ' + okList.join(' / ');
+        // 専用ページは電話が続けて鳴る場所。画面を出し直すと結果が消えてしまうので、
+        // お客様ごとの欄だけ消して、次の 1 件をすぐ入れられるようにする
+        if (after === 'reload') setTimeout(() => location.reload(), 900);
+        else nextCustomer();
+      } else {
+        out.className = okList.length ? 'notice warn' : 'notice ng';
+        out.innerHTML =
+          (okList.length ? '<strong>' + okList.length + ' 件登録しました</strong>: ' + okList.join(' / ') + '<br>' : '') +
+          '<strong>登録できなかった日</strong>: ' + ngList.join(' / ') +
+          '<br><span class="tiny">「受付上限を無視して強制受付する」にチェックすると登録できます</span>';
+        if (okList.length && after === 'reload') setTimeout(() => location.reload(), 3500);
+        else if (okList.length) nextCustomer();
+      }
+    });
+
+    /** 次のお客様の入力に備える。種別・日付・時間帯はそのまま残す
+        (同じ日の予約が続けて入ることが多い) */
+    function nextCustomer() {
+      ['n-name', 'n-phone', 'n-email', 'n-memo', 'n-amount', 'n-forced-reason']
+        .forEach((id) => { $(id).value = ''; });
+      $('n-forced').checked = false;
+      $('n-mail').checked = false;
+      $('n-name').focus();
+    }
+  }
+</script>
+
+<style>
+  /* 電話が鳴ったらまずここ。1 画面の中で一番見つけやすくしておく */
+  .entry-card{border:2px solid var(--red);box-shadow:0 4px 14px rgba(215,38,61,.12)}
+  .entry-head{background:var(--red);color:#fff;margin:-1rem -1rem .7rem;padding:.6rem 1rem;
+    border-radius:10px 10px 0 0;font-size:1.05rem}
+  .ic{font-size:1.05em;margin-right:.15rem}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  /* 貸切以外は右の欄が消えるので 1 列に。空欄が並んでいるように見せない */
+  .two.one{grid-template-columns:1fr}
+</style>

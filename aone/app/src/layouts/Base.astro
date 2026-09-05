@@ -213,6 +213,8 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
       {admin ? (
         <nav class="site-nav">
           <a href="/admin">今日</a>
+          {/* 電話はどの画面を見ているときでも鳴る (2026-09 オーナー依頼) */}
+          <a href="/admin/reserve">予約登録</a>
           <a href="/admin/sheet">受付シート</a>
           <a href="/admin/calendar">カレンダー</a>
           <a href="/admin/reservations">予約一覧</a>

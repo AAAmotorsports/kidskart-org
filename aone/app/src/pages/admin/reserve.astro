@@ -1,0 +1,103 @@
+---
+import Base from '@layouts/Base.astro';
+import ReserveEntryForm from '@components/ReserveEntryForm.astro';
+import { envFrom } from '@lib/supabase';
+import { categories, dayState, reservationsOfDay } from '@lib/queries';
+import { jaDate, todayJst, timeRangeLabel, KIND_SHORT, nameWithHonorific } from '@lib/domain';
+
+export const prerender = false;
+
+// 予約の登録だけをする画面 (2026-09 オーナー依頼)。
+// 電話が鳴ったときに、日別の運営画面まで降りていかなくても
+// 管理トップから 1 タップで入力を始められるようにする。
+// フォームの中身は日別画面と同じ部品を使う (2 か所に書かない)。
+const env = envFrom(Astro.locals);
+const today = todayJst();
+const param = Astro.url.searchParams.get('date') ?? '';
+const date = /^\d{4}-\d{2}-\d{2}$/.test(param) ? param : today;
+
+const [cats, state, rows] = await Promise.all([
+  categories(env),
+  dayState(env, date),
+  reservationsOfDay(env, date),
+]);
+
+// 電話口で「その日空いてますか」と聞かれるので、入力しながら空きが見えるようにする
+const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
+const rpFree = (state?.rp.slots ?? []).filter((s: any) => s.accepting).length;
+const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
+---
+<Base title="予約の登録 | A-ONE 管理" admin>
+  <div class="spread" style="margin-bottom:.8rem">
+    <h1 style="margin:0">予約の登録</h1>
+    <div class="row">
+      <a class="btn sm" href={`/admin/day/${date}`}>{jaDate(date)} の運営画面</a>
+      <a class="btn sm" href="/admin">今日</a>
+    </div>
+  </div>
+
+  <div class="cols">
+    <ReserveEntryForm date={date} categories={cats} after="reset" />
+
+    <div>
+      {/* 電話口で答えられるように、選んだ日の空き具合を横に出しておく。
+          日を変えたら見出しの日付リンクから開き直す */}
+      <div class="card">
+        <h2 style="margin-top:0">{jaDate(date)} の空き</h2>
+        <div class="field" style="margin-bottom:.6rem">
+          <label for="d-jump">別の日を見る</label>
+          <input type="date" id="d-jump" value={date} />
+        </div>
+        {state ? (
+          <>
+            <p class="tiny muted" style="margin:.2rem 0 .6rem">
+              営業: {state.business.status === 'open' ? '営業中' : state.business.status}
+              {' / '}レースパックの空き: {rpFree} 枠
+            </p>
+            {sessions.map(([s, label]) => (
+              <div class="sess">
+                <strong>{label}</strong>
+                <div class="choice" style="margin-top:.25rem">
+                  {(state.sport[s].categories ?? []).map((c: any) => (
+                    <span class={`badge ${c.status === 'open' ? 'ok' : 'off'}`}>
+                      {c.short_name ?? c.name} {c.status === 'open' ? '○' : '✕'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : <p class="muted small">状況を取得できませんでした。</p>}
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0">この日の予約 ({live.length} 件)</h2>
+        {live.length === 0
+          ? <p class="muted small">まだありません。</p>
+          : live.map((r) => (
+            <div class="mini">
+              <span class="badge">{KIND_SHORT[r.kind as keyof typeof KIND_SHORT] ?? r.kind}</span>
+              {' '}{timeRangeLabel(r)}
+              {' '}{nameWithHonorific(r.contact_name)} / {r.party_size} 名
+            </div>
+          ))}
+      </div>
+    </div>
+  </div>
+</Base>
+
+<script>
+  // 日付を変えたら、その日の空きを出し直す (ページごと開き直す)
+  const jump = document.getElementById('d-jump') as HTMLInputElement | null;
+  jump?.addEventListener('change', () => {
+    if (jump.value) location.href = '/admin/reserve?date=' + jump.value;
+  });
+</script>
+
+<style>
+  .cols{display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;align-items:start}
+  .sess+.sess{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}
+  .mini{padding:.3rem 0;border-bottom:1px dashed var(--line);font-size:.9rem}
+  .mini:last-child{border-bottom:0}
+  @media (max-width:900px){ .cols{grid-template-columns:1fr} }
+</style>
