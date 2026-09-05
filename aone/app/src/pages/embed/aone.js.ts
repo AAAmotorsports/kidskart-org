@@ -561,19 +561,6 @@ const WIDGET_JS = String.raw`
         html += '<div class="aone-wxs">' + esc(day.business_label) + '</div>';
       }
       if (day.surface_label) html += '<div class="aone-sfs">' + esc(day.surface_label) + '</div>';
-      // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
-      // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
-      // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)
-      if (mode !== 'sport' && day.date >= d.today) {
-        // 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
-        // (古い API のときは day 単位の rental_ok しか来ない)
-        var rAm = day.rental_am != null ? day.rental_am : day.rental_ok;
-        var rPm = day.rental_pm != null ? day.rental_pm : day.rental_ok;
-        var rMark = (rAm && rPm) ? 'レンタルカート ○'
-          : rPm ? 'レンタルカート ○ 午後のみ'
-          : rAm ? 'レンタルカート ○ 午前のみ' : null;
-        if (rMark) html += '<div class="aone-rok">' + rMark + '</div>';
-      }
       // 参加申込は、そのイベント名のすぐ右に短く付ける。赤い帯を 2 本並べると、
       // どちらを押すのか迷って押し間違える (2026-09 オーナー指摘)
       var entryChip = !day.entry_url ? ''
@@ -598,6 +585,18 @@ const WIDGET_JS = String.raw`
           + (i === day.events.length - 1 ? entryChip : '')
           + '</span></span></div>';
       });
+      // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
+      // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
+      // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)。
+      // ★ 予約ボタンのすぐ上に置く。ボタンの見出しとして読ませたい (2026-09 オーナー依頼)
+      if (mode !== 'sport' && day.date >= d.today) {
+        // 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
+        // (rAm / rPm は入口の判定で作ったものを使い回す)
+        var rMark = (rAm && rPm) ? 'レンタルカート ○'
+          : rPm ? 'レンタルカート ○ 午後のみ'
+          : rAm ? 'レンタルカート ○ 午前のみ' : null;
+        if (rMark) html += '<div class="aone-rok">' + rMark + '</div>';
+      }
       // 予定を出していない日 (非公開の予定で申込だけ受けている) は付ける先が
       // 無いので、これまでどおり 1 本の帯で出す
       if (day.entry_url && !day.events.length) {

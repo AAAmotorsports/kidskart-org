@@ -192,15 +192,6 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
               {d.surface && !isPast && (
                 <div class="tiny sf">{SURFACE_LABELS[d.surface] ?? d.surface}</div>
               )}
-              {/* ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
-                  AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
-                  レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘) */}
-              {showRental && !isPast && d.business === 'open'
-                && rentalMark((d.rp_free_am ?? 0) > 0, (d.rp_free_pm ?? 0) > 0) && (
-                <div class="tiny rental-ok">
-                  {rentalMark((d.rp_free_am ?? 0) > 0, (d.rp_free_pm ?? 0) > 0)}
-                </div>
-              )}
               {publicBlocks.map((b, i) => (
                 /* 「イベント」と名前を 2 行に。種別を頭に付けないもの (臨時休業など) は 1 行 */
                 <div class="tiny ev">
@@ -226,6 +217,17 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
                   </span>
                 </div>
               ))}
+              {/* ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
+                  AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
+                  レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)。
+                  ★ 予約ボタンのすぐ上に置く。ボタンの見出しとして読ませたい
+                  (2026-09 オーナー依頼) */}
+              {showRental && !isPast && d.business === 'open'
+                && rentalMark((d.rp_free_am ?? 0) > 0, (d.rp_free_pm ?? 0) > 0) && (
+                <div class="tiny rental-ok">
+                  {rentalMark((d.rp_free_am ?? 0) > 0, (d.rp_free_pm ?? 0) > 0)}
+                </div>
+              )}
               {/* 予定を出していない日 (非公開の予定で申込だけ受けている) は
                   付ける先が無いので、これまでどおり 1 本の帯で出す */}
               {entryHref && publicBlocks.length === 0 && (twoWays
