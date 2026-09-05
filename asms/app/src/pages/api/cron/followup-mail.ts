@@ -129,6 +129,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  // flag UPDATE 失敗を貯める配列 (メール送信は成功したが DB flag update
+  // が失敗したケース)。ループ完了後に配列が空でなければ throw して cron
+  // 全体を error 扱いにする → admin パネルで赤バッジ → 気付ける。
+  // 「メール送信成功 → flag 未セット → 次回 cron で同じメール再送」
+  // という二重送信リスクの検知手段。
+  const flagUpdateErrors: Array<{ groupIds: string[]; error: string }> = [];
 
   // 同一保護者の複数予約を 1 通に集約する。フォローアップは営業性の
   // 強い再エンゲージメントメールなので、同じ保護者に 2 通並列で送るのは
@@ -226,6 +232,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .in('id', ids);
       if (updErr) {
         console.warn('[followup-mail] failed to mark sent for group', ids, updErr.message);
+        flagUpdateErrors.push({ groupIds: ids, error: updErr.message });
       }
       if (askReview && guardianId) {
         const { error: revErr } = await supabase
@@ -254,6 +261,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
+      // メール送信は成功したが flag UPDATE に失敗した group が 1 つでも
+      // あれば、cron 全体を error 扱いにする (次回 cron で同じ保護者に
+      // 再送されるリスクを admin パネルの赤バッジで気付けるようにする)。
+      // sent/failed カウンタ等は throw で消えるので、必要情報を error
+      // message に埋め込む。
+      if (flagUpdateErrors.length > 0) {
+        const failedGroupIds = flagUpdateErrors.flatMap((e) => e.groupIds);
+        const okCount = sent - failedGroupIds.length;
+        throw new Error(
+          `[followup-mail] mail-sent but flag-update FAILED for ${flagUpdateErrors.length} ` +
+          `group(s) covering ${failedGroupIds.length} reservation(s). ` +
+          `Next cron will RE-SEND these to the guardian(s). ` +
+          `Success: sent=${okCount}. Failed reservation IDs: [${failedGroupIds.join(',')}]. ` +
+          `First DB error: ${flagUpdateErrors[0].error}`
+        );
+      }
       return { target_date: targetDate, total, sent, skipped, failed, details };
     });
     return json({ ok: true, ...result });
