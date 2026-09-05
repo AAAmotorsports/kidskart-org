@@ -451,6 +451,19 @@ export function cancelPolicyLines(kind: string | null | undefined): readonly str
   return kind === 'sport' ? CANCEL_POLICY_SPORT_LINES : CANCEL_POLICY_RENTAL;
 }
 
+/**
+ * ご予約不要のレンタルカート走行の出し方。
+ * 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
+ * (2026-09 オーナー指摘: 13 日は午前 ✕・午後 ○)。
+ * 走れない日は null を返す — その日は休業やレースの名前が別に出ている。
+ */
+export function rentalMark(am: boolean, pm: boolean): string | null {
+  if (am && pm) return 'レンタルカート ○';
+  if (pm) return 'レンタルカート ○ 午後のみ';
+  if (am) return 'レンタルカート ○ 午前のみ';
+  return null;
+}
+
 export function yen(n: number | null | undefined): string {
   return n == null ? '—' : `¥${n.toLocaleString('ja-JP')}`;
 }
