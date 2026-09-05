@@ -408,7 +408,9 @@ const WIDGET_JS = String.raw`
       var v = localStorage.getItem(MODE_KEY);
       if (v && MODES.some(function (m) { return m[0] === v; })) return v;
     } catch (e) { /* 保存が使えなくても既定で動く */ }
-    return 'both';
+    // 既定は「レンタル」。いちばん多いのはレンタルカートで遊びに来るお客様なので、
+    // 最初に開いたときはその人たちの見たいものを出す (2026-09 オーナー確認)
+    return 'rental';
   }
   function saveMode(v) {
     try { localStorage.setItem(MODE_KEY, v); } catch (e) { /* 保存できなくても続行 */ }
@@ -526,8 +528,15 @@ const WIDGET_JS = String.raw`
       // ご予約不要のレンタルカート走行ができる日は、そう分かるように出す。
       // AM / PM の「受付停止」は持ち込み車両の話なので、これが無いと
       // レンタルのお客様が「来られない日」と読んでしまう (2026-09 オーナー指摘)
-      if (mode !== 'sport' && day.rental_ok && day.date >= d.today) {
-        html += '<div class="aone-rok">レンタルカート ○</div>';
+      if (mode !== 'sport' && day.date >= d.today) {
+        // 午前だけレースで埋まっている日があるので、午前 / 午後で分ける
+        // (古い API のときは day 単位の rental_ok しか来ない)
+        var rAm = day.rental_am != null ? day.rental_am : day.rental_ok;
+        var rPm = day.rental_pm != null ? day.rental_pm : day.rental_ok;
+        var rMark = (rAm && rPm) ? 'レンタルカート ○'
+          : rPm ? 'レンタルカート ○ 午後のみ'
+          : rAm ? 'レンタルカート ○ 午前のみ' : null;
+        if (rMark) html += '<div class="aone-rok">' + rMark + '</div>';
       }
       day.events.forEach(function (e) {
         // 「イベント」と「８０分耐久レース」を 2 行に分ける。
@@ -570,6 +579,7 @@ const WIDGET_JS = String.raw`
     // 開き直すとレースパック・貸切が出ないので、その場で戻り方を書いておく
     var note = mode === 'rental'
       ? 'すでにご予約が入っているレースパック・貸切を出しています。'
+        + '「レンタルカート ○」と出ている日は、ご予約不要のレンタル走行ができます。'
       : mode === 'sport'
         ? '○ = 受付可。レースパック・貸切のご予約は「両方」を押すと出ます。'
         : '○ = 受付可、クラス名が出ている枠はすでにご予約が入っています。';

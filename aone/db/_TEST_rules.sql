@@ -1128,6 +1128,54 @@ begin
     assert (r->>'cancel_fee_rate')::int = 0, '27-13 二重キャンセルで料金が付く';
   end;
 
+  -- =========================================================================
+  raise notice '--- 28. 月のスケジュールの「午前/午後どちらで走れるか」';
+  -- =========================================================================
+  declare
+    d_am  date := aone_today() + 110;
+    d_pm  date := aone_today() + 111;
+    d_all date := aone_today() + 112;
+    ym    jsonb;
+  begin
+    insert into aone_blocks (date, kind, title, scope, is_public) values
+      (d_am,  'race', '午前レース', 'am',  true),
+      (d_pm,  'race', '午後レース', 'pm',  true),
+      (d_all, 'race', '終日レース', 'all', true);
+
+    ym := aone_month_state(extract(year from d_am)::int, extract(month from d_am)::int);
+
+    r := (select x from jsonb_array_elements(ym) x
+           where x->>'date' = to_char(d_am, 'YYYY-MM-DD'));
+    assert (r->>'rp_free_am')::int = 0, '28-1 午前を止めたのに午前が空いている';
+    assert (r->>'rp_free_pm')::int > 0, '28-2 午前を止めたら午後まで塞がった';
+
+    r := (select x from jsonb_array_elements(ym) x
+           where x->>'date' = to_char(d_pm, 'YYYY-MM-DD'));
+    assert (r->>'rp_free_am')::int > 0, '28-3 午後を止めたら午前まで塞がった';
+    -- コースが閉まったあとの枠 (17:30〜) は数に入れない。
+    -- 入れてしまうと、午後を止めた日でも「走れる」に見える
+    assert (r->>'rp_free_pm')::int = 0, '28-4 午後を止めたのに午後が空いている: '
+      || (r->>'rp_free_pm');
+
+    r := (select x from jsonb_array_elements(ym) x
+           where x->>'date' = to_char(d_all, 'YYYY-MM-DD'));
+    assert (r->>'rp_free_am')::int = 0 and (r->>'rp_free_pm')::int = 0,
+      '28-5 終日止めたのに空きが残っている';
+
+    -- 休業の日は両方 0
+    insert into aone_business_days (date, business_status)
+    values (aone_today() + 113, 'closed');
+    ym := aone_month_state(extract(year from aone_today() + 113)::int,
+                           extract(month from aone_today() + 113)::int);
+    r := (select x from jsonb_array_elements(ym) x
+           where x->>'date' = to_char(aone_today() + 113, 'YYYY-MM-DD'));
+    assert (r->>'rp_free_am')::int = 0 and (r->>'rp_free_pm')::int = 0,
+      '28-6 休業日に空きが残っている';
+
+    delete from aone_blocks where date in (d_am, d_pm, d_all);
+    delete from aone_business_days where date = aone_today() + 113;
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

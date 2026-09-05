@@ -107,6 +107,9 @@ export interface MonthDay {
   am_categories: MonthCategory[];
   pm_categories: MonthCategory[];
   rp_free: number;
+  /** 午前 / 午後それぞれで、レンタルカートが走れるか (空いている RP 枠の数) */
+  rp_free_am: number;
+  rp_free_pm: number;
   blocks: Array<{ title: string; public_label: string; kind: string; is_public: boolean }>;
   counts: { sport: number; rp: number; charter: number; night: number; people: number };
 }
