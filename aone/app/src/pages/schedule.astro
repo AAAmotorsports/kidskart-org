@@ -87,15 +87,6 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   return (cats ?? []).some((c) => c.status === 'open' && (!c.requires_reservation || c.running));
 }
 
-/**
- * 止まっているときの言い方。
- * 毎週のお休み (日曜午後など) は「不可」。毎週のことなので「受付停止」と
- * 出し続けると何かあったように見える、という理由で分けている
- * (2026-09 オーナー確認。最初「お休み」にしたが「不可」に変更)。
- */
-function sessionClosedLabel(cats: { reason?: string }[]): string {
-  return (cats ?? []).some((c) => c.reason === 'weekly_closed') ? '不可' : '受付停止';
-}
 ---
 <Base title={`${year}年${month}月のスケジュール | A-ONE サーキット`} wide>
   <div class="spread" style="margin-bottom:.8rem">
@@ -233,8 +224,10 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
                                   /* 何の受付が止まっているのかを書く。「受付停止」だけだと、
                                      レンタルカートのお客様まで予約できないと思ってしまう
                                      (2026-09 オーナー指摘) */
-                                  /* 1 行で。2 行にすると縦に長くなる (2026-09 オーナー確認) */
-                                  : <div class="ng">スポーツ走行 {sessionClosedLabel(cats as any)}</div>
+                                  /* 1 行で「スポーツ走行 不可」。理由 (毎週のお休み /
+                                     レース / 貸切 / 満枠) では書き分けない。
+                                     言い方が増えるほど分かりにくい (2026-09 オーナー確認) */
+                                  : <div class="ng">スポーツ走行 不可</div>
                             )}
                           </div>
                         </div>
@@ -260,13 +253,13 @@ function sessionClosedLabel(cats: { reason?: string }[]): string {
         （{showSport && 'AM / PM = 午前 / 午後'}{showSport && showRental && '、'}
         {showRental && 'RP・貸切は時間と代表者名'}）。
         何も出ていない日はどなたでもご予約いただけます。
-        受付停止はレース・イベント・貸切・満枠などによるものです。
+        「不可」はレース・イベント・貸切・満枠・毎週のお休みなどによるものです。
         当日の最新状況は <a href="/">「今日走れる？」</a> をご確認ください。
       </p>
 
       {showSport && (
         <p class="tiny notice info" style="margin-top:.4rem">
-          <strong>AM / PM の ○・受付停止・不可は、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
+          <strong>AM / PM の ○・不可は、お持ち込み車両（スポーツ走行）の走行枠です。</strong>
           {showRental
             ? <>
                 <strong class="rental-ok" style="display:inline">レンタルカート ○</strong>
