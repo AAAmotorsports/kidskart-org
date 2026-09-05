@@ -213,6 +213,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // Google 口コミ依頼: 未依頼の保護者にだけ 1 度 opportunistic に
     const askReview = !guardian.google_review_asked_at && !!googleReviewUrl;
 
+    // Resend Idempotency-Key: cron 自動発火では
+    // "followup:<targetDate>:<guardianId>" の決定的キーで dedup。
+    // 「メール送信成功 → DB flag UPDATE 失敗 → 次日 cron 再抽出」
+    // で同じメールが Resend まで届いても 24h 以内なら Resend 側で
+    // 実送信をブロック (二重送信 safety net 第 1 段)。
+    const idempotencyKey = `followup:${targetDate}:${guardianId}`;
+
     try {
       await sendFollowupEmail(env, {
         to: guardian.email,
@@ -221,18 +228,43 @@ export const POST: APIRoute = async ({ request, locals }) => {
         courseName: courseNames.join(' / '), // 複数コース混在時は "/" 連結
         nextStep,
         googleReviewUrl: askReview ? googleReviewUrl : '',
+        idempotencyKey,
       });
 
       // group 内全予約の flag を 1 UPDATE で同時セット (Postgres 単一
-      // UPDATE 文は atomic なので部分更新にならない)
+      // UPDATE 文は atomic なので部分更新にならない)。
+      // 一時的な Supabase 通信エラーに対しては backoff 付きで最大 3 回
+      // リトライ (safety net 第 2 段: 翌日まで持ち越さず即回復)。
+      // 3 回全部失敗した場合のみ flagUpdateErrors に積んで最終的に
+      // cron を error 扱いにする。
       const ids = groupReservations.map((r: any) => r.id);
-      const { error: updErr } = await supabase
-        .from('reservations')
-        .update({ followup_email_sent_at: new Date().toISOString() })
-        .in('id', ids);
+      const sentAt = new Date().toISOString();
+      let updErr: { message: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { error } = await supabase
+          .from('reservations')
+          .update({ followup_email_sent_at: sentAt })
+          .in('id', ids);
+        if (!error) { updErr = null; break; }
+        updErr = error;
+        console.warn(
+          `[followup-mail] flag UPDATE attempt ${attempt}/3 failed for group`,
+          ids, error.message,
+        );
+        if (attempt < 3) {
+          // 200ms → 600ms の指数的 backoff。合計最大 ~800ms 遅延。
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 200 : 600));
+        }
+      }
       if (updErr) {
-        console.warn('[followup-mail] failed to mark sent for group', ids, updErr.message);
-        flagUpdateErrors.push({ groupIds: ids, error: updErr.message });
+        console.warn(
+          '[followup-mail] failed to mark sent for group after 3 attempts',
+          ids, updErr.message,
+        );
+        flagUpdateErrors.push({
+          groupIds: ids,
+          error: `${updErr.message} (after 3 retries)`,
+        });
       }
       if (askReview && guardianId) {
         const { error: revErr } = await supabase
@@ -384,6 +416,13 @@ async function sendFollowupEmail(env: Env, args: {
   courseName: string;
   nextStep: NextStep;
   googleReviewUrl: string;
+  /**
+   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
+   * dedup され、実際にはメールが飛ばない (24h 保持)。
+   * 「メール送信成功 → DB flag UPDATE 失敗 → 次回 cron で同じ対象再抽出」
+   * の二重送信を Resend レイヤで防ぐための safety net。
+   */
+  idempotencyKey?: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
   if (!apiKey) {
@@ -493,12 +532,16 @@ async function sendFollowupEmail(env: Env, args: {
   };
   if (replyTo) body.reply_to = replyTo;
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (args.idempotencyKey) {
+    headers['Idempotency-Key'] = args.idempotencyKey;
+  }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) {
