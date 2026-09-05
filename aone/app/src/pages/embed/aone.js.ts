@@ -124,6 +124,11 @@ const WIDGET_JS = String.raw`
     '.aone-dow{display:none}',
     '.aone-cal td.linkable:hover{background:#fff8f9;box-shadow:inset 0 0 0 2px var(--aone-red)}',
     // 参加申込を受け付けている日は、押せることが分かるようにする
+    // イベントの日は行き先が 2 つある (参加申込 / その日のご予約)
+    '.aone-entry.aone-as-link{display:block;text-decoration:none}',
+    '.aone-book{display:block;text-align:center;font-weight:800;text-decoration:none;',
+    '  border:1px solid var(--aone-red);color:var(--aone-red);border-radius:4px;',
+    '  padding:1px 4px;margin-bottom:2px;background:#fff;font-size:.92em}',
     '.aone-entry{background:var(--aone-red);color:#fff;border-radius:4px;padding:1px 4px;',
     '  font-weight:800;font-size:.9em;margin-top:2px;text-align:center}',
     '.aone-d{font-weight:800}',
@@ -497,16 +502,18 @@ const WIDGET_JS = String.raw`
       if (day.business === 'cancelled' || day.business === 'closed') cls.push('closed');
       if (day.date < d.today) cls.push('past');
 
-      // 参加申込を受け付けているイベントの日は、申込フォームへ飛ばす。
-      // イベント日は終日ブロックされていて走行の予約はできないので、
-      // 「ご予約へ」に飛ばしても行き止まりになる
-      var href = day.entry_url || null;
-      var title = '参加申込へ';
-      if (!href && day.date >= d.today
-          && day.business !== 'cancelled' && day.business !== 'closed') {
-        href = reserveLink(d, mode) + '?date=' + day.date;
-        title = 'この日のご予約へ';
-      }
+      // イベントの日でも、空いている時間帯があれば予約したい人がいる。
+      // セルごとイベントページに飛ばすと予約にたどり着けない (2026-09 オーナー指摘)。
+      // その日は行き先が 2 つあるので、セルはリンクにせず中にボタンを 2 つ置く
+      var openDay = day.date >= d.today
+        && day.business !== 'cancelled' && day.business !== 'closed';
+      var bookHref = reserveLink(d, mode) + '?date=' + day.date;
+      var bookable = openDay && (
+        (day.rental_am != null ? (day.rental_am || day.rental_pm) : day.rental_ok)
+        || day.am_open || day.pm_open);
+      var twoWays = !!day.entry_url && bookable;
+      var href = twoWays ? null : (day.entry_url || (openDay ? bookHref : null));
+      var title = day.entry_url ? 'イベントの詳細・参加申込へ' : 'この日のご予約へ';
       if (day.entry_url) cls.push('entry');
       html += '<td class="' + cls.join(' ') + (href ? ' linkable' : '') + '">';
       if (href) {
@@ -547,7 +554,13 @@ const WIDGET_JS = String.raw`
       });
       // 押せることが分からないとクリックされないので、はっきり出す
       if (day.entry_url) {
-        html += '<div class="aone-entry">参加申込 受付中 →</div>';
+        html += twoWays
+          ? '<a class="aone-entry aone-as-link" href="' + esc(day.entry_url) + '">'
+            + '参加申込 受付中 →</a>'
+          : '<div class="aone-entry">参加申込 受付中 →</div>';
+      }
+      if (twoWays) {
+        html += '<a class="aone-book" href="' + esc(bookHref) + '">この日のご予約へ →</a>';
       }
 
       if (day.date >= d.today) {

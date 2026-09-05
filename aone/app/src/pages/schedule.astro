@@ -143,11 +143,14 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
           const isPast = d.date < today;
           // 予約できる日はセルごとリンクにする。「ご予約受付中」の文字を
           // 全セルに出すとうるさいので、押せることは色と hover で示す。
-          // 参加申込を受け付けているイベントの日は申込フォームへ。
-          // イベント日は終日ブロックされていて走行の予約はできないので、
-          // 「ご予約へ」に飛ばすと行き止まりになる
           const entryHref = entryByDate.get(d.date);
-          const linkable = !!entryHref || (!isPast && !closed);
+          // イベントの日でも、空いている時間帯があれば予約したい人がいる。
+          // セルごとイベントページに飛ばすと予約にたどり着けない (2026-09 オーナー指摘)。
+          // その日は行き先が 2 つあるので、セルはリンクにせず中にボタンを 2 つ置く
+          const bookable = !isPast && !closed
+            && (d.rp_free > 0 || isOpen(d.sport_am) || isOpen(d.sport_pm));
+          const twoWays = !!entryHref && bookable;
+          const linkable = !twoWays && (!!entryHref || (!isPast && !closed));
           const Cell = linkable ? 'a' : 'div';
           return (
             <Cell
@@ -191,7 +194,14 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
               ))}
               {/* 何のイベントかを先に出してから申込へ誘う。
                   貼り付けウィジェットと並び順を揃える (食い違って見えるため) */}
-              {entryHref && <div class="tiny entry">参加申込 受付中 →</div>}
+              {entryHref && (twoWays
+                ? <a class="tiny entry as-link" href={entryHref}>参加申込 受付中 →</a>
+                : <div class="tiny entry">参加申込 受付中 →</div>)}
+              {twoWays && (
+                <a class="tiny book-link" href={`${reserveHref}?date=${d.date}`}>
+                  この日のご予約へ →
+                </a>
+              )}
               {isPast ? null : (
                 <div class="tiny sessions">
                   {([['AM', d.am_categories, false], ['PM', d.pm_categories, true]] as const).map(
@@ -345,6 +355,13 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
   /* 押せることが分からないとクリックされないので、はっきり出す */
   .entry{background:var(--red);color:#fff;border-radius:4px;padding:.05rem .25rem;
     font-weight:800;text-align:center;margin-bottom:.1rem}
+  /* イベントの日は行き先が 2 つある (参加申込 / その日のご予約)。
+     どちらも押せることが分かるようにする */
+  .entry.as-link{display:block;text-decoration:none}
+  .book-link{display:block;text-align:center;font-weight:800;text-decoration:none;
+    border:1px solid var(--red);color:var(--red-deep);border-radius:4px;
+    padding:.05rem .25rem;margin-bottom:.1rem;background:#fff}
+  .book-link:hover{background:#fdeef0}
   .ev{background:var(--blue-soft);border-radius:4px;padding:0 .2rem;color:#1d5386;font-weight:700;
     max-width:100%}
   .ev .l1{display:block;opacity:.85}
