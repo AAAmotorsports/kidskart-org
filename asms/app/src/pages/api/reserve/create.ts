@@ -125,6 +125,10 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   }
 
   // --- Single atomic RPC call --------------------------------------------
+  // NOTE: 一般 WEB 予約は締切 (開始 3 時間前) チェックを DB 側で必ず通す。
+  // p_bypass_cutoff は明示的に渡さない (デフォルト FALSE)。悪意ある
+  // クライアントが payload に bypass_cutoff を混ぜても、この endpoint は
+  // その値を無視 (RPC の別引数として渡さない) ので絶対に bypass されない。
   const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_reservation_atomic', {
     payload: {
       slot_id,
@@ -138,6 +142,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       ip_address: request.headers.get('CF-Connecting-IP') || clientAddress || '',
       user_agent: request.headers.get('User-Agent') || '',
     },
+    // p_bypass_cutoff を敢えて渡さない (DEFAULT FALSE で cutoff 判定される)
   });
 
   if (rpcErr) {
@@ -149,6 +154,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
         hint === 'slot_not_found' ? 404 :
         hint === 'slot_not_open'  ? 409 :
         hint === 'slot_full'      ? 409 :
+        hint === 'slot_cutoff_passed' ? 409 :
         hint === 'terms_not_found' ? 400 :
         hint === 'empty_participants' || hint === 'missing_field' ? 400 :
         500;

@@ -59,6 +59,23 @@ const requiresApproval = !!course.requires_approval;
 const maxParticipants = Math.min(3, remaining);
 const safetyItems = (terms?.safety_items as Array<{ id: number; text: string }>) ?? [];
 
+// WEB 予約締切: 開始 3 時間前まで。ここは表示制御用で、最終防衛は
+// DB RPC の p_bypass_cutoff=FALSE 時のカットオフチェック (0032)。
+// 判定基準は JST (slot.date + slot.start_time)。
+const BOOKING_CUTOFF_MS = 3 * 60 * 60 * 1000;
+let isPastCutoff = false;
+if (slot.date && slot.start_time) {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(slot.date);
+  const tm = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(slot.start_time);
+  if (dm && tm) {
+    const startUtcMs = Date.UTC(
+      parseInt(dm[1], 10), parseInt(dm[2], 10) - 1, parseInt(dm[3], 10),
+      parseInt(tm[1], 10) - 9, parseInt(tm[2], 10), tm[3] ? parseInt(tm[3], 10) : 0,
+    );
+    isPastCutoff = Date.now() >= startUtcMs - BOOKING_CUTOFF_MS;
+  }
+}
+
 // Turnstile: only render the widget if a site key is configured. This
 // lets local/dev deploys work without a Turnstile account, and lets
 // the site owner opt in later without a code change.
@@ -162,6 +179,14 @@ const termsHtml = terms
       </div>
     )}
 
+    {remaining > 0 && isPastCutoff && (
+      <div class="err">
+        {isEn
+          ? (<><strong>Online booking closed.</strong> Web booking closes 3 hours before start time. Please call 092-927-1177 if you need to book close to the start.</>)
+          : (<><strong>この枠の WEB 予約は終了しました。</strong> WEB 予約は開始 3 時間前で締切になります。直前のご予約はお電話 (092-927-1177) にてお問い合わせください。</>)}
+      </div>
+    )}
+
     {!terms && (
       <div class="err">
         {isEn
@@ -170,7 +195,7 @@ const termsHtml = terms
       </div>
     )}
 
-    {remaining > 0 && terms && (
+    {remaining > 0 && !isPastCutoff && terms && (
       <>
         <div class="progress-wrap" aria-label={isEn ? 'Progress' : '進行状況'}>
           <ol class="progress">
