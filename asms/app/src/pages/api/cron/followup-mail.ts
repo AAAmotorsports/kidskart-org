@@ -8,10 +8,16 @@ export const prerender = false;
 //
 // 毎日 19:00 JST に GitHub Actions cron から叩かれる。
 // 対象: 30 日前 (JST) に開催されて、その後 1 度も新予約がない保護者の予約。
-// 各対象予約に対して「その後お子さまいかがですか？」の再エンゲージメント
-// メールを保護者に送る。二重送信防止のため reservations.followup_email_sent_at
-// を記録。保護者単位で「1 回だけ」の運用 (再エンゲージメントメールを短期に
-// 何度も送るのは嫌がられるので、reservation 単位で判定するけど実質同じ)。
+// 各対象保護者に対して「その後お子さまいかがですか？」の再エンゲージメント
+// メールを送る。二重送信防止のため reservations.followup_email_sent_at
+// を記録。
+//
+// 送信単位: **guardian 単位で 1 通** (2026-09-02 変更)。
+// 同一保護者が同日に複数予約していた場合、全予約分を 1 通に集約する。
+// 参加者名は合算、コース名は " / " 連結、次ステップ提案は代表参加者の
+// skill_level で判定。DB の predicate flag (followup_email_sent_at) は
+// 従来通り予約単位で持ち、送信成功時は group 内全予約を 1 UPDATE で
+// 同時セット (Postgres 単一 UPDATE は atomic)。
 //
 // 発火頻度は日次だが、対象は「30 日前ぴったりに開催した予約」なので、
 // 毎日せいぜい 1-3 件しか送られない。
@@ -123,85 +129,186 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  // flag UPDATE 失敗を貯める配列 (メール送信は成功したが DB flag update
+  // が失敗したケース)。ループ完了後に配列が空でなければ throw して cron
+  // 全体を error 扱いにする → admin パネルで赤バッジ → 気付ける。
+  // 「メール送信成功 → flag 未セット → 次回 cron で同じメール再送」
+  // という二重送信リスクの検知手段。
+  const flagUpdateErrors: Array<{ groupIds: string[]; error: string }> = [];
 
+  // 同一保護者の複数予約を 1 通に集約する。フォローアップは営業性の
+  // 強い再エンゲージメントメールなので、同じ保護者に 2 通並列で送るのは
+  // 疲弊感を招く。DB の予約単位 idempotency flag はそのまま維持しつつ、
+  // 送信処理だけ guardian でまとめる。
+  const groupsByGuardian = new Map<string, any[]>();
+  const orphaned: any[] = [];
   for (const r of (candidates ?? []) as any[]) {
-    try {
-      const guardian = r.guardians;
-      if (!guardian?.email) {
-        skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
-        continue;
-      }
-      // 30 日以内に新規予約がある保護者はスキップ (=リピーター、再エンゲ不要)
-      if (r.guardian_id && laterActiveGuardians.has(r.guardian_id)) {
+    if (!r.guardian_id) { orphaned.push(r); continue; }
+    const arr = groupsByGuardian.get(r.guardian_id) ?? [];
+    arr.push(r);
+    groupsByGuardian.set(r.guardian_id, arr);
+  }
+  for (const r of orphaned) {
+    skipped++;
+    details.push({ id: r.id, result: 'skipped', note: 'no guardian_id' });
+  }
+
+  for (const [guardianId, groupReservations] of groupsByGuardian) {
+    const rep = groupReservations[0];
+    const guardian = rep.guardians;
+
+    // Guardian が 30 日以内に新規予約を持つ (=リピーター化) → group 全体 skip
+    if (laterActiveGuardians.has(guardianId)) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'guardian has later reservation' });
-        continue;
       }
-      const slotInfo = slotInfoById.get(r.slot_id);
-      if (!slotInfo) {
+      continue;
+    }
+    if (!guardian?.email) {
+      for (const r of groupReservations) {
         skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'slot info missing' });
-        continue;
+        details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
       }
-      const activeParticipants = (r.reservation_participants as any[]).filter(
+      continue;
+    }
+
+    // group 内全予約の active 参加者・コース名を集約
+    const allParticipantNames: string[] = [];
+    const courseNames: string[] = [];
+    let representativeSlotInfo: { courseCode: string; courseName: string } | null = null;
+    let representativeSkill: SkillLevel = 'first_time';
+    let representativeSkillSet = false;
+    for (const r of groupReservations) {
+      const slotInfo = slotInfoById.get(r.slot_id);
+      if (!slotInfo) continue;
+      if (!representativeSlotInfo) representativeSlotInfo = slotInfo;
+      if (slotInfo.courseName && !courseNames.includes(slotInfo.courseName)) {
+        courseNames.push(slotInfo.courseName);
+      }
+      const active = (r.reservation_participants as any[]).filter(
         (p: any) => p.attendance_status !== 'cancelled' && p.attendance_status !== 'no_show'
       );
-      if (activeParticipants.length === 0) {
+      for (const p of active) {
+        allParticipantNames.push(p.name_snapshot);
+        if (!representativeSkillSet) {
+          representativeSkill = (p.customers?.current_skill_level as SkillLevel) ?? 'first_time';
+          representativeSkillSet = true;
+        }
+      }
+    }
+    if (allParticipantNames.length === 0 || !representativeSlotInfo) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no attended participants' });
-        continue;
       }
+      continue;
+    }
 
-      // 参加者の skill_level から代表的な次のステップ提案を決める
-      // (簡略化: 最初の参加者の skill を使う)
-      const firstParticipant = activeParticipants[0];
-      const skill: SkillLevel = firstParticipant.customers?.current_skill_level ?? 'first_time';
-      const courseKind = classifyCourse(slotInfo.courseCode);
-      const nextStep = nextStepFor(courseKind, skill, origin);
+    // 次ステップ提案 = 代表参加者の skill × 代表コース種別 (最小変更方針、
+    // 混在時は代表 1 名で判定。「詳しくはリンクから」で十分)
+    const courseKind = classifyCourse(representativeSlotInfo.courseCode);
+    const nextStep = nextStepFor(courseKind, representativeSkill, origin);
 
-      // まだ Google 口コミ依頼を送ったことがない保護者だけ、opportunistic に依頼
-      const askReview = !guardian.google_review_asked_at && !!googleReviewUrl;
+    // Google 口コミ依頼: 未依頼の保護者にだけ 1 度 opportunistic に
+    const askReview = !guardian.google_review_asked_at && !!googleReviewUrl;
 
+    // Resend Idempotency-Key: cron 自動発火では
+    // "followup:<targetDate>:<guardianId>" の決定的キーで dedup。
+    // 「メール送信成功 → DB flag UPDATE 失敗 → 次日 cron 再抽出」
+    // で同じメールが Resend まで届いても 24h 以内なら Resend 側で
+    // 実送信をブロック (二重送信 safety net 第 1 段)。
+    const idempotencyKey = `followup:${targetDate}:${guardianId}`;
+
+    try {
       await sendFollowupEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
-        participantNames: activeParticipants.map((p: any) => p.name_snapshot),
-        courseName: slotInfo.courseName,
+        participantNames: allParticipantNames,
+        courseName: courseNames.join(' / '), // 複数コース混在時は "/" 連結
         nextStep,
         googleReviewUrl: askReview ? googleReviewUrl : '',
+        idempotencyKey,
       });
 
-      const { error: updErr } = await supabase
-        .from('reservations')
-        .update({ followup_email_sent_at: new Date().toISOString() })
-        .eq('id', r.id);
-      if (updErr) {
-        console.warn('[followup-mail] failed to mark sent for', r.id, updErr.message);
+      // group 内全予約の flag を 1 UPDATE で同時セット (Postgres 単一
+      // UPDATE 文は atomic なので部分更新にならない)。
+      // 一時的な Supabase 通信エラーに対しては backoff 付きで最大 3 回
+      // リトライ (safety net 第 2 段: 翌日まで持ち越さず即回復)。
+      // 3 回全部失敗した場合のみ flagUpdateErrors に積んで最終的に
+      // cron を error 扱いにする。
+      const ids = groupReservations.map((r: any) => r.id);
+      const sentAt = new Date().toISOString();
+      let updErr: { message: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { error } = await supabase
+          .from('reservations')
+          .update({ followup_email_sent_at: sentAt })
+          .in('id', ids);
+        if (!error) { updErr = null; break; }
+        updErr = error;
+        console.warn(
+          `[followup-mail] flag UPDATE attempt ${attempt}/3 failed for group`,
+          ids, error.message,
+        );
+        if (attempt < 3) {
+          // 200ms → 600ms の指数的 backoff。合計最大 ~800ms 遅延。
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 200 : 600));
+        }
       }
-      if (askReview && r.guardian_id) {
+      if (updErr) {
+        console.warn(
+          '[followup-mail] failed to mark sent for group after 3 attempts',
+          ids, updErr.message,
+        );
+        flagUpdateErrors.push({
+          groupIds: ids,
+          error: `${updErr.message} (after 3 retries)`,
+        });
+      }
+      if (askReview && guardianId) {
         const { error: revErr } = await supabase
           .from('guardians')
           .update({ google_review_asked_at: new Date().toISOString() })
-          .eq('id', r.guardian_id);
+          .eq('id', guardianId);
         if (revErr) {
-          console.warn('[followup-mail] failed to mark review-asked for', r.guardian_id, revErr.message);
+          console.warn('[followup-mail] failed to mark review-asked for', guardianId, revErr.message);
         }
       }
 
-      sent++;
-      details.push({
-        id: r.id,
-        result: 'sent',
-        note: askReview ? 'with review CTA' : undefined,
-      });
+      const noteBits: string[] = [];
+      if (groupReservations.length > 1) noteBits.push(`grouped=${groupReservations.length}`);
+      if (askReview) noteBits.push('review-cta');
+      const noteStr = noteBits.join(' ') || undefined;
+      for (const r of groupReservations) {
+        sent++;
+        details.push({ id: r.id, result: 'sent', note: noteStr });
+      }
     } catch (e: any) {
-      failed++;
-      details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
-      console.warn('[followup-mail] failed for', r.id, e);
+      for (const r of groupReservations) {
+        failed++;
+        details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
+      }
+      console.warn('[followup-mail] failed for group', groupReservations.map((r: any) => r.id), e);
     }
   }
 
+      // メール送信は成功したが flag UPDATE に失敗した group が 1 つでも
+      // あれば、cron 全体を error 扱いにする (次回 cron で同じ保護者に
+      // 再送されるリスクを admin パネルの赤バッジで気付けるようにする)。
+      // sent/failed カウンタ等は throw で消えるので、必要情報を error
+      // message に埋め込む。
+      if (flagUpdateErrors.length > 0) {
+        const failedGroupIds = flagUpdateErrors.flatMap((e) => e.groupIds);
+        const okCount = sent - failedGroupIds.length;
+        throw new Error(
+          `[followup-mail] mail-sent but flag-update FAILED for ${flagUpdateErrors.length} ` +
+          `group(s) covering ${failedGroupIds.length} reservation(s). ` +
+          `Next cron will RE-SEND these to the guardian(s). ` +
+          `Success: sent=${okCount}. Failed reservation IDs: [${failedGroupIds.join(',')}]. ` +
+          `First DB error: ${flagUpdateErrors[0].error}`
+        );
+      }
       return { target_date: targetDate, total, sent, skipped, failed, details };
     });
     return json({ ok: true, ...result });
@@ -309,6 +416,13 @@ async function sendFollowupEmail(env: Env, args: {
   courseName: string;
   nextStep: NextStep;
   googleReviewUrl: string;
+  /**
+   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
+   * dedup され、実際にはメールが飛ばない (24h 保持)。
+   * 「メール送信成功 → DB flag UPDATE 失敗 → 次回 cron で同じ対象再抽出」
+   * の二重送信を Resend レイヤで防ぐための safety net。
+   */
+  idempotencyKey?: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
   if (!apiKey) {
@@ -418,12 +532,16 @@ async function sendFollowupEmail(env: Env, args: {
   };
   if (replyTo) body.reply_to = replyTo;
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (args.idempotencyKey) {
+    headers['Idempotency-Key'] = args.idempotencyKey;
+  }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) {
