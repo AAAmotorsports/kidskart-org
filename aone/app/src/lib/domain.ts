@@ -464,6 +464,22 @@ export function rentalMark(am: boolean, pm: boolean): string | null {
   return null;
 }
 
+/**
+ * 午前だけ / 午後だけのときに添える印。両方またはどちらでもないときは null。
+ * イベント名の横 (「レンタルカート耐久レース AM」) と、
+ * 予約の入口 (「PM レンタルカートの予約」) の両方で使う。
+ */
+export function sessionTag(am: boolean, pm: boolean): 'AM' | 'PM' | null {
+  if (am && !pm) return 'AM';
+  if (pm && !am) return 'PM';
+  return null;
+}
+
+/** 予定が午前だけ / 午後だけのときの印 (scope から)。 */
+export function blockSessionTag(scope: string | null | undefined): 'AM' | 'PM' | null {
+  return scope === 'am' ? 'AM' : scope === 'pm' ? 'PM' : null;
+}
+
 export function yen(n: number | null | undefined): string {
   return n == null ? '—' : `¥${n.toLocaleString('ja-JP')}`;
 }

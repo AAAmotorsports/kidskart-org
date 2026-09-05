@@ -1176,6 +1176,34 @@ begin
     delete from aone_business_days where date = aone_today() + 113;
   end;
 
+  -- =========================================================================
+  raise notice '--- 29. 予定の時間帯 (AM / PM の印のもと)';
+  -- =========================================================================
+  -- 公開スケジュールでは「レンタルカート耐久レース AM」のように、予定名の横に
+  -- 時間帯を出す (2026-09 オーナー依頼)。その材料は月のスケジュールが返す
+  -- blocks[].scope で、ここが欠けると印が黙って消える
+  declare
+    d_am date := aone_today() + 115;
+    ym   jsonb;
+    b    jsonb;
+  begin
+    insert into aone_blocks (date, kind, title, scope, start_time, end_time, is_public)
+    values (d_am, 'race', 'レンタルカート耐久レース', 'am', '09:00', '12:00', true);
+
+    ym := aone_month_state(extract(year from d_am)::int, extract(month from d_am)::int);
+    r := (select x from jsonb_array_elements(ym) x
+           where x->>'date' = to_char(d_am, 'YYYY-MM-DD'));
+    b := r->'blocks'->0;
+    assert b->>'scope' = 'am', '29-1 予定の時間帯が返っていない: ' || coalesce(b::text, 'null');
+    assert b->>'start_time' = '09:00', '29-2 開始時刻が返っていない';
+    assert b->>'end_time' = '12:00', '29-3 終了時刻が返っていない';
+    -- 予定を出す・出さないの判断は変えていない
+    assert (b->>'is_public')::boolean, '29-4 公開の予定が非公開になっている';
+    assert b->>'public_label' = 'レンタルカート耐久レース', '29-5 表示名が変わった';
+
+    delete from aone_blocks where date = d_am;
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;
