@@ -1,0 +1,31 @@
+-- =========================================================================
+-- 0033_drop_old_create_reservation_atomic_signature.sql
+-- -------------------------------------------------------------------------
+-- 緊急ホットフィックス (2026-09-07): 0032 で `CREATE OR REPLACE FUNCTION
+-- create_reservation_atomic(payload JSONB, p_bypass_cutoff BOOLEAN
+-- DEFAULT FALSE)` を追加した際、PostgreSQL は引数の型リストが異なる関数
+-- を別関数として扱うため、既存の 1 引数版 `create_reservation_atomic(JSONB)`
+-- (0024) が置換されずに残ってしまった。
+--
+-- 結果 PostgREST が `{payload: ...}` の呼び出しでどちらの関数を使うか
+-- 決定できず、以下の PGRST203 エラーを返して**顧客・管理者両方の新規
+-- 予約が全部失敗**した:
+--   Could not choose the best candidate function between:
+--     public.create_reservation_atomic(payload => jsonb),
+--     public.create_reservation_atomic(payload => jsonb, p_bypass_cutoff => boolean)
+--   PGRST203 Try renaming the parameters or the function itself in the
+--   database so function overloading can be resolved
+--
+-- 対処: 旧 1 引数版 signature を明示的に DROP。2 引数版 (0032 が定義)
+-- の p_bypass_cutoff DEFAULT FALSE により、`{payload: {...}}` だけの
+-- 呼び出しも正しく解決される。
+--
+-- 本 SQL は既に本番 Supabase SQL Editor で手動実行済み (2026-09-07)。
+-- リポジトリに記録として残すためコミット。今後 fresh install する
+-- 場合は 0032 → 0033 の順で実行されるので同じ問題は起きない。
+--
+-- 教訓: RPC の引数を変更する際は `CREATE OR REPLACE` の前に
+-- `DROP FUNCTION IF EXISTS old_signature` を必ず入れる。
+-- =========================================================================
+
+DROP FUNCTION IF EXISTS create_reservation_atomic(JSONB);
