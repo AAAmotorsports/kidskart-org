@@ -3,7 +3,7 @@ import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import { reservationByToken } from '@lib/queries';
 import {
-  jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, yen, todayJst, addDays,
+  jaDate, customerTimeLabel, KIND_LABELS, STATUS_LABELS, yen, todayJst, addDays,
   nameWithHonorific, stripHonorific, cancelPolicyLines,
 } from '@lib/domain';
 
@@ -56,7 +56,7 @@ const isSport = r?.kind === 'sport';
             <tr><th>内容</th><td>{KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}</td></tr>
             <tr><th>状態</th><td>{STATUS_LABELS[r.status] ?? r.status}</td></tr>
             <tr><th>日付</th><td id="cur-date">{jaDate(r.date)}</td></tr>
-            <tr><th>時間</th><td>{timeRangeLabel(r)}</td></tr>
+            <tr><th>時間</th><td>{customerTimeLabel(r)}</td></tr>
             <tr><th>人数</th><td>{r.party_size} 名</td></tr>
             {r.vehicle_count != null && <tr><th>台数</th><td>{r.vehicle_count} 台</td></tr>}
             {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
