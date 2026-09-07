@@ -42,6 +42,16 @@ export const prerender = false;
 //   guardians.google_review_asked_at IS NULL の場合のみ表示。
 //   将来的にアンケート表示条件は独立して変更可能な設計。
 //
+// 送信単位: **(guardian, slot.date) 単位で 1 通** (2026-09-07 変更)。
+// 同一保護者・同一日に複数予約があれば全予約分を 1 通に集約する。
+// メール本文は予約 (コース) ごとにセクション分けし、各セクションに
+// 参加者ごとの skill_level 別の next_step を並べる。Google 口コミ CTA
+// と内部アンケート CTA はグループ (保護者) 単位で 1 度だけ表示。
+// DB の flag (thankyou_email_sent_at) は従来通り予約単位で持ち、
+// 送信成功時は group 内全予約を 1 UPDATE で同時セット (atomic)。
+// Resend Idempotency-Key: "thankyou:<date>:<guardianId>" で二重送信
+// 防止 (DB 更新失敗時のリカバリ用 safety net)。
+//
 // レスポンス: { total, sent, skipped, failed, details }
 
 type SkillLevel =
@@ -132,9 +142,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       : `all ${(rawSlots ?? []).length} slots today are still in progress or upcoming`;
     return { date: targetDate, total: 0, sent: 0, note };
   }
-  const slotById = new Map<string, { courseCode: string; courseName: string }>();
+  // date も保持しておく (下の (guardian, date) グルーピングで使うため)
+  const slotById = new Map<string, { date: string; courseCode: string; courseName: string }>();
   for (const s of slots as any[]) {
     slotById.set(s.id, {
+      date: s.date,
       courseCode: s.courses?.code ?? '',
       courseName: s.courses?.name ?? '',
     });
@@ -187,35 +199,54 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  // flag UPDATE 失敗を貯める配列 (メール送信は成功したが DB flag update
+  // が失敗したケース)。ループ完了後に配列が空でなければ throw して cron
+  // 全体を error 扱いにする → admin パネルで赤バッジ → 気付ける。
+  const flagUpdateErrors: Array<{ groupIds: string[]; error: string }> = [];
 
+  // 同一保護者・同一日の複数予約を 1 通に集約する。DB の予約単位
+  // idempotency flag はそのまま維持しつつ、送信処理だけ (guardian, date)
+  // でまとめる。key format: "<guardianId>|<slot.date>"
+  const groupsByGuardianDate = new Map<string, any[]>();
+  const orphaned: any[] = [];
   for (const r of (reservations ?? []) as any[]) {
-    try {
-      const guardian = r.guardians;
-      if (!guardian?.email) {
+    const slotInfo = slotById.get(r.slot_id);
+    if (!r.guardian_id || !slotInfo) { orphaned.push(r); continue; }
+    const key = `${r.guardian_id}|${slotInfo.date}`;
+    const arr = groupsByGuardianDate.get(key) ?? [];
+    arr.push(r);
+    groupsByGuardianDate.set(key, arr);
+  }
+  for (const r of orphaned) {
+    skipped++;
+    details.push({ id: r.id, result: 'skipped', note: 'no guardian_id or slot info' });
+  }
+
+  for (const [groupKey, groupReservations] of groupsByGuardianDate) {
+    const [guardianId, slotDate] = groupKey.split('|');
+    const rep = groupReservations[0];
+    const guardian = rep.guardians;
+
+    if (!guardian?.email) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
-        continue;
       }
+      continue;
+    }
 
+    // group 内全予約 × active 参加者を bookings 配列に集約
+    // 各 booking = 1 予約 (= 1 コース)、各 booking の participants = 参加者と
+    // その skill_level に基づいた個別 next_step
+    const bookings: Array<{ courseName: string; participants: Participant[] }> = [];
+    for (const r of groupReservations) {
       const slotInfo = slotById.get(r.slot_id);
-      if (!slotInfo) {
-        skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'slot info missing' });
-        continue;
-      }
-
+      if (!slotInfo) continue;
       const courseKind = classifyCourse(slotInfo.courseCode);
-
-      // Filter out participants who didn't attend
       const activeParticipants = (r.reservation_participants as any[]).filter(
         (p: any) => p.attendance_status !== 'cancelled' && p.attendance_status !== 'no_show'
       );
-      if (activeParticipants.length === 0) {
-        skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'no attended participants' });
-        continue;
-      }
-
+      if (activeParticipants.length === 0) continue;
       const participants: Participant[] = activeParticipants.map((p: any) => {
         const skill: SkillLevel = p.customers?.current_skill_level ?? 'first_time';
         return {
@@ -224,58 +255,94 @@ export const POST: APIRoute = async ({ request, locals }) => {
           next_step: nextStepFor(courseKind, skill, origin),
         };
       });
+      bookings.push({ courseName: slotInfo.courseName, participants });
+    }
+    if (bookings.length === 0) {
+      for (const r of groupReservations) {
+        skipped++;
+        details.push({ id: r.id, result: 'skipped', note: 'no attended participants' });
+      }
+      continue;
+    }
 
-      // 初回参加 & まだ Google 口コミ依頼を送っていない場合のみ、
-      // Google 口コミ CTA + 内部アンケートを出す。
-      // アンケートの表示条件を将来変更する場合は showSurveyCta を独立に。
-      const isFirstVisit = (priorAttendCount.get(r.guardian_id) ?? 0) === 0;
-      const alreadyAsked = !!guardian.google_review_asked_at;
-      const showReviewCta = isFirstVisit && !alreadyAsked && !!googleReviewUrl;
-      const showSurveyCta = isFirstVisit && !!surveyUrl; // 現状は初回のみ
+    // 初回参加 CTA 判定 (guardian 単位、group 内で 1 度だけ)
+    const isFirstVisit = (priorAttendCount.get(guardianId) ?? 0) === 0;
+    const alreadyAsked = !!guardian.google_review_asked_at;
+    const showReviewCta = isFirstVisit && !alreadyAsked && !!googleReviewUrl;
+    const showSurveyCta = isFirstVisit && !!surveyUrl;
 
+    // Resend Idempotency-Key: (guardian, date) 決定的キー。二重送信 safety net。
+    const idempotencyKey = `thankyou:${slotDate}:${guardianId}`;
+
+    try {
       await sendThankyouEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
-        courseName: slotInfo.courseName,
-        participants,
+        bookings,
         surveyUrl: showSurveyCta ? surveyUrl : '',
         googleReviewUrl: showReviewCta ? googleReviewUrl : '',
         origin,
+        idempotencyKey,
       });
 
-      const { error: updErr } = await supabase
-        .from('reservations')
-        .update({ thankyou_email_sent_at: new Date().toISOString() })
-        .eq('id', r.id);
+      // group 内全予約の flag を 1 UPDATE で同時セット (atomic)。
+      // 一時的な Supabase 通信エラーには backoff 付きで 3 回リトライ。
+      const ids = groupReservations.map((r: any) => r.id);
+      const sentAt = new Date().toISOString();
+      let updErr: { message: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { error } = await supabase
+          .from('reservations')
+          .update({ thankyou_email_sent_at: sentAt })
+          .in('id', ids);
+        if (!error) { updErr = null; break; }
+        updErr = error;
+        console.warn(
+          `[thankyou-mail] flag UPDATE attempt ${attempt}/3 failed for group`,
+          ids, error.message,
+        );
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 200 : 600));
+        }
+      }
       if (updErr) {
-        console.warn('[thankyou-mail] failed to mark sent for', r.id, updErr.message);
+        console.warn(
+          '[thankyou-mail] failed to mark sent for group after 3 attempts',
+          ids, updErr.message,
+        );
+        flagUpdateErrors.push({
+          groupIds: ids,
+          error: `${updErr.message} (after 3 retries)`,
+        });
       }
 
-      // Google 口コミ CTA を出したなら保護者に印を付ける (保護者単位で 1 回のみ)。
-      if (showReviewCta && r.guardian_id) {
+      // Google 口コミ CTA を出したなら保護者に印を付ける (guardian 単位で 1 回)。
+      if (showReviewCta && guardianId) {
         const { error: revErr } = await supabase
           .from('guardians')
           .update({ google_review_asked_at: new Date().toISOString() })
-          .eq('id', r.guardian_id);
+          .eq('id', guardianId);
         if (revErr) {
-          console.warn('[thankyou-mail] failed to mark review-asked for', r.guardian_id, revErr.message);
+          console.warn('[thankyou-mail] failed to mark review-asked for', guardianId, revErr.message);
         }
       }
 
-      sent++;
-      details.push({
-        id: r.id,
-        result: 'sent',
-        note: [
-          isFirstVisit ? 'first' : 'repeat',
-          showReviewCta ? 'review-cta' : null,
-          showSurveyCta ? 'survey-cta' : null,
-        ].filter(Boolean).join(' '),
-      });
+      const noteBits: string[] = [];
+      if (groupReservations.length > 1) noteBits.push(`grouped=${groupReservations.length}`);
+      noteBits.push(isFirstVisit ? 'first' : 'repeat');
+      if (showReviewCta) noteBits.push('review-cta');
+      if (showSurveyCta) noteBits.push('survey-cta');
+      const noteStr = noteBits.join(' ');
+      for (const r of groupReservations) {
+        sent++;
+        details.push({ id: r.id, result: 'sent', note: noteStr });
+      }
     } catch (e: any) {
-      failed++;
-      details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
-      console.warn('[thankyou-mail] failed for', r.id, e);
+      for (const r of groupReservations) {
+        failed++;
+        details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
+      }
+      console.warn('[thankyou-mail] failed for group', groupReservations.map((r: any) => r.id), e);
     }
   }
 
@@ -285,6 +352,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
         note = `候補 ${alreadySent} 件は全て送信済み`;
       } else if (sent === 0 && total === 0 && alreadySent === 0) {
         note = '対象予約なし';
+      }
+
+      // メール送信は成功したが flag UPDATE に失敗した group が 1 つでも
+      // あれば、cron 全体を error 扱いにする (次回 cron で同じ保護者に
+      // 再送されるリスクを admin パネルの赤バッジで気付けるようにする)。
+      // Resend Idempotency-Key で二重送信自体は Resend 側で防止済みだが、
+      // DB flag 不整合は cron_runs に必ず error として記録する。
+      if (flagUpdateErrors.length > 0) {
+        const failedGroupIds = flagUpdateErrors.flatMap((e) => e.groupIds);
+        const okCount = sent - failedGroupIds.length;
+        throw new Error(
+          `[thankyou-mail] mail-sent but flag-update FAILED for ${flagUpdateErrors.length} ` +
+          `group(s) covering ${failedGroupIds.length} reservation(s). ` +
+          `Resend Idempotency-Key prevents actual re-send within 24h. ` +
+          `Success: sent=${okCount}. Failed reservation IDs: [${failedGroupIds.join(',')}]. ` +
+          `First DB error: ${flagUpdateErrors[0].error}`
+        );
       }
       return { date: targetDate, total, sent, skipped, failed, already_sent: alreadySent, note, details };
     });
@@ -438,11 +522,22 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
 async function sendThankyouEmail(env: Env, args: {
   to: string;
   guardianName: string;
-  courseName: string;
-  participants: Participant[];
+  /**
+   * 同一 (guardian, slot.date) 内の全予約分。
+   * 各要素 = 1 予約 (= 1 コース) で、その中に参加者リスト。
+   * 参加者ごとの next_step はコース種別 × skill_level から算出済み。
+   */
+  bookings: Array<{ courseName: string; participants: Participant[] }>;
   surveyUrl: string;         // 空文字なら非表示 (初回参加者のみ)
   googleReviewUrl: string;   // 空文字なら非表示 (初回参加 & 未依頼者のみ)
   origin: string;
+  /**
+   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
+   * dedup され、実際にはメールが飛ばない (24h 保持)。
+   * 「メール送信成功 → DB flag UPDATE 失敗 → 次日 cron 再抽出」
+   * の二重送信を Resend レイヤで防ぐ safety net。
+   */
+  idempotencyKey?: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
   if (!apiKey) {
@@ -456,26 +551,32 @@ async function sendThankyouEmail(env: Env, args: {
 
   const subject = `本日はご参加ありがとうございました！ — 福岡キッズカートアカデミー`;
 
+  // 本日のコース一覧行 (複数受講時は " / " 連結)
+  const coursesLine = args.bookings.map((b) => b.courseName).join(' / ');
+
   const text = [
     `${args.guardianName} 様`,
     '',
     '本日は福岡キッズカートアカデミーにお越しいただき、',
     '誠にありがとうございました。',
     '',
-    `▼ 本日のコース: ${args.courseName}`,
+    `▼ 本日のコース: ${coursesLine}`,
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '▼ お子さまごとの次回のご案内',
     '━━━━━━━━━━━━━━━━━━━━',
-    ...args.participants.flatMap((p) => [
-      '',
-      `● ${p.name} さん`,
-      `  → ${p.next_step.label}`,
-      ...(p.next_step.detail ? [`  ${p.next_step.detail}`] : []),
-      `  ▶ ご予約: ${p.next_step.primaryUrl}`,
-      ...(p.next_step.secondaryUrl && p.next_step.secondaryLabel
-        ? [`  ▶ ${p.next_step.secondaryLabel}: ${p.next_step.secondaryUrl}`]
-        : []),
+    ...args.bookings.flatMap((b) => [
+      ...(args.bookings.length > 1 ? ['', `【${b.courseName}】`] : []),
+      ...b.participants.flatMap((p) => [
+        '',
+        `● ${p.name} さん`,
+        `  → ${p.next_step.label}`,
+        ...(p.next_step.detail ? [`  ${p.next_step.detail}`] : []),
+        `  ▶ ご予約: ${p.next_step.primaryUrl}`,
+        ...(p.next_step.secondaryUrl && p.next_step.secondaryLabel
+          ? [`  ▶ ${p.next_step.secondaryLabel}: ${p.next_step.secondaryUrl}`]
+          : []),
+      ]),
     ]),
     '',
     ...(args.googleReviewUrl ? [
@@ -502,19 +603,31 @@ async function sendThankyouEmail(env: Env, args: {
     '━━━━━━━━━━━━━━━━━━━━',
   ].join('\n');
 
-  const participantsHtml = args.participants.map((p) => `
-    <div style="border:1px solid #d8e6f0;border-radius:10px;padding:.9rem;margin-bottom:.7rem;background:#fff">
-      <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.3rem">👦 ${escapeHtml(p.name)} さん</div>
-      <div style="font-weight:700;color:#e5631a;font-size:.85rem;margin-bottom:.3rem">${escapeHtml(p.next_step.label)}</div>
-      ${p.next_step.detail ? `<p style="font-size:.8rem;color:#3d556f;margin:.3rem 0 .7rem;line-height:1.65">${escapeHtml(p.next_step.detail)}</p>` : ''}
-      <p style="margin:.4rem 0">
-        <a href="${escapeAttr(p.next_step.primaryUrl)}" style="display:inline-block;padding:.55rem 1.1rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">ご予約はこちら</a>
-      </p>
-      ${p.next_step.secondaryUrl && p.next_step.secondaryLabel ? `
-        <p style="margin:.4rem 0 0"><a href="${escapeAttr(p.next_step.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(p.next_step.secondaryLabel)}</a></p>
-      ` : ''}
-    </div>
-  `).join('');
+  // 予約 (コース) ごとにセクション分けし、その中に参加者ごとの next_step を表示。
+  // 1 予約だけの場合は「本日のコース」の見出しがあるので追加ラベル不要。
+  // 複数予約の場合は各セクションに小見出し (【コース名】) を付ける。
+  const participantsHtml = args.bookings.map((b) => {
+    const partHtml = b.participants.map((p) => `
+      <div style="border:1px solid #d8e6f0;border-radius:10px;padding:.9rem;margin-bottom:.7rem;background:#fff">
+        <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.3rem">👦 ${escapeHtml(p.name)} さん</div>
+        <div style="font-weight:700;color:#e5631a;font-size:.85rem;margin-bottom:.3rem">${escapeHtml(p.next_step.label)}</div>
+        ${p.next_step.detail ? `<p style="font-size:.8rem;color:#3d556f;margin:.3rem 0 .7rem;line-height:1.65">${escapeHtml(p.next_step.detail)}</p>` : ''}
+        <p style="margin:.4rem 0">
+          <a href="${escapeAttr(p.next_step.primaryUrl)}" style="display:inline-block;padding:.55rem 1.1rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">ご予約はこちら</a>
+        </p>
+        ${p.next_step.secondaryUrl && p.next_step.secondaryLabel ? `
+          <p style="margin:.4rem 0 0"><a href="${escapeAttr(p.next_step.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(p.next_step.secondaryLabel)}</a></p>
+        ` : ''}
+      </div>
+    `).join('');
+    if (args.bookings.length <= 1) return partHtml;
+    return `
+      <div style="font-weight:800;color:#1a7fb8;font-size:.88rem;margin:.8rem 0 .4rem;padding:.35rem .7rem;background:rgba(58,169,232,.08);border-left:3px solid #3aa9e8;border-radius:4px">
+        【${escapeHtml(b.courseName)}】
+      </div>
+      ${partHtml}
+    `;
+  }).join('');
 
   // 初回参加者向け Google 口コミ CTA (メイン)。集客に直接効くので優先。
   // Google ポリシー準拠: 全員に同じ導線 (満足者だけ振り分けをしない)。
@@ -551,7 +664,7 @@ async function sendThankyouEmail(env: Env, args: {
 
     <p style="font-size:.88rem;color:#163048;line-height:1.7;margin:0 0 1rem">
       本日は福岡キッズカートアカデミーにお越しいただき、誠にありがとうございました。<br>
-      本日のコース: <strong>${escapeHtml(args.courseName)}</strong>
+      本日のコース: <strong>${escapeHtml(coursesLine)}</strong>
     </p>
 
     <div style="background:rgba(255,201,67,.08);border-top:2px solid #ffc943;border-bottom:2px solid #ffc943;padding:.7rem;margin:1.2rem 0 1rem;text-align:center">
@@ -588,12 +701,16 @@ async function sendThankyouEmail(env: Env, args: {
   };
   if (replyTo) body.reply_to = replyTo;
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (args.idempotencyKey) {
+    headers['Idempotency-Key'] = args.idempotencyKey;
+  }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) {
