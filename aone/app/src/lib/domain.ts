@@ -498,3 +498,24 @@ export function timeRangeLabel(r: {
   const e = hhmm(r.end_time);
   return e ? `${s}〜${e}` : s;
 }
+
+/**
+ * お客様にお見せする時間。**レースパックは開始時刻だけ**を出す
+ * (2026-09 オーナー依頼。「13:00〜14:30」ではなく「13:00〜」)。
+ * 90 分は目安で、実際に終わる時刻は当日の混み具合で動く。終わりまで書くと
+ * 守れない約束になってしまう。
+ * ★ 表示だけの話。`end_time` は枠の埋まり具合 (aone_rp_peak_groups) を
+ *   数えるのに要るので、DB には今までどおり入れる — 消すと二重予約が起きる。
+ * ★ ナイターのレースパックは対象外。あちらの終了時刻はスタッフが手で入れた
+ *   約束の時刻で、自動で足した目安ではない
+ */
+export function customerTimeLabel(r: {
+  kind: string;
+  session?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+}): string {
+  const s = hhmm(r.start_time);
+  if (r.kind === 'rp' && s) return `${s}〜`;
+  return timeRangeLabel(r);
+}

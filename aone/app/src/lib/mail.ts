@@ -12,7 +12,7 @@
 
 import { getSupabaseAdmin } from './supabase';
 import {
-  jaDate, timeRangeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
+  jaDate, timeRangeLabel, customerTimeLabel, KIND_LABELS, STATUS_LABELS, CHARTER_TYPE_LABELS, hhmm,
   nameWithHonorific, stripHonorific, entryPersonLabel,
   CANCEL_POLICY_RENTAL, CANCEL_POLICY_SPORT_LINES,
 } from './domain';
@@ -183,7 +183,12 @@ function isCharter(r: ReservationForMail): boolean {
   return r.kind === 'charter' || (r.kind === 'night' && r.night_kind === 'charter');
 }
 
-function detailLines(r: ReservationForMail): string[] {
+/**
+ * ご予約内容の明細。
+ * `audience` はレースパックの時間の書き方だけを変える。お客様には
+ * 「13:00〜」(開始だけ)、スタッフには「13:00〜14:30」(枠がいつ空くか)
+ */
+function detailLines(r: ReservationForMail, audience: 'customer' | 'staff' = 'customer'): string[] {
   const lines = [
     `予約番号: ${r.reservation_number}`,
     `内容: ${KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind}` +
@@ -192,7 +197,7 @@ function detailLines(r: ReservationForMail): string[] {
         : '') +
       (r.charter_type ? ` (${CHARTER_TYPE_LABELS[r.charter_type] ?? r.charter_type})` : ''),
     `日付: ${jaDate(r.date)}`,
-    `時間: ${timeRangeLabel(r)}`,
+    `時間: ${audience === 'staff' ? timeRangeLabel(r) : customerTimeLabel(r)}`,
     `人数: ${r.party_size} 名`,
   ];
   // スポーツ走行は「何で走るか」がいちばん大事。これを出さないと、
@@ -448,7 +453,7 @@ export function adminChangeMail(
       ...(diffs.length ? diffs.map((d) => `・${d}`) : ['・(内容の変更はありません)']),
       '',
       '▼ 変更後のご予約内容',
-      ...detailLines(after),
+      ...detailLines(after, 'staff'),
       `状態: ${STATUS_LABELS[after.status] ?? after.status}`,
       `お名前: ${after.contact_name}`,
       `電話: ${after.contact_phone ?? '—'}`,
@@ -469,7 +474,7 @@ export function adminCancelMail(env: Env, r: ReservationForMail, origin: string)
     text: [
       'お客様が予約者ページからキャンセルしました。枠が空きます。',
       '',
-      ...detailLines(r),
+      ...detailLines(r, 'staff'),
       `お名前: ${r.contact_name}`,
       `電話: ${r.contact_phone ?? '—'}`,
       `メール: ${r.contact_email ?? '—'}`,
@@ -536,7 +541,7 @@ export function adminNoticeMail(env: Env, r: ReservationForMail, origin: string)
             '',
           ]
         : ['✅ 新しい予約が入りました (確定済み)。', '']),
-      ...detailLines(r),
+      ...detailLines(r, 'staff'),
       `状態: ${statusJa}`,
       `お名前: ${r.contact_name}`,
       `電話: ${r.contact_phone ?? '—'}`,
