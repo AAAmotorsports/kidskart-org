@@ -6,18 +6,28 @@ export const prerender = false;
 
 // POST /api/cron/reminder-mail
 //
-// 前日 18:00 JST に GitHub Actions cron から叩かれる。
+// 前日 18:30 JST に Cloudflare Workers Cron から叩かれる。
 // 翌日の全予約に対して「明日はご参加お待ちしております」メールを保護者に送る。
 // 二重送信防止のため reservations.reminder_email_sent_at を記録。
 //
 // 「開始後に送らない」ガード:
-//   GitHub Actions cron はまれに数時間規模で遅延することがあり、日を
-//   またぐと本来「明日」だった予約が「今日の午前中」になってしまう。
-//   そのタイミングで送っても間に合うが、既に授業が開始した後には送らない
-//   (start_time (JST) が現在時刻を過ぎたスロットはスキップ)。
+//   Cron はまれに遅延することがあり、日をまたぐと本来「明日」だった予約
+//   が「今日の午前中」になってしまう。そのタイミングで送っても間に合うが、
+//   既に授業が開始した後には送らない (start_time (JST) が現在時刻を過ぎた
+//   スロットはスキップ)。
 //
 // 対象日の範囲: today + 1 day を基本とするが、cron 遅延を吸収するため
 //   date IN (today, tomorrow) で reminder_email_sent_at IS NULL 全てを送る。
+//
+// 送信単位: **(guardian, slot.date) 単位で 1 通** (2026-09-07 変更、シリーズ 3/3)。
+// 同一保護者・同一開催日に複数予約があれば全予約分を 1 通に集約する。
+// 予約 (コース) ごとにセクション分けし、それぞれ開始時刻・受付開始時刻・
+// 参加者リストを表示。持ち物欄は group 内のコース種別を集約して判定
+// (taiken なら軍手初回プレゼント、非 taiken 混在なら軍手/グローブ持参必須)。
+// DB flag (reminder_email_sent_at) は従来通り予約単位で持ち、送信成功時は
+// group 内全予約を 1 UPDATE で同時セット (atomic)。
+// Resend Idempotency-Key: "reminder:<date>:<guardianId>" で二重送信防止
+// (DB 更新失敗時のリカバリ safety net、24h 保持)。
 //
 // 認証: x-cron-secret ヘッダで env.CRON_SECRET と一致確認。
 
@@ -103,61 +113,148 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  // flag UPDATE 失敗を貯める配列 (メール送信成功後の DB flag update 失敗)。
+  // ループ完了後に配列が空でなければ throw して cron 全体を error 扱いに。
+  const flagUpdateErrors: Array<{ groupIds: string[]; error: string }> = [];
 
+  // 同一保護者・同一開催日の複数予約を 1 通に集約する。
+  // key format: "<guardianId>|<slot.date>"
+  const groupsByGuardianDate = new Map<string, any[]>();
+  const orphaned: any[] = [];
   for (const r of (reservations ?? []) as any[]) {
-    try {
-      const guardian = r.guardians;
-      if (!guardian?.email) {
+    const slotInfo = slotInfoById.get(r.slot_id);
+    if (!r.guardian_id || !slotInfo) { orphaned.push(r); continue; }
+    const key = `${r.guardian_id}|${slotInfo.date}`;
+    const arr = groupsByGuardianDate.get(key) ?? [];
+    arr.push(r);
+    groupsByGuardianDate.set(key, arr);
+  }
+  for (const r of orphaned) {
+    skipped++;
+    details.push({ id: r.id, result: 'skipped', note: 'no guardian_id or slot info' });
+  }
+
+  for (const [groupKey, groupReservations] of groupsByGuardianDate) {
+    const [guardianId, slotDate] = groupKey.split('|');
+    const rep = groupReservations[0];
+    const guardian = rep.guardians;
+
+    if (!guardian?.email) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no guardian email' });
-        continue;
       }
+      continue;
+    }
+
+    // group 内全予約 × active 参加者を bookings 配列に集約
+    const bookings: Array<{
+      courseName: string;
+      courseKind: CourseKind;
+      startTime: string;
+      participantNames: string[];
+    }> = [];
+    for (const r of groupReservations) {
       const slotInfo = slotInfoById.get(r.slot_id);
-      if (!slotInfo) {
-        skipped++;
-        details.push({ id: r.id, result: 'skipped', note: 'slot info missing' });
-        continue;
-      }
+      if (!slotInfo) continue;
       const activeParticipants = (r.reservation_participants as any[]).filter(
         (p: any) => p.attendance_status !== 'cancelled'
       );
-      if (activeParticipants.length === 0) {
+      if (activeParticipants.length === 0) continue;
+      bookings.push({
+        courseName: slotInfo.courseName,
+        courseKind: classifyCourse(slotInfo.courseCode),
+        startTime: slotInfo.startTime,
+        participantNames: activeParticipants.map((p: any) => p.name_snapshot),
+      });
+    }
+    if (bookings.length === 0) {
+      for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no active participants' });
-        continue;
       }
+      continue;
+    }
+    // 読みやすさのため開始時刻昇順に並べる (10:00 → 14:00 の順)
+    bookings.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-      const isTomorrow = slotInfo.date === tomorrowJst;
-      const dayLabel = isTomorrow ? '明日' : '本日';
-      const courseKind = classifyCourse(slotInfo.courseCode);
+    const isTomorrow = slotDate === tomorrowJst;
+    const dayLabel = isTomorrow ? '明日' : '本日';
+    // Resend Idempotency-Key: (guardian, date) 決定的キー。二重送信 safety net。
+    const idempotencyKey = `reminder:${slotDate}:${guardianId}`;
 
+    try {
       await sendReminderEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
-        courseName: slotInfo.courseName,
-        courseKind,
-        slotDate: slotInfo.date,
-        startTime: slotInfo.startTime,
-        participantNames: activeParticipants.map((p: any) => p.name_snapshot),
+        slotDate,
         dayLabel,
+        bookings,
+        idempotencyKey,
       });
 
-      const { error: updErr } = await supabase
-        .from('reservations')
-        .update({ reminder_email_sent_at: new Date().toISOString() })
-        .eq('id', r.id);
-      if (updErr) {
-        console.warn('[reminder-mail] failed to mark sent for', r.id, updErr.message);
+      // group 内全予約の flag を 1 UPDATE で同時セット (atomic)。
+      // 一時的な Supabase 通信エラーには backoff 付きで 3 回リトライ。
+      const ids = groupReservations.map((r: any) => r.id);
+      const sentAt = new Date().toISOString();
+      let updErr: { message: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { error } = await supabase
+          .from('reservations')
+          .update({ reminder_email_sent_at: sentAt })
+          .in('id', ids);
+        if (!error) { updErr = null; break; }
+        updErr = error;
+        console.warn(
+          `[reminder-mail] flag UPDATE attempt ${attempt}/3 failed for group`,
+          ids, error.message,
+        );
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 200 : 600));
+        }
       }
-      sent++;
-      details.push({ id: r.id, result: 'sent', note: dayLabel });
+      if (updErr) {
+        console.warn(
+          '[reminder-mail] failed to mark sent for group after 3 attempts',
+          ids, updErr.message,
+        );
+        flagUpdateErrors.push({
+          groupIds: ids,
+          error: `${updErr.message} (after 3 retries)`,
+        });
+      }
+
+      const noteBits: string[] = [];
+      if (groupReservations.length > 1) noteBits.push(`grouped=${groupReservations.length}`);
+      noteBits.push(dayLabel);
+      const noteStr = noteBits.join(' ');
+      for (const r of groupReservations) {
+        sent++;
+        details.push({ id: r.id, result: 'sent', note: noteStr });
+      }
     } catch (e: any) {
-      failed++;
-      details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
-      console.warn('[reminder-mail] failed for', r.id, e);
+      for (const r of groupReservations) {
+        failed++;
+        details.push({ id: r.id, result: 'failed', note: e?.message ?? String(e) });
+      }
+      console.warn('[reminder-mail] failed for group', groupReservations.map((r: any) => r.id), e);
     }
   }
 
+      // メール送信は成功したが flag UPDATE に失敗した group が 1 つでも
+      // あれば、cron 全体を error 扱いにする。Resend Idempotency-Key で
+      // 二重送信自体は 24h 以内なら防げるが、DB 不整合は必ず記録。
+      if (flagUpdateErrors.length > 0) {
+        const failedGroupIds = flagUpdateErrors.flatMap((e) => e.groupIds);
+        const okCount = sent - failedGroupIds.length;
+        throw new Error(
+          `[reminder-mail] mail-sent but flag-update FAILED for ${flagUpdateErrors.length} ` +
+          `group(s) covering ${failedGroupIds.length} reservation(s). ` +
+          `Resend Idempotency-Key prevents actual re-send within 24h. ` +
+          `Success: sent=${okCount}. Failed reservation IDs: [${failedGroupIds.join(',')}]. ` +
+          `First DB error: ${flagUpdateErrors[0].error}`
+        );
+      }
       return { dates: dateList, total, sent, skipped, failed, details };
     });
     return json({ ok: true, ...result });
@@ -236,12 +333,20 @@ function formatDateLabel(iso: string): string {
 async function sendReminderEmail(env: Env, args: {
   to: string;
   guardianName: string;
-  courseName: string;
-  courseKind: CourseKind;
+  /** 同一 (guardian, slot.date) 内の全予約分。開始時刻昇順で渡す想定。 */
+  bookings: Array<{
+    courseName: string;
+    courseKind: CourseKind;
+    startTime: string; // "HH:MM:SS" or "HH:MM"
+    participantNames: string[];
+  }>;
   slotDate: string;
-  startTime: string;
-  participantNames: string[];
-  dayLabel: string; // 「明日」or「本日」
+  dayLabel: string; // 「明日」or「本日」(group 全体で共通、同一日なので)
+  /**
+   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
+   * dedup され、実際にはメールが飛ばない (24h 保持)。
+   */
+  idempotencyKey?: string;
 }) {
   const apiKey = env.RESEND_API_KEY;
   if (!apiKey) {
@@ -254,26 +359,50 @@ async function sendReminderEmail(env: Env, args: {
   const replyTo = env.MAIL_REPLY_TO || undefined;
 
   const dateLabel = formatDateLabel(args.slotDate);
-  const startShort = args.startTime.slice(0, 5); // "HH:MM"
-  const checkIn = checkInLabel(args.startTime);
-  const subject = `${args.dayLabel}はご参加をお待ちしております — ${args.courseName}`;
+  // Subject: 1 予約なら「〜 コース名」、複数なら「〜 コースA / コースB」
+  const coursesLabel = args.bookings.map((b) => b.courseName).join(' / ');
+  const subject = `${args.dayLabel}はご参加をお待ちしております — ${coursesLabel}`;
 
-  // 体験教室は「軍手初回プレゼント」なので持ち物リストから軍手を除く。
-  // それ以外 (リピート / チャレンジ) は保護者に持参をお願い。
-  const needsGloves = args.courseKind !== 'taiken';
-  const itemsText = needsGloves
+  // 持ち物ロジック集約:
+  //   - group 内に非 taiken (repeat / challenge) があれば「軍手/グローブ持参」必須
+  //   - group 内に taiken があれば「軍手は初回参加者にプレゼント」を補足
+  //   - 全て taiken なら「運動靴のみ」+ 軍手プレゼント補足
+  const hasNonTaiken = args.bookings.some((b) => b.courseKind !== 'taiken');
+  const hasTaiken = args.bookings.some((b) => b.courseKind === 'taiken');
+  const itemsText = hasNonTaiken
     ? '運動靴・軍手 (またはグローブ)'
     : '運動靴のみ';
   const itemsHtmlLines = [
     '<li><strong>運動靴</strong></li>',
-    ...(needsGloves
+    ...(hasNonTaiken
       ? ['<li><strong>軍手 または グローブ</strong></li>']
       : []),
     '<li>つなぎ・ヘルメットは当校で無料貸出します</li>',
-    ...(args.courseKind === 'taiken'
-      ? ['<li>軍手は初回参加者にプレゼント (2 回目以降ご持参)</li>']
+    ...(hasTaiken
+      ? ['<li>軍手は初回参加者 (体験教室) にプレゼント (2 回目以降はご持参)</li>']
       : []),
   ].join('');
+
+  // 予約セクション: 1 予約なら従来通り縦並び、複数なら箇条書き
+  const bookingsTextLines: string[] = [];
+  if (args.bookings.length === 1) {
+    const b = args.bookings[0];
+    bookingsTextLines.push(
+      `コース: ${b.courseName}`,
+      `開始時刻: ${b.startTime.slice(0, 5)}`,
+      `受付開始: ${checkInLabel(b.startTime)} (開始 15 分前)`,
+      `参加者: ${b.participantNames.join(' / ')}`,
+    );
+  } else {
+    for (const b of args.bookings) {
+      bookingsTextLines.push(
+        `● ${b.courseName}`,
+        `  開始 ${b.startTime.slice(0, 5)} / 受付開始 ${checkInLabel(b.startTime)} (開始 15 分前)`,
+        `  参加者: ${b.participantNames.join(' / ')}`,
+        '',
+      );
+    }
+  }
 
   const text = [
     `${args.guardianName} 様`,
@@ -282,19 +411,16 @@ async function sendReminderEmail(env: Env, args: {
     'お待ちしております。',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
-    `▼ ご予約内容`,
+    `▼ ご予約内容${args.bookings.length > 1 ? ` (${args.bookings.length} 件)` : ''}`,
     '━━━━━━━━━━━━━━━━━━━━',
-    `コース: ${args.courseName}`,
-    `開始時刻: ${startShort}`,
-    `受付開始: ${checkIn} (開始 15 分前)`,
-    `参加者: ${args.participantNames.join(' / ')}`,
-    '',
+    ...bookingsTextLines,
+    ...(args.bookings.length === 1 ? [''] : []),
     '━━━━━━━━━━━━━━━━━━━━',
     '▼ 持ち物',
     '━━━━━━━━━━━━━━━━━━━━',
     `  ${itemsText}`,
     '  ※つなぎ・ヘルメットは当校で無料貸出',
-    ...(args.courseKind === 'taiken' ? ['  ※軍手は初回参加者にプレゼント'] : []),
+    ...(hasTaiken ? ['  ※軍手は初回参加者 (体験教室) にプレゼント'] : []),
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '▼ アクセス',
@@ -315,6 +441,31 @@ async function sendReminderEmail(env: Env, args: {
     '━━━━━━━━━━━━━━━━━━━━',
   ].join('\n');
 
+  // HTML: 予約セクションを bookings 数に応じて構成
+  const bookingsHtml = args.bookings.length === 1
+    ? (() => {
+        const b = args.bookings[0];
+        return `
+      <div style="font-size:.9rem;line-height:1.9">
+        <div><strong>${escapeHtml(dateLabel)}</strong></div>
+        <div>コース: <strong>${escapeHtml(b.courseName)}</strong></div>
+        <div>開始時刻: <strong>${escapeHtml(b.startTime.slice(0, 5))}</strong></div>
+        <div style="color:#e5631a;font-weight:700">受付開始: ${escapeHtml(checkInLabel(b.startTime))} (開始 15 分前)</div>
+        <div style="margin-top:.4rem">参加者: ${escapeHtml(b.participantNames.join(' / '))}</div>
+      </div>`;
+      })()
+    : `
+      <div style="font-size:.88rem;line-height:1.9;margin-bottom:.5rem"><strong>${escapeHtml(dateLabel)}</strong> (ご予約 ${args.bookings.length} 件)</div>
+      ${args.bookings.map((b) => `
+        <div style="background:#fff;border:1px solid #d8e6f0;border-radius:8px;padding:.7rem .9rem;margin-top:.5rem">
+          <div style="font-weight:800;color:#163048;font-size:.9rem;margin-bottom:.3rem">${escapeHtml(b.courseName)}</div>
+          <div style="font-size:.85rem;line-height:1.8">
+            <div>開始 <strong>${escapeHtml(b.startTime.slice(0, 5))}</strong> · <span style="color:#e5631a;font-weight:700">受付開始 ${escapeHtml(checkInLabel(b.startTime))}</span> (開始 15 分前)</div>
+            <div>参加者: ${escapeHtml(b.participantNames.join(' / '))}</div>
+          </div>
+        </div>
+      `).join('')}`;
+
   const html = `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
 <body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
@@ -324,14 +475,8 @@ async function sendReminderEmail(env: Env, args: {
     <p style="text-align:center;margin:0 0 1.2rem;color:#3d556f;font-size:.88rem">${escapeHtml(args.guardianName)} 様</p>
 
     <div style="background:rgba(58,169,232,.08);border:1px solid #cae7f7;border-radius:10px;padding:1rem;margin:1rem 0">
-      <div style="font-weight:800;color:#1a7fb8;font-size:.85rem;margin-bottom:.5rem">ご予約内容</div>
-      <div style="font-size:.9rem;line-height:1.9">
-        <div><strong>${escapeHtml(dateLabel)}</strong></div>
-        <div>コース: <strong>${escapeHtml(args.courseName)}</strong></div>
-        <div>開始時刻: <strong>${escapeHtml(startShort)}</strong></div>
-        <div style="color:#e5631a;font-weight:700">受付開始: ${escapeHtml(checkIn)} (開始 15 分前)</div>
-        <div style="margin-top:.4rem">参加者: ${escapeHtml(args.participantNames.join(' / '))}</div>
-      </div>
+      <div style="font-weight:800;color:#1a7fb8;font-size:.85rem;margin-bottom:.5rem">ご予約内容${args.bookings.length > 1 ? ` (${args.bookings.length} 件)` : ''}</div>
+      ${bookingsHtml}
     </div>
 
     <div style="background:rgba(255,201,67,.08);border-top:2px solid #ffc943;border-bottom:2px solid #ffc943;padding:.7rem 1rem;margin:1rem 0">
@@ -369,12 +514,16 @@ async function sendReminderEmail(env: Env, args: {
   };
   if (replyTo) body.reply_to = replyTo;
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (args.idempotencyKey) {
+    headers['Idempotency-Key'] = args.idempotencyKey;
+  }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) {
