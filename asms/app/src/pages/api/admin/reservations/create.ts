@@ -105,6 +105,10 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   const guardianEmail = (guardian.email ?? '').trim();
 
   // --- Single atomic RPC call --------------------------------------------
+  // 管理者代理予約は WEB 予約締切 (開始 3 時間前) を bypass する。
+  // この endpoint は middleware で Basic Auth 済み (/api/admin/*) なので、
+  // ここに到達している = admin 認証済み。p_bypass_cutoff=true を hard-coded
+  // で渡す (payload 側にクライアント指定の bypass_cutoff は無視する設計)。
   const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_reservation_atomic', {
     payload: {
       slot_id,
@@ -118,6 +122,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       ip_address: request.headers.get('CF-Connecting-IP') || clientAddress || '',
       user_agent: '[admin_proxy] ' + (request.headers.get('User-Agent') || ''),
     },
+    p_bypass_cutoff: true,
   });
 
   if (rpcErr) {

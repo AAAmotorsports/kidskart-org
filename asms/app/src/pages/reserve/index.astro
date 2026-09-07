@@ -58,6 +58,31 @@ if (slotIds.length > 0) {
 const remainingFor = (s: Slot): number =>
   Math.max(0, s.capacity - (reservedBySlot.get(s.id) ?? 0));
 
+// WEB 予約締切: 開始 3 時間前まで。ちょうど 3 時間前 (= now) は受付終了扱い。
+// 判定基準は JST (slot.date + slot.start_time)。UI 側の表示制御用で、
+// 最終防衛は DB RPC の p_bypass_cutoff=FALSE 時のカットオフチェック。
+const BOOKING_CUTOFF_MS = 3 * 60 * 60 * 1000; // 3 時間
+function slotStartUtcMs(date: string, time: string | null): number | null {
+  if (!date || !time) return null;
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const tm = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
+  if (!dm || !tm) return null;
+  const y = parseInt(dm[1], 10);
+  const mo = parseInt(dm[2], 10) - 1;
+  const d = parseInt(dm[3], 10);
+  const hh = parseInt(tm[1], 10);
+  const mm = parseInt(tm[2], 10);
+  const ss = tm[3] ? parseInt(tm[3], 10) : 0;
+  // JST の (date + time) を絶対時刻 (UTC ms) に。JST = UTC+9 なので hh-9。
+  return Date.UTC(y, mo, d, hh - 9, mm, ss);
+}
+const nowUtcMs = Date.now();
+const isPastCutoff = (s: Slot): boolean => {
+  const startMs = slotStartUtcMs(s.date, s.start_time);
+  if (startMs == null) return false; // 判定不能なら受付可能扱い (schema 上は NOT NULL)
+  return nowUtcMs >= startMs - BOOKING_CUTOFF_MS;
+};
+
 // URL params: ?course=CODE filters the calendar/list to one course only,
 // so hard-to-spot offerings (challenge classes run twice a month) surface
 // on their own. ?month=YYYY-MM navigates the calendar view.
@@ -141,7 +166,7 @@ for (let i = 0; i < firstDow; i++) cells.push(null);
 for (let dnum = 1; dnum <= daysInMonth; dnum++) {
   const iso = `${visYear}-${String(visMonth).padStart(2, '0')}-${String(dnum).padStart(2, '0')}`;
   const daySlots = visByDate.get(iso) ?? [];
-  const openCount = daySlots.filter((s) => remainingFor(s) > 0).length;
+  const openCount = daySlots.filter((s) => remainingFor(s) > 0 && !isPastCutoff(s)).length;
   cells.push({
     date: iso,
     dayNum: dnum,
@@ -451,13 +476,23 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                   {visByDate.get(date)!.map((s) => {
                     const remaining = remainingFor(s);
                     const isFull = remaining === 0;
+                    const pastCutoff = isPastCutoff(s);
+                    // 表示優先度: 満席 > 締切 > 通常
+                    // (満席の方が「もう入れない」感が強く客への伝達が明確)
                     return (
-                      <li class={isFull ? 'is-full' : ''}>
+                      <li class={isFull ? 'is-full' : pastCutoff ? 'is-cutoff' : ''}>
                         {isFull ? (
                           <div class="slot-link">
                             <span class="slot-time">{s.start_time.slice(0, 5)}</span>
                             <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
                             <span class="slot-cap slot-cap-full">{isEn ? 'Full' : '満席'}</span>
+                            <span class="slot-arrow" aria-hidden="true">×</span>
+                          </div>
+                        ) : pastCutoff ? (
+                          <div class="slot-link">
+                            <span class="slot-time">{s.start_time.slice(0, 5)}</span>
+                            <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
+                            <span class="slot-cap slot-cap-cutoff">{isEn ? 'Closed' : '受付終了'}</span>
                             <span class="slot-arrow" aria-hidden="true">×</span>
                           </div>
                         ) : (
@@ -986,6 +1021,10 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   .slot-list li.is-full:hover { background: var(--bg-2); }
   .slot-list li.is-full .slot-link { cursor: not-allowed; }
   .slot-cap-full { color: var(--rose-deep) !important; }
+  .slot-list li.is-cutoff { opacity: .55; }
+  .slot-list li.is-cutoff:hover { background: var(--bg-2); }
+  .slot-list li.is-cutoff .slot-link { cursor: not-allowed; }
+  .slot-cap-cutoff { color: var(--ink-3) !important; }
   .slot-cap-low {
     color: var(--orange-deep) !important;
     background: rgba(255,201,67,.2);
@@ -993,6 +1032,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     font-family: var(--jp);
   }
   .slot-list li.is-full .slot-arrow { color: var(--ink-3); }
+  .slot-list li.is-cutoff .slot-arrow { color: var(--ink-3); }
 
   /* Empty state */
   .empty { display: flex; flex-direction: column; gap: 1rem; }
