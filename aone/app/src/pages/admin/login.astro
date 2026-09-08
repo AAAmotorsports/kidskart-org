@@ -1,0 +1,61 @@
+---
+import Base from '@layouts/Base.astro';
+import { safeNext, SESSION_DAYS } from '@lib/adminAuth';
+
+export const prerender = false;
+
+// 管理画面のログイン。
+// ★ ここは中身の無いフォーム 1 枚。middleware の素通り対象なので、
+//   ここにデータを出すと誰でも見られてしまう。
+const next = safeNext(Astro.url.searchParams.get('next'));
+const error = Astro.url.searchParams.get('error');
+const bye = Astro.url.searchParams.get('bye') === '1';
+const message = error === 'unconfigured'
+  ? 'この画面の認証情報がまだ設定されていません。'
+  : error
+    ? 'ユーザー名またはパスワードが違います。'
+    : null;
+---
+<Base title="ログイン | A-ONE 管理" admin nav={false}>
+  <div class="wrap">
+    <div class="card">
+      <h1>管理画面にログイン</h1>
+      {bye && <div class="notice ok">ログアウトしました。</div>}
+      {message && <div class="notice ng">{message}</div>}
+
+      {/* ★ ふつうの HTML フォーム (fetch にしない)。
+          パスワードマネージャーは「フォームを送信して画面が変わった」ことを見て
+          保存を提案するので、fetch にすると覚えてもらえない。
+          autocomplete の指定も同じ理由で必要 */}
+      <form method="post" action="/api/login">
+        <input type="hidden" name="next" value={next} />
+        <div class="field">
+          <label for="username">ユーザー名</label>
+          <input type="text" id="username" name="username" autocomplete="username"
+            autocapitalize="none" autocorrect="off" spellcheck="false" required />
+        </div>
+        <div class="field">
+          <label for="password">パスワード</label>
+          <input type="password" id="password" name="password"
+            autocomplete="current-password" required />
+        </div>
+        <button class="btn primary" type="submit">ログイン</button>
+      </form>
+
+      <p class="tiny muted">
+        ログインは {SESSION_DAYS} 日ぶん保たれます。共用の端末では、終わったら
+        画面上の「ログアウト」を押してください。
+      </p>
+    </div>
+    <p class="tiny muted center"><a href="/">← 公開ページへ</a></p>
+  </div>
+</Base>
+
+<style>
+  .wrap{max-width:22rem;margin:2rem auto}
+  h1{font-size:1.15rem;margin:0 0 .9rem}
+  .notice{margin-bottom:.8rem}
+  form{margin-bottom:.9rem}
+  .btn{width:100%}
+  .center{text-align:center}
+</style>

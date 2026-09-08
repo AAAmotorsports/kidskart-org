@@ -13,10 +13,16 @@ interface Props {
    * 画面遷移も親ページ側で行う (枠の中に閉じ込めない)。
    */
   embed?: boolean;
+  /**
+   * 上のリンク並びを出すか。ログイン画面だけ false にする —
+   * まだ入っていない人に、押すたびにログインへ戻されるリンクと
+   * 「ログアウト」を見せても意味がない
+   */
+  nav?: boolean;
 }
 
 const { title, description = 'A-ONE サーキット 予約・営業案内', admin = false, wide = false,
-        embed = false } = Astro.props;
+        embed = false, nav = true } = Astro.props;
 const env = envFrom(Astro.locals);
 const siteName = env.PUBLIC_SITE_NAME || 'A-ONE サーキット';
 const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
@@ -97,6 +103,11 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
       background-size:10px 10px;background-position:0 0,5px 5px;border-radius:3px}
     .site-nav{display:flex;gap:.9rem;font-size:.86rem;flex-wrap:wrap}
     .site-nav a{opacity:.85} .site-nav a:hover{opacity:1;text-decoration:underline}
+    /* ログアウトはフォームだが、並びの中ではほかのリンクと同じに見せる */
+    .site-nav .logout{display:inline;margin:0}
+    .site-nav .logout button{background:none;border:0;padding:0;font:inherit;color:inherit;
+      opacity:.85;cursor:pointer}
+    .site-nav .logout button:hover{opacity:1;text-decoration:underline}
 
     /* ---- ボタン ---- */
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
@@ -114,7 +125,7 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
     /* ---- フォーム ---- */
     label{display:block;font-weight:700;font-size:.86rem;margin:0 0 .25rem}
     input[type=text],input[type=tel],input[type=email],input[type=date],input[type=number],
-    input[type=time],select,textarea{
+    input[type=time],input[type=password],select,textarea{
       width:100%;padding:.6rem .7rem;border:1px solid var(--line-2);border-radius:9px;
       font-family:var(--jp);font-size:1rem;background:#fff;color:var(--ink)}
     textarea{min-height:5rem;resize:vertical}
@@ -210,7 +221,7 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
   <header class="site-head">
     <div class="inner">
       <a href={admin ? '/admin' : '/'} class="brand"><span class="flag"></span>{siteName}{admin && ' 管理'}</a>
-      {admin ? (
+      {!nav ? null : admin ? (
         <nav class="site-nav">
           <a href="/admin">今日</a>
           {/* 電話はどの画面を見ているときでも鳴る (2026-09 オーナー依頼) */}
@@ -221,6 +232,13 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
           <a href="/admin/customers">顧客</a>
           <a href="/admin/settings">設定</a>
           <a href="/">公開ページ</a>
+          {/* 共用の端末で開きっぱなしにしないための出口。
+              ログアウトは POST — リンクにすると、他所のページに
+              画像として貼られただけで勝手にログアウトさせられる */}
+          <form method="post" action="/api/login" class="logout">
+            <input type="hidden" name="action" value="logout" />
+            <button type="submit">ログアウト</button>
+          </form>
         </nav>
       ) : (
         <nav class="site-nav">
