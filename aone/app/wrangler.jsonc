@@ -41,7 +41,7 @@
     // Supabase (A-ONE 用に新規プロジェクトを作成して差し替える)
     "PUBLIC_SUPABASE_URL": "https://owdtmtkvravihqonoykk.supabase.co",
     "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_jEEuSqPX1RjMWcYkPxF20w_xDGTOGsY",
-    // 管理画面の Basic 認証
+    // 管理画面のログイン (/admin/login)
     // ★ ADMIN_PASSWORD_HASH はここには置かない。
     //    このリポジトリは公開 (public) なので、ハッシュを載せると総当たりの
     //    的になる。Dashboard の「シークレット」型に入れること
