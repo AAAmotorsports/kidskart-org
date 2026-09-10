@@ -54,7 +54,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   // referral_code は入り口 URL の ?ref=xxx (localStorage 経由) または
   // ウィザード Step 1 の申込コード欄。予約完了後に UPDATE で
   // reservations.referral_code に書く。
-  // 大文字に正規化して "autopolis"/"AUTOPOLIS" 混在を防ぐ + 文字種を制限。
+  // 大文字に正規化して "kidskart"/"KIDSKART" 混在を防ぐ + 文字種を制限。
   const cleanRef = ((typeof referral_code === 'string' ? referral_code : '') || '')
     .trim()
     .toUpperCase()
