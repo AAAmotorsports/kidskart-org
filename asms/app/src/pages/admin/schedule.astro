@@ -6,9 +6,16 @@ import { getJapaneseHolidays, hasHolidayTable } from '@lib/jp_holidays';
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
 
-const now = new Date();
-const defaultYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
-const defaultMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+// Default 表示月は「JST の今月」。以前は "今月+2" (来来月) だったため、
+// 9月中に無指定でこのページを開くと 10月がデフォルト表示され、そのまま
+// 「プレビュー → 適用」を押されて 10月枠を大量生成してしまう事故
+// (2026-09) が起きた。当月起点に変更 (先の月を見たい時は明示的にフォームで指定)。
+const jstYmForDefault = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit',
+}).format(new Date());  // 例: "2026-09"
+const defaultYear = parseInt(jstYmForDefault.slice(0, 4), 10);
+const defaultMonth = parseInt(jstYmForDefault.slice(5, 7), 10);
 
 const url = new URL(Astro.request.url);
 const year = parseInt(url.searchParams.get('year') ?? String(defaultYear), 10);
@@ -582,10 +589,22 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
         月
         <input type="number" name="month" min="1" max="12" value={month} />
       </label>
+      {/* 「表示のみ」= mode を送らない → RPC 呼ばれず、既存スロット/例外の
+          読み取りだけ実行。安全にただ月を切り替えたい時はこちら。 */}
+      <button type="submit" class="btn btn-secondary">
+        📅 表示のみ
+      </button>
+      {/* 「プレビュー」= mode=preview → generate_slots_for_month を dry_run
+          で呼ぶ (DB 未変更)。生成前に「作られる予定の枠」を確認したい時。 */}
       <button type="submit" name="mode" value="preview" class="btn btn-primary">
-        プレビュー
+        🔍 プレビュー（生成前確認）
       </button>
     </form>
+    <p class="month-form-hint">
+      💡 <strong>「表示のみ」</strong>= 既存スロット一覧を見るだけ (DB 変更なし)。
+      <strong>「プレビュー」</strong>= 「もし生成したら何枠追加になるか」を dry-run で確認 (これも DB 変更なし)。
+      実際にスロットが作られるのは、プレビュー結果画面下部の「✅ 生成する」ボタンを押した時のみ。
+    </p>
 
     {msg && <div class="ok-banner">{msg}</div>}
     {err && <div class="err">{err}</div>}
@@ -781,14 +800,17 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
         </section>
 
         {mode === 'preview' && rows.some(r => r.action === 'would_create') && (
-          <form class="apply-form" method="get">
+          <form class="apply-form" method="get"
+                onsubmit={`return confirm('${year}年${month}月 のスロットを ${summary.would_create ?? 0} 枠、新規に生成します。\\n\\n実行後は個別に status 変更や 一括削除で戻せますが、生成された枠は /reserve/ カレンダーに即座に公開されて顧客から予約できる状態になります。\\n\\n本当に生成してよいですか？');`}>
             <input type="hidden" name="year" value={year} />
             <input type="hidden" name="month" value={month} />
             <button type="submit" name="mode" value="apply" class="btn btn-primary btn-big">
-              ✅ この内容で {year}年{month}月 のスロットを生成する
+              ✅ この内容で {year}年{month}月 のスロット {summary.would_create ?? 0} 枠 を生成する
             </button>
             <p class="warn">
-              生成後は個別スロットの status を変更できますが、大量に消したい場合は SQL で直接扱ってください。
+              生成した瞬間から <code>/reserve/</code> カレンダーに公開されます。
+              生成後は個別スロットの status を変更できますが、大量に消したい場合は
+              下部の「生成済みスロット一覧」の一括削除、または SQL で直接扱ってください。
             </p>
           </form>
         )}
@@ -1494,6 +1516,20 @@ const bulkTimeChoices = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '
     background: linear-gradient(135deg, var(--orange), var(--orange-deep));
     color: #fff; box-shadow: 0 4px 12px rgba(229, 99, 26, .3);
   }
+  .btn-secondary {
+    background: var(--bg-2);
+    color: var(--ink);
+    border: 1.5px solid var(--line);
+  }
+  .btn-secondary:hover { background: var(--sky-mist); border-color: var(--sky-light); }
+
+  .month-form-hint {
+    font-size: .74rem; color: var(--ink-3); margin: -.6rem 0 1.2rem;
+    line-height: 1.7; padding: .6rem .8rem;
+    background: rgba(58, 169, 232, .06); border-left: 3px solid var(--sky-light);
+    border-radius: 0 6px 6px 0;
+  }
+  .month-form-hint strong { color: var(--ink); font-weight: 800; }
 
   .month-slots {
     background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
