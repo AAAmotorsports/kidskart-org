@@ -106,34 +106,80 @@ if (Astro.request.method === 'POST') {
       .eq('id', res.id);
     if (rErr) return back(`参加者はキャンセル済ですが予約金額更新でエラー: ${fmt(rErr)}`, '');
 
-    // 4) 保護者メール通知 (fire and forget)
-    let mailMsg = '（メール送信なし）';
+    // 4) メール通知: 保護者 (notify=true 時) + 管理者 (常時)
+    // 過去に waitUntil の fire-and-forget が Cloudflare Worker 側で
+    // 中断されて無音でメールが飛ばない事故が起きたため、admin 操作は
+    // await Promise.allSettled で確実に送信を待って、送信結果を
+    // redirect メッセージに反映する (数百 ms のレイテンシは admin
+    // 操作なので許容)。
     const guardian = res.guardians ?? {};
+    const slot = res.slots ?? {};
+    const apiUrl = new URL(Astro.request.url);
+    const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+    const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
+    type MailTag = { label: string; p: Promise<any> };
+    const mails: MailTag[] = [];
     if (notify && guardian.email) {
-      const slot = res.slots ?? {};
-      const apiUrl = new URL(Astro.request.url);
-      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
-      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
-      const p = sendParticipantCancelEmail(env, {
-        to: guardian.email,
-        guardianName: guardian.name ?? '',
-        reservationNumber: res.reservation_number,
-        dateIso: slot.date,
-        startTime: slot.start_time,
-        endTime: slot.end_time,
-        courseName: slot.courses?.name ?? '',
-        cancelledName: (part as any).name_snapshot,
-        remainingNames: activeNames,
-        remainingCount: activeCount,
-        newTotal,
-        reason,
-        wholeCancel: shouldCancelReservation,
-      }).catch((e) => console.warn('[participant-cancel] email failed', res.reservation_number, e));
-      if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
-      mailMsg = `（保護者 ${guardian.email} へ通知メール送信）`;
-    } else if (notify && !guardian.email) {
-      mailMsg = '（保護者メール未登録のため送信スキップ）';
+      mails.push({
+        label: `保護者(${guardian.email})`,
+        p: sendParticipantCancelEmail(env, {
+          to: guardian.email,
+          guardianName: guardian.name ?? '',
+          reservationNumber: res.reservation_number,
+          dateIso: slot.date,
+          startTime: slot.start_time,
+          endTime: slot.end_time,
+          courseName: slot.courses?.name ?? '',
+          cancelledName: (part as any).name_snapshot,
+          remainingNames: activeNames,
+          remainingCount: activeCount,
+          newTotal,
+          reason,
+          wholeCancel: shouldCancelReservation,
+        }),
+      });
     }
+    if (adminTo) {
+      mails.push({
+        label: `管理(${adminTo})`,
+        p: sendAdminCancelNotification(env, {
+          to: adminTo,
+          reservationNumber: res.reservation_number,
+          dateIso: slot.date,
+          startTime: slot.start_time,
+          endTime: slot.end_time,
+          courseName: slot.courses?.name ?? '',
+          guardianName: guardian.name ?? '',
+          guardianPhone: guardian.phone ?? '',
+          guardianEmail: guardian.email ?? '',
+          participants: [(part as any).name_snapshot],
+          reason,
+          origin,
+          slotId: id,
+          reservationId: res.id,
+          triggeredBy: 'admin:cancel_participant',
+          partialCancel: !shouldCancelReservation,
+          remainingCount: activeCount,
+          newTotal,
+        }),
+      });
+    }
+    const results = await Promise.allSettled(mails.map((m) => m.p));
+    const sent: string[] = [];
+    const failed: string[] = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') sent.push(mails[i].label);
+      else {
+        failed.push(mails[i].label);
+        console.warn(`[cancel_participant] email failed to ${mails[i].label}`, res.reservation_number, r.reason);
+      }
+    });
+    const mailMsg =
+      mails.length === 0
+        ? (notify ? '（保護者メール未登録・管理者宛て未設定のため送信なし）' : '（メール送信なし）')
+        : failed.length === 0
+          ? `（メール送信: ${sent.join(' + ')}）`
+          : `（メール ${sent.length}/${mails.length} 通成功、失敗: ${failed.join(' + ')} — Cloudflare Logs 要確認）`;
 
     const wholeMsg = shouldCancelReservation ? '（全員キャンセルのため予約全体もキャンセル済）' : '';
     return back(
@@ -196,35 +242,73 @@ if (Astro.request.method === 'POST') {
         .not('status', 'in', '(cancelled,attended,no_show)');
       if (rErr) return back(`枠を「${newStatus}」に変更しましたが、予約側の更新でエラー: ${fmt(rErr)}`, '');
 
-      // Fire-and-forget cancellation emails per reservation.
+      // 保護者向け + 管理者向けメールを await Promise.allSettled でまとめて送る。
+      // fire-and-forget + waitUntil に頼っていた版では Cloudflare Worker 側で
+      // 無音キャンセルが起きて 1 通も届かない事故 (2026-09) があった。
       const apiUrl = new URL(Astro.request.url);
       const origin = `${apiUrl.protocol}//${apiUrl.host}`;
-      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
-      let mailQueued = 0;
+      const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
+      type MailTag = { label: string; p: Promise<any> };
+      const mails: MailTag[] = [];
       for (const r of (targetRes ?? []) as any[]) {
         const slot = r.slots ?? {};
         const guardian = r.guardians ?? {};
         const parts = (r.reservation_participants ?? []).map((p: any) => p.name_snapshot);
-        if (!guardian.email) continue;
-        const p = sendSlotCancelEmail(env, {
-          to: guardian.email,
-          guardianName: guardian.name ?? '',
-          reservationNumber: r.reservation_number,
-          dateIso: slot.date,
-          startTime: slot.start_time,
-          endTime: slot.end_time,
-          courseName: slot.courses?.name ?? '',
-          participants: parts,
-          totalAmount: r.total_amount ?? 0,
-          priceTier: r.price_tier ?? 'regular',
-          reason: cancelReason,
-          origin,
-          phone: guardian.phone ?? '',
-        }).catch((e) => console.warn('[slot-cancel] email failed', r.reservation_number, e));
-        if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
-        mailQueued++;
+        if (guardian.email) {
+          mails.push({
+            label: `保護者(${guardian.email}/${r.reservation_number})`,
+            p: sendSlotCancelEmail(env, {
+              to: guardian.email,
+              guardianName: guardian.name ?? '',
+              reservationNumber: r.reservation_number,
+              dateIso: slot.date,
+              startTime: slot.start_time,
+              endTime: slot.end_time,
+              courseName: slot.courses?.name ?? '',
+              participants: parts,
+              totalAmount: r.total_amount ?? 0,
+              priceTier: r.price_tier ?? 'regular',
+              reason: cancelReason,
+              origin,
+              phone: guardian.phone ?? '',
+            }),
+          });
+        }
+        if (adminTo) {
+          mails.push({
+            label: `管理(${adminTo}/${r.reservation_number})`,
+            p: sendAdminCancelNotification(env, {
+              to: adminTo,
+              reservationNumber: r.reservation_number,
+              dateIso: slot.date,
+              startTime: slot.start_time,
+              endTime: slot.end_time,
+              courseName: slot.courses?.name ?? '',
+              guardianName: guardian.name ?? '',
+              guardianPhone: guardian.phone ?? '',
+              guardianEmail: guardian.email ?? '',
+              participants: parts,
+              reason: cancelReason,
+              origin,
+              slotId: id,
+              reservationId: r.id,
+              triggeredBy: 'admin:slot_cascade',
+            }),
+          });
+        }
       }
-      cascadeMsg = `（既存予約 ${(targetRes ?? []).length} 件も cancelled に更新、${mailQueued} 件へ通知メール送信）`;
+      const results = await Promise.allSettled(mails.map((m) => m.p));
+      let mailSent = 0;
+      let mailFailed = 0;
+      results.forEach((rs, i) => {
+        if (rs.status === 'fulfilled') mailSent++;
+        else {
+          mailFailed++;
+          console.warn(`[slot-cascade] email failed to ${mails[i].label}`, rs.reason);
+        }
+      });
+      const failMsg = mailFailed > 0 ? `、失敗 ${mailFailed} 件 (Cloudflare Logs 要確認)` : '';
+      cascadeMsg = `（既存予約 ${(targetRes ?? []).length} 件も cancelled に更新、通知メール ${mailSent}/${mails.length} 通送信${failMsg}）`;
     }
     const label = { open: '受付中', closed: '募集停止', cancelled: 'キャンセル' }[newStatus];
     return back(`枠を「${label}」に変更しました ${cascadeMsg}`);
@@ -300,33 +384,75 @@ if (Astro.request.method === 'POST') {
       .eq('attendance_status', 'expected');
     if (pErr) return back(`予約をキャンセルしましたが、参加者ステータス更新でエラー: ${fmt(pErr)}`, '');
 
-    let mailMsg = '（メール送信なし）';
+    // メール通知: 保護者 (notify=true 時) + 管理者 (常時)
+    // 過去に fire-and-forget + waitUntil で無音でメールが飛ばない事故 (2026-09)
+    // があったため、admin 操作は await Promise.allSettled で結果を反映する。
     const guardian = (r as any).guardians ?? {};
+    const slot = (r as any).slots ?? {};
+    const parts = ((r as any).reservation_participants ?? []).map((p: any) => p.name_snapshot);
+    const apiUrl = new URL(Astro.request.url);
+    const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+    const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
+    type MailTag = { label: string; p: Promise<any> };
+    const mails: MailTag[] = [];
     if (notify && guardian.email) {
-      const slot = (r as any).slots ?? {};
-      const parts = ((r as any).reservation_participants ?? []).map((p: any) => p.name_snapshot);
-      const apiUrl = new URL(Astro.request.url);
-      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
-      const runtimeCtx = (Astro.locals as any).runtime?.ctx;
-      const p = sendReservationCancelEmail(env, {
-        to: guardian.email,
-        guardianName: guardian.name ?? '',
-        reservationNumber: (r as any).reservation_number,
-        dateIso: slot.date,
-        startTime: slot.start_time,
-        endTime: slot.end_time,
-        courseName: slot.courses?.name ?? '',
-        participants: parts,
-        totalAmount: (r as any).total_amount ?? 0,
-        priceTier: (r as any).price_tier ?? 'regular',
-        reason,
-        origin,
-      }).catch((e) => console.warn('[admin-cancel] email failed', (r as any).reservation_number, e));
-      if (runtimeCtx?.waitUntil) runtimeCtx.waitUntil(p);
-      mailMsg = `（保護者 ${guardian.email} へ通知メール送信）`;
-    } else if (notify && !guardian.email) {
-      mailMsg = '（保護者メールが未登録のため送信スキップ）';
+      mails.push({
+        label: `保護者(${guardian.email})`,
+        p: sendReservationCancelEmail(env, {
+          to: guardian.email,
+          guardianName: guardian.name ?? '',
+          reservationNumber: (r as any).reservation_number,
+          dateIso: slot.date,
+          startTime: slot.start_time,
+          endTime: slot.end_time,
+          courseName: slot.courses?.name ?? '',
+          participants: parts,
+          totalAmount: (r as any).total_amount ?? 0,
+          priceTier: (r as any).price_tier ?? 'regular',
+          reason,
+          origin,
+        }),
+      });
     }
+    if (adminTo) {
+      mails.push({
+        label: `管理(${adminTo})`,
+        p: sendAdminCancelNotification(env, {
+          to: adminTo,
+          reservationNumber: (r as any).reservation_number,
+          dateIso: slot.date,
+          startTime: slot.start_time,
+          endTime: slot.end_time,
+          courseName: slot.courses?.name ?? '',
+          guardianName: guardian.name ?? '',
+          guardianPhone: guardian.phone ?? '',
+          guardianEmail: guardian.email ?? '',
+          participants: parts,
+          reason,
+          origin,
+          slotId: id,
+          reservationId: (r as any).id,
+          triggeredBy: 'admin:cancel_reservation',
+        }),
+      });
+    }
+    const results = await Promise.allSettled(mails.map((m) => m.p));
+    const sent: string[] = [];
+    const failed: string[] = [];
+    results.forEach((rs, i) => {
+      if (rs.status === 'fulfilled') sent.push(mails[i].label);
+      else {
+        failed.push(mails[i].label);
+        console.warn(`[cancel_reservation] email failed to ${mails[i].label}`, (r as any).reservation_number, rs.reason);
+      }
+    });
+    const mailMsg =
+      mails.length === 0
+        ? (notify ? '（保護者メール未登録・管理者宛て未設定のため送信なし）' : '（メール送信なし）')
+        : failed.length === 0
+          ? `（メール送信: ${sent.join(' + ')}）`
+          : `（メール ${sent.length}/${mails.length} 通成功、失敗: ${failed.join(' + ')} — Cloudflare Logs 要確認）`;
+
     return back(`予約 ${(r as any).reservation_number} をキャンセルしました ${mailMsg}`);
   }
 
@@ -720,6 +846,122 @@ async function sendReservationCancelEmail(env: Env, args: {
     }),
   });
   if (!r.ok) throw new Error(`Resend reservation-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
+
+// Admin (staff / owner) 宛てのキャンセル通知。管理側 UI からのキャンセル
+// 操作 (cancel_reservation / cancel_participant / set_slot_status cascade)
+// で必ず呼ぶ。顧客側 API (/api/reserve/cancel.ts) の sendCancellationEmailToAdmin
+// と揃えたフォーマット。ASMS で発生した予約変動は運営が全部把握できる状態を維持する。
+async function sendAdminCancelNotification(env: Env, args: {
+  to: string;
+  reservationNumber: string;
+  dateIso: string;
+  startTime: string;
+  endTime: string | null;
+  courseName: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  participants: string[];
+  reason: string;
+  origin: string;
+  slotId: string;
+  reservationId: string;
+  triggeredBy: string;  // 'admin:cancel_reservation' | 'admin:cancel_participant' | 'admin:slot_cascade'
+  partialCancel?: boolean;
+  remainingCount?: number;
+  newTotal?: number;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey || !args.to) return;
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+
+  const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[c]);
+
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = new Date(args.dateIso + 'T00:00:00');
+  const dateLabel = `${d.getMonth() + 1}/${d.getDate()} (${weekdayJa[d.getDay()]})`;
+  const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
+  const scopeLabel = args.partialCancel ? '一部キャンセル' : 'キャンセル';
+  const subject = `【予約${scopeLabel}(管理操作)】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} ${args.guardianName}様`;
+
+  const slotUrl = `${args.origin}/admin/slots/${args.slotId}`;
+  const resUrl  = `${args.origin}/reserve/complete/${args.reservationId}`;
+
+  const partialLine = args.partialCancel
+    ? `残り  : ${args.remainingCount ?? '?'}名 / ¥${(args.newTotal ?? 0).toLocaleString('ja-JP')}`
+    : '';
+
+  const text = [
+    `管理側の操作 (${args.triggeredBy}) で予約が${scopeLabel}されました。`,
+    '',
+    `予約番号: ${args.reservationNumber}`,
+    `コース  : ${args.courseName}`,
+    `日時   : ${dateLabel} ${timeLabel}`,
+    `参加者  : ${args.participants.join('・')} (${args.participants.length}名)`,
+    `保護者  : ${args.guardianName} / ${args.guardianPhone} / ${args.guardianEmail}`,
+    partialLine,
+    `理由   : ${args.reason}`,
+    '',
+    `▼ スロット詳細`,
+    slotUrl,
+    '',
+    `▼ 予約詳細`,
+    resUrl,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    'ASMS 自動通知 (管理操作トリガー)',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].filter(Boolean).join('\n');
+
+  const partialBadge = args.partialCancel
+    ? `<div style="display:inline-block;padding:.2rem .6rem;background:#fff4d6;color:#8a6a1a;border-radius:4px;font-size:.72rem;font-weight:700;margin-left:.4rem">一部</div>`
+    : '';
+  const partialRow = args.partialCancel
+    ? `<tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">残り</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${args.remainingCount ?? '?'}名 / <span style="font-family:monospace">¥${(args.newTotal ?? 0).toLocaleString('ja-JP')}</span></td></tr>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${esc(subject)}</title></head>
+<body style="font-family:'Hiragino Sans',sans-serif;color:#163048;margin:0;padding:1rem;background:#f4f9fc">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;padding:1.2rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="font-size:.72rem;color:#7d8fa0;font-family:monospace;margin-bottom:.5rem">ASMS 自動通知 · 管理操作 (${esc(args.triggeredBy)})</div>
+    <h2 style="margin:0 0 .8rem;font-size:1.1rem;color:#c73854">🚫 予約が${esc(scopeLabel)}されました${partialBadge}</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;width:5.5em">予約番号</td><td style="padding:.35rem 0;font-family:monospace;color:#7d8fa0;text-decoration:line-through">${esc(args.reservationNumber)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${esc(args.courseName)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">日時</td><td style="padding:.35rem 0;font-family:monospace;border-top:1px dashed #d8e6f0">${esc(dateLabel)} ${esc(timeLabel)}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">参加者</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${esc(args.participants.join('・'))}</td></tr>
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0;vertical-align:top">保護者</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">
+        ${esc(args.guardianName)}<br>
+        <span style="font-family:monospace;font-size:.76rem">📞 ${esc(args.guardianPhone)}</span><br>
+        <span style="font-family:monospace;font-size:.76rem">✉️ ${esc(args.guardianEmail)}</span>
+      </td></tr>
+      ${partialRow}
+      <tr><td style="padding:.35rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">理由</td><td style="padding:.35rem 0;border-top:1px dashed #d8e6f0">${esc(args.reason)}</td></tr>
+    </table>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
+      <a href="${slotUrl}" style="flex:1;padding:.6rem 1rem;background:#3aa9e8;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.84rem;text-align:center">📋 スロット詳細</a>
+      <a href="${resUrl}" style="flex:1;padding:.6rem 1rem;background:#f4f9fc;color:#163048;border:1px solid #d8e6f0;text-decoration:none;border-radius:6px;font-weight:700;font-size:.84rem;text-align:center">予約詳細</a>
+    </div>
+  </div>
+</body></html>`;
+
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [args.to],
+      subject,
+      text,
+      html,
+    }),
+  });
+  if (!r.ok) throw new Error(`Resend admin-cancel-notif ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
 ---
 <Base title={`${dateLabel} ${timeLabel} · ${course.name} — ASMS`}>
