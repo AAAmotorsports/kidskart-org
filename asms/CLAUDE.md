@@ -83,6 +83,79 @@
 - `asms/db/000N_*.sql` は連番で追加のみ。既存ファイル編集は fresh install の整合性を維持する目的のみ（本番適用済み内容の意味は変えない）
 - 各マイグレーションは Supabase SQL Editor で手動実行が前提（自動適用パイプラインはまだ無い）
 
+#### RPC (PL/pgSQL 関数) を変更するときのルール (2026-09-07 事故を経て確定)
+
+2026-09-07 に `create_reservation_atomic` を「cutoff 判定追加のつもり」で
+`CREATE OR REPLACE FUNCTION` した際、body を古い記憶と別 migration の
+断片から書き直してしまい、実存しない関数呼び出しと実存しない列参照を
+多数含む幻覚実装をデプロイした。さらに引数リストを変えたのに旧 signature を
+DROP しなかったため PostgREST が overload を解決できず、**顧客・管理者
+両方の新規予約が数時間停止**した。同じ再発を防ぐため以下を必ず守る:
+
+1. **既存 RPC の body を書き換えるときは、推測や古い migration を元に再構築しない。**
+   本番 DB の現行 function definition を必ず取得し、それを起点に diff を最小化する。
+   Supabase SQL Editor で以下を実行して source を吸い出す:
+   ```sql
+   SELECT pg_get_functiondef('public.create_reservation_atomic(jsonb, boolean)'::regprocedure);
+   ```
+   もしくは `pg_dump -s -O -t 'public.create_reservation_atomic' postgres://...` でも可。
+   「migration ファイルに書いてある内容が本番と一致している」という思い込みは禁止
+   (0032 は migration とは違う内容で本番反映されていた可能性もある / 手動修正が
+   混ざっていることもある)。
+
+2. **RPC の引数リスト (signature) を変えるときは必ず旧 signature を DROP する。**
+   PostgreSQL は `CREATE OR REPLACE FUNCTION` を **同一 signature に対してのみ**
+   置換として扱う。1 個でも引数を追加/削除/型変更した瞬間、旧関数は別 signature の
+   まま生き残り、PostgREST は `PGRST203 Could not choose the best candidate function`
+   を返して RPC が呼べなくなる。migration 冒頭に必ず入れる:
+   ```sql
+   DROP FUNCTION IF EXISTS create_reservation_atomic(JSONB);            -- 旧 1 引数版
+   -- 続けて新 signature で CREATE OR REPLACE ...
+   ```
+   逆に「signature 変えてない」と確信できる場合でも、`pg_proc` で
+   overload の有無を事前確認する:
+   ```sql
+   SELECT oid::regprocedure FROM pg_proc WHERE proname = 'create_reservation_atomic';
+   ```
+
+3. **PostgREST 経由で叩かれる RPC は、SQL 実行後に必ず実際の予約フローで疎通確認する。**
+   SQL Editor の「Success. No rows returned」は関数定義が構文エラー無く
+   保存されただけの意味しか無い。実 payload を通した実行時エラー (存在しない列/
+   関数呼び出し、型不一致、権限、overload 曖昧性) はここでは検出されない。
+   - 顧客側: `/reserve/{開催予定 slot}/` から実 payload で 1 件予約完了させる
+   - 管理側: `/admin/reservations` から代理予約 1 件通す
+   - どちらか片方でも 500/409 が出たら、Supabase Logs → API/Postgres で
+     直近の error message を確認して、次のデプロイ前に必ず解消する
+   - 疎通が取れる前に PR をマージしない (壊れた状態で main に入れると、
+     この事故のように「どこまで戻せばいいか」が不明瞭になる)
+
+4. **RPC 変更時は、既存の副作用が壊れていないことをチェックリストで確認する。**
+   予約 RPC の場合は最低限:
+   - [ ] `reservations.reservation_number` が期待どおり生成されているか
+     (0024 は RETURNING で DB default、他 migration では inline 生成の可能性あり)
+   - [ ] `customers` の新規作成 & 既存 customer 再利用の両パスが動くか
+   - [ ] `reservation_participants` に想定通りの行数が入るか (LOOP 途中で
+     落ちていないか)
+   - [ ] `consents` が挿入されているか (term_id / signature_type / IP / UA)
+   - [ ] `guardian_customer_links` の紐付けが 1 件だけになっているか
+   - [ ] 満席時に `slot_full` HINT で正しく落ちるか (境界値)
+   これらは Supabase Table Editor で直近の 1 予約の行を全部開いて目視でよい。
+
+5. **SQL → アプリ deploy の順序と rollback 手順を migration ヘッダで宣言する。**
+   RPC 側の signature 変更をアプリより先に本番投入すると、アプリの古い
+   ビルドが呼び出せない状態が出る。逆にアプリ側の bypass_cutoff 送信を先に
+   deploy すると、DB 側の新 param が未定義で失敗する。migration ファイルの
+   コメントヘッダに以下を明記する:
+   - 「本 SQL の実行は アプリ deploy の前 / 後 / どちらでも可」
+   - 「本 SQL を実行しないと ○○ が失敗する」(復旧の緊急度がわかる)
+   - Rollback 手順 (`DROP FUNCTION ...(new_sig); CREATE OR REPLACE FUNCTION ...
+     (old_sig) $$ ... $$;` を用意しておく — 現行 body を事前バックアップ)
+
+**教訓のメタ**: 今回の事故は「cutoff 機能を追加する」という**新機能の小さい
+変更のはず**が、既存 body 書き直しで hidden regression を撒いた結果だった。
+「小さい機能追加だから安心」ではなく「RPC body に触ったら全部疎通確認」を
+デフォルトにする。
+
 ### 画面のスクロール抑止
 - 電子署名エリアなど、指ジェスチャを吸収したい要素には `touch-action: none` **と** `touchstart/touchmove` の `preventDefault({ passive: false })` を**両方**適用する（片方だけだと古い WebView で漏れる）
 
