@@ -643,11 +643,13 @@ async function sendSlotCancelEmail(env: Env, args: {
   if (!r.ok) throw new Error(`Resend slot-cancel ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
 
-// Fire-and-forget: notify the guardian that ONE participant in a
-// multi-participant reservation was cancelled. Different from
-// sendReservationCancelEmail (which handles whole-reservation cancels)
-// because we need to show which participant is out and what the new
-// total is.
+// 個別参加者キャンセル通知 (保護者宛)。
+// 「その参加者だけをキャンセルした」事実を伝える。最後の 1 人がキャンセルされて
+// reservation.status が cancelled になっても、保護者向け文面では slot (開催枠)
+// が中止されたと誤解される表現 (「予約全体キャンセル」「全員キャンセル」等) は
+// 使わない。開催枠自体は継続し、他の予約や新規受付には影響しない前提で書く。
+// wholeCancel フラグは呼び出し側から渡ってくるが、現在の文面では利用しない
+// (残り 0 名を残り参加行に「（なし）(0名)」と表示するだけ)。
 async function sendParticipantCancelEmail(env: Env, args: {
   to: string;
   guardianName: string;
@@ -672,9 +674,13 @@ async function sendParticipantCancelEmail(env: Env, args: {
   const d = new Date(args.dateIso + 'T00:00:00');
   const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
   const timeLabel = `${args.startTime.slice(0, 5)}${args.endTime ? '–' + args.endTime.slice(0, 5) : ''}`;
-  const subject = args.wholeCancel
-    ? `【キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`
-    : `【一部キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`;
+  // 個別キャンセルは常に「参加キャンセル」として扱う。
+  // 最後の 1 人がキャンセルされて予約が空になっても、それは reservations 行の
+  // 状態変化であって slot (開催枠) の中止ではないため、保護者側の件名では
+  // slot が中止されたように読める表現 (「全員キャンセル」「予約全体キャンセル」等)
+  // を使わない。wholeCancel フラグは受信側では影響しない (処理側では従来通り
+  // reservation.status を cancelled に更新している)。
+  const subject = `【参加キャンセル承りました】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName}`;
 
   const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
@@ -685,9 +691,7 @@ async function sendParticipantCancelEmail(env: Env, args: {
   const text = [
     `${args.guardianName} 様`,
     '',
-    args.wholeCancel
-      ? `${args.cancelledName} さんのキャンセルにより、この予約は全員キャンセル扱いとなりました。`
-      : `${args.cancelledName} さんの参加キャンセルを承りました。`,
+    `${args.cancelledName} さんの参加キャンセルを承りました。`,
     '',
     `▼ 予約情報`,
     `予約番号: ${args.reservationNumber}`,
@@ -715,9 +719,9 @@ async function sendParticipantCancelEmail(env: Env, args: {
 <body style="font-family:'Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
     <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">✅</div>
-    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.1rem;color:#1a7fb8">${esc(args.wholeCancel ? 'キャンセル承りました' : '一部キャンセル承りました')}</h2>
+    <h2 style="text-align:center;margin:0 0 .4rem;font-size:1.1rem;color:#1a7fb8">参加キャンセル承りました</h2>
     <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${esc(args.guardianName)} 様</p>
-    <p style="font-size:.86rem;color:#163048;margin:0 0 1rem">${esc(args.cancelledName)} さんの参加キャンセルを承りました。${args.wholeCancel ? '<br>全員キャンセルのため、この予約は全体キャンセル扱いとなります。' : ''}</p>
+    <p style="font-size:.86rem;color:#163048;margin:0 0 1rem">${esc(args.cancelledName)} さんの参加キャンセルを承りました。</p>
     <table style="width:100%;border-collapse:collapse;font-size:.86rem;margin-bottom:1rem">
       <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700">予約番号</td><td style="padding:.4rem 0;text-align:right;font-family:monospace">${esc(args.reservationNumber)}</td></tr>
       <tr><td style="padding:.4rem 0;color:#7d8fa0;font-size:.72rem;font-weight:700;border-top:1px dashed #d8e6f0">コース</td><td style="padding:.4rem 0;text-align:right;border-top:1px dashed #d8e6f0">${esc(args.courseName)}</td></tr>
