@@ -94,10 +94,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   // --- Fetch reservations (confirmed + not yet reminder-sent) -----------
+  // guardian_id を必ず select に含める。含めないと後段の (guardian, date)
+  // グルーピングで r.guardian_id が undefined になり全件 skip される
+  // (2026-09-13 事故: 09/13 の唯一の予約が「no guardian_id or slot info」で
+  // skip され、参加者にリマインドが飛ばなかった)。thankyou-mail / followup-mail
+  // は最初から guardian_id を含めているのでこの事故は起きていない。
   const { data: reservations, error: rErr } = await supabase
     .from('reservations')
     .select(`
-      id, slot_id, status, reminder_email_sent_at,
+      id, slot_id, status, guardian_id, reminder_email_sent_at,
       guardians(id, name, email),
       reservation_participants(id, name_snapshot, attendance_status)
     `)
