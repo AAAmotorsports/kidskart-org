@@ -109,17 +109,17 @@ const hasSlots = byDate.size > 0;
 type UpcomingNotice = {
   titleJa: string;
   titleEn: string;
-  subJa: any;
+  // sub は HTML 文字列 (<strong>, <br> 使用可) として set:html で描画する
+  // (Astro frontmatter は .astro でも JSX を許さないため、React 風の
+  // Fragment <>...</> は書けない)。
+  subJa: string;
   subEn: string;
   hideAfter: string;  // YYYY-MM-DD (JST); この日を過ぎたら非表示
 };
 const UPCOMING_MONTH_NOTICE: UpcomingNotice | null = {
   titleJa: '10 月開催予定日 · 9 月 25 日頃 公開',
   titleEn: 'October Schedule — Coming ~Sep 25',
-  subJa: (
-    <>10 月分のご予約は <strong>9 月 25 日 (金) 頃</strong> に開放予定です。<br />
-    改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。</>
-  ),
+  subJa: '10 月分のご予約は <strong>9 月 25 日 (金) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。',
   subEn: 'October reservations will open around September 25 (Fri). Please check back then, or sign up below to be notified.',
   hideAfter: '2026-09-25',
 };
@@ -426,9 +426,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
             <div class="up-title">
               {isEn ? upcomingMonthNotice.titleEn : upcomingMonthNotice.titleJa}
             </div>
-            <div class="up-sub">
-              {isEn ? upcomingMonthNotice.subEn : upcomingMonthNotice.subJa}
-            </div>
+            <div class="up-sub" set:html={isEn ? upcomingMonthNotice.subEn : upcomingMonthNotice.subJa} />
           </div>
         </div>
       </section>
