@@ -143,32 +143,33 @@ const { count: nextMonthSlotCount } = await supabase
   .gte('date', nextMonthStart)
   .lt('date', nextMonthEnd);
 
-const upcomingMonthNotice: UpcomingNotice | null = (() => {
-  if ((nextMonthSlotCount ?? 0) > 0) return null;  // 翌月分公開済みなら出さない
-
-  // リリース予定日 = 今月 25 日、曜日はカレンダーから動的計算
+// 対象月 (targetY, targetM) の告知を組み立てる。
+// リリース予定日 = 前月 25 日 (「毎月 25 日頃に翌月分を公開」ルール)。
+// 「12 月分は 11 月 25 日」「1 月分は 12 月 25 日」等、年跨ぎも対応。
+function buildMonthNotice(targetY: number, targetM: number): UpcomingNotice {
+  const publishY = targetM === 1 ? targetY - 1 : targetY;
+  const publishM = targetM === 1 ? 12 : targetM - 1;
   const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
   const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const dow = new Date(Date.UTC(nY, nM - 1, 25)).getUTCDay();
+  const dow = new Date(Date.UTC(publishY, publishM - 1, 25)).getUTCDay();
   const wJa = weekdayJa[dow];
   const wEn = weekdayEn[dow];
-
-  const nextMonthNameEn = [
+  const monthNamesEn = [
     'January','February','March','April','May','June',
     'July','August','September','October','November','December',
-  ][nextMForNotice - 1];
-  const thisMonthNameEn = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December',
-  ][nM - 1];
-
+  ];
+  const targetNameEn = monthNamesEn[targetM - 1];
+  const publishNameEn = monthNamesEn[publishM - 1];
   return {
-    titleJa: `${nextMForNotice} 月開催予定日 · ${nM} 月 25 日 (${wJa}) 頃 公開`,
-    titleEn: `${nextMonthNameEn} Schedule — Coming ~${thisMonthNameEn} 25`,
-    subJa: `${nextMForNotice} 月分のご予約は <strong>${nM} 月 25 日 (${wJa}) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。`,
-    subEn: `${nextMonthNameEn} reservations will open around ${thisMonthNameEn} 25 (${wEn}). Please check back then, or sign up below to be notified.`,
+    titleJa: `${targetM} 月開催予定日 · ${publishM} 月 25 日 (${wJa}) 頃 公開`,
+    titleEn: `${targetNameEn} Schedule — Coming ~${publishNameEn} 25`,
+    subJa: `${targetM} 月分のご予約は <strong>${publishM} 月 25 日 (${wJa}) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。`,
+    subEn: `${targetNameEn} reservations will open around ${publishNameEn} 25 (${wEn}). Please check back then, or sign up below to be notified.`,
   };
-})();
+}
+
+const upcomingMonthNotice: UpcomingNotice | null =
+  (nextMonthSlotCount ?? 0) > 0 ? null : buildMonthNotice(nextYForNotice, nextMForNotice);
 
 // Which month to render the calendar for
 const urlMonth = url.searchParams.get('month');
@@ -206,8 +207,25 @@ for (const s of filteredSlots) {
 }
 const prevM = visMonth === 1 ? { y: visYear - 1, m: 12 } : { y: visYear, m: visMonth - 1 };
 const nextM = visMonth === 12 ? { y: visYear + 1, m: 1 } : { y: visYear, m: visMonth + 1 };
-const hasPrev = monthsWithSlots.has(monthKey(prevM.y, prevM.m));
-const hasNext = monthsWithSlots.has(monthKey(nextM.y, nextM.m));
+// 前月/次月ボタンの有効化判定。
+// 従来: slot が存在する月しかクリックできなかった → 「10月は未公開だから
+// 10月ボタン グレー」= ユーザーは 10月 の状態 (公開待ち) を確認できない。
+// 変更: 「今月〜今月+3」の範囲は slot が無くてもクリック可 (empty カレンダー +
+// 公開予定案内カードを表示するため)。過去月は従来通り slot 存在時のみ。
+const monthDiffFromToday = (y: number, m: number) => (y - nY) * 12 + (m - nM);
+const isForwardNavigable = (y: number, m: number) => {
+  const d = monthDiffFromToday(y, m);
+  return d >= 0 && d <= 3;  // 今月〜今月+3 は空でも navigate 可
+};
+const hasPrev = monthsWithSlots.has(monthKey(prevM.y, prevM.m)) || isForwardNavigable(prevM.y, prevM.m);
+const hasNext = monthsWithSlots.has(monthKey(nextM.y, nextM.m)) || isForwardNavigable(nextM.y, nextM.m);
+
+// 表示中の月が「空 かつ 今月以降」なら、その月用の公開予定案内を組み立てる。
+// カレンダー本体の下 (「開催予定なし」テキストの代わり) に表示する。
+const visMonthNotice: UpcomingNotice | null =
+  visSlots.length === 0 && monthDiffFromToday(visYear, visMonth) >= 1
+    ? buildMonthNotice(visYear, visMonth)
+    : null;
 
 // Build URLs preserving the current course filter.
 function makeUrl(params: Record<string, string | number>): string {
@@ -540,18 +558,30 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
         </div>
 
         {visSortedDates.length === 0 ? (
-          <p class="no-in-month">
-            {isEn ? (
-              activeCourse
-                ? `No ${activeCourse.name} sessions scheduled for this month.`
-                : 'No sessions scheduled for this month.'
-            ) : (
-              activeCourse
-                ? `${activeCourse.name} の ${visYear}年${visMonth}月 開催予定はありません。`
-                : `${visYear}年${visMonth}月は開催予定がありません。`
-            )}
-            {(hasPrev || hasNext) && (isEn ? ' Please try previous / next month.' : '前月/翌月をお試しください。')}
-          </p>
+          visMonthNotice ? (
+            /* 未公開の未来月にナビゲートされた場合は、公開予定案内カードを
+               カレンダー内にも表示する (ページ上部の告知バナーと同じ内容)。 */
+            <div class="up-card in-cal">
+              <div class="up-icon">🗓️</div>
+              <div class="up-body">
+                <div class="up-title">{isEn ? visMonthNotice.titleEn : visMonthNotice.titleJa}</div>
+                <div class="up-sub" set:html={isEn ? visMonthNotice.subEn : visMonthNotice.subJa} />
+              </div>
+            </div>
+          ) : (
+            <p class="no-in-month">
+              {isEn ? (
+                activeCourse
+                  ? `No ${activeCourse.name} sessions scheduled for this month.`
+                  : 'No sessions scheduled for this month.'
+              ) : (
+                activeCourse
+                  ? `${activeCourse.name} の ${visYear}年${visMonth}月 開催予定はありません。`
+                  : `${visYear}年${visMonth}月は開催予定がありません。`
+              )}
+              {(hasPrev || hasNext) && (isEn ? ' Please try previous / next month.' : '前月/翌月をお試しください。')}
+            </p>
+          )
         ) : (
           <div class="day-list">
             {visSortedDates.map((date) => (
@@ -1003,6 +1033,8 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     font-size: .78rem; color: var(--ink-2); line-height: 1.7;
   }
   .up-sub strong { color: var(--sky-deep); font-weight: 800; }
+  /* カレンダー本体の中に埋め込む時は上下余白を少し取る */
+  .up-card.in-cal { margin: 1rem 0 .3rem; }
 
   /* Calendar */
   .cal-wrap {
