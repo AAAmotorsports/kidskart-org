@@ -102,16 +102,11 @@ for (const s of filteredSlots) {
 }
 const hasSlots = byDate.size > 0;
 
-// 次月開催予定の告知 (calendar 上部にバナー表示)。
-// 「翌月分の slot が DB にまだ 1 件も無い」期間だけ自動表示する。
-// - 表示: 「N 月開催予定日 · M 月 25 日 (曜) 頃 公開」
-// - 非表示: 翌月分 slot が 1 件でも存在した瞬間から (status 問わず)
-// - 曜日は 25 日の実カレンダーから動的計算
-// - 12 月→翌年 1 月の年跨ぎも対応
-//
-// 「毎月 25 日頃に翌月分を公開」という運用ルール (empty state 文面と同一)
-// を UI 側で毎月自動的に告知する。運用が滞って月末を過ぎても、翌月 slot が
-// 未公開である限り表示され続けるので、スタッフへの視覚的リマインダにもなる。
+// 次月開催予定の告知は「カレンダー内のお知らせカード」だけで表示する
+// (上部バナーは廃止。同じ内容が上下に 2 回出るのは冗長との判断)。
+// - ユーザーが空月 (10 月ボタン等) にナビゲートしたら、カレンダー本体の
+//   下に「N 月開催予定日 · M 月 25 日 (曜) 頃 公開」のカードが出る。
+// - 曜日は 25 日の実カレンダーから動的計算、12 月→翌年 1 月の年跨ぎも対応。
 type UpcomingNotice = {
   titleJa: string;
   titleEn: string;
@@ -122,26 +117,12 @@ type UpcomingNotice = {
   subEn: string;
 };
 
-// JST 今日
+// JST 今日 (前月/次月ナビゲーション判定と、buildMonthNotice に使う)
 const jstTodayForNotice = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Tokyo',
   year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());  // "YYYY-MM-DD"
 const [nY, nM] = jstTodayForNotice.slice(0, 7).split('-').map(Number);  // 今月 (JST)
-const nextYForNotice = nM === 12 ? nY + 1 : nY;
-const nextMForNotice = nM === 12 ? 1 : nM + 1;
-
-// 翌月分の slot が 1 件でもあるか (status 問わず — closed も含めて「その月の
-// スケジュールが組まれている」と見なす)
-const nextMonthStart = `${nextYForNotice}-${String(nextMForNotice).padStart(2, '0')}-01`;
-const monthAfterNextY = nextMForNotice === 12 ? nextYForNotice + 1 : nextYForNotice;
-const monthAfterNextM = nextMForNotice === 12 ? 1 : nextMForNotice + 1;
-const nextMonthEnd = `${monthAfterNextY}-${String(monthAfterNextM).padStart(2, '0')}-01`;
-const { count: nextMonthSlotCount } = await supabase
-  .from('slots')
-  .select('id', { count: 'exact', head: true })
-  .gte('date', nextMonthStart)
-  .lt('date', nextMonthEnd);
 
 // 対象月 (targetY, targetM) の告知を組み立てる。
 // リリース予定日 = 前月 25 日 (「毎月 25 日頃に翌月分を公開」ルール)。
@@ -167,9 +148,6 @@ function buildMonthNotice(targetY: number, targetM: number): UpcomingNotice {
     subEn: `${targetNameEn} reservations will open around ${publishNameEn} 25 (${wEn}). Please check back then, or sign up below to be notified.`,
   };
 }
-
-const upcomingMonthNotice: UpcomingNotice | null =
-  (nextMonthSlotCount ?? 0) > 0 ? null : buildMonthNotice(nextYForNotice, nextMForNotice);
 
 // Which month to render the calendar for
 const urlMonth = url.searchParams.get('month');
@@ -470,23 +448,6 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
         </p>
       )}
     </section>
-
-    {/* 次月開催予定の告知バナー。
-        翌月分 slot が DB に 1 件も無い期間だけ自動表示 (frontmatter で判定)。
-        毎月 25 日頃の翌月公開ルールに合わせて曜日も動的計算。 */}
-    {upcomingMonthNotice && (
-      <section class="upcoming-notice">
-        <div class="up-card">
-          <div class="up-icon">🗓️</div>
-          <div class="up-body">
-            <div class="up-title">
-              {isEn ? upcomingMonthNotice.titleEn : upcomingMonthNotice.titleJa}
-            </div>
-            <div class="up-sub" set:html={isEn ? upcomingMonthNotice.subEn : upcomingMonthNotice.subJa} />
-          </div>
-        </div>
-      </section>
-    )}
 
     {hasSlots ? (
       <section class="dates" id="dates">
@@ -1013,8 +974,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
   }
   .toyopet-link:hover { background: var(--sun); color: #fff; }
 
-  /* 次月公開告知バナー (upcoming month notice) */
-  .upcoming-notice { margin: 0 0 1.2rem; }
+  /* 次月公開告知カード (カレンダー内の空月に表示) */
   .up-card {
     display: flex; gap: .8rem; align-items: flex-start;
     background: linear-gradient(135deg, rgba(58, 169, 232, .10), rgba(58, 169, 232, .04));
