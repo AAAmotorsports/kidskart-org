@@ -103,9 +103,15 @@ for (const s of filteredSlots) {
 const hasSlots = byDate.size > 0;
 
 // 次月開催予定の告知 (calendar 上部にバナー表示)。
-// 例: 10 月分をまだ公開していない期間、「9/25 頃公開」と案内する。
-// 公開が完了したら null に戻す (または削除)。JST の「今日」がバナー
-// 掲載終了日より前かどうかで自動非表示にする。
+// 「翌月分の slot が DB にまだ 1 件も無い」期間だけ自動表示する。
+// - 表示: 「N 月開催予定日 · M 月 25 日 (曜) 頃 公開」
+// - 非表示: 翌月分 slot が 1 件でも存在した瞬間から (status 問わず)
+// - 曜日は 25 日の実カレンダーから動的計算
+// - 12 月→翌年 1 月の年跨ぎも対応
+//
+// 「毎月 25 日頃に翌月分を公開」という運用ルール (empty state 文面と同一)
+// を UI 側で毎月自動的に告知する。運用が滞って月末を過ぎても、翌月 slot が
+// 未公開である限り表示され続けるので、スタッフへの視覚的リマインダにもなる。
 type UpcomingNotice = {
   titleJa: string;
   titleEn: string;
@@ -114,22 +120,54 @@ type UpcomingNotice = {
   // Fragment <>...</> は書けない)。
   subJa: string;
   subEn: string;
-  hideAfter: string;  // YYYY-MM-DD (JST); この日を過ぎたら非表示
 };
-const UPCOMING_MONTH_NOTICE: UpcomingNotice | null = {
-  titleJa: '10 月開催予定日 · 9 月 25 日頃 公開',
-  titleEn: 'October Schedule — Coming ~Sep 25',
-  subJa: '10 月分のご予約は <strong>9 月 25 日 (金) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。',
-  subEn: 'October reservations will open around September 25 (Fri). Please check back then, or sign up below to be notified.',
-  hideAfter: '2026-09-25',
-};
-const upcomingMonthNotice = (() => {
-  if (!UPCOMING_MONTH_NOTICE) return null;
-  const todayJstStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tokyo',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
-  return todayJstStr <= UPCOMING_MONTH_NOTICE.hideAfter ? UPCOMING_MONTH_NOTICE : null;
+
+// JST 今日
+const jstTodayForNotice = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());  // "YYYY-MM-DD"
+const [nY, nM] = jstTodayForNotice.slice(0, 7).split('-').map(Number);  // 今月 (JST)
+const nextYForNotice = nM === 12 ? nY + 1 : nY;
+const nextMForNotice = nM === 12 ? 1 : nM + 1;
+
+// 翌月分の slot が 1 件でもあるか (status 問わず — closed も含めて「その月の
+// スケジュールが組まれている」と見なす)
+const nextMonthStart = `${nextYForNotice}-${String(nextMForNotice).padStart(2, '0')}-01`;
+const monthAfterNextY = nextMForNotice === 12 ? nextYForNotice + 1 : nextYForNotice;
+const monthAfterNextM = nextMForNotice === 12 ? 1 : nextMForNotice + 1;
+const nextMonthEnd = `${monthAfterNextY}-${String(monthAfterNextM).padStart(2, '0')}-01`;
+const { count: nextMonthSlotCount } = await supabase
+  .from('slots')
+  .select('id', { count: 'exact', head: true })
+  .gte('date', nextMonthStart)
+  .lt('date', nextMonthEnd);
+
+const upcomingMonthNotice: UpcomingNotice | null = (() => {
+  if ((nextMonthSlotCount ?? 0) > 0) return null;  // 翌月分公開済みなら出さない
+
+  // リリース予定日 = 今月 25 日、曜日はカレンダーから動的計算
+  const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+  const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dow = new Date(Date.UTC(nY, nM - 1, 25)).getUTCDay();
+  const wJa = weekdayJa[dow];
+  const wEn = weekdayEn[dow];
+
+  const nextMonthNameEn = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December',
+  ][nextMForNotice - 1];
+  const thisMonthNameEn = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December',
+  ][nM - 1];
+
+  return {
+    titleJa: `${nextMForNotice} 月開催予定日 · ${nM} 月 25 日 (${wJa}) 頃 公開`,
+    titleEn: `${nextMonthNameEn} Schedule — Coming ~${thisMonthNameEn} 25`,
+    subJa: `${nextMForNotice} 月分のご予約は <strong>${nM} 月 25 日 (${wJa}) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。`,
+    subEn: `${nextMonthNameEn} reservations will open around ${thisMonthNameEn} 25 (${wEn}). Please check back then, or sign up below to be notified.`,
+  };
 })();
 
 // Which month to render the calendar for
@@ -416,8 +454,8 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     </section>
 
     {/* 次月開催予定の告知バナー。
-        10 月分の公開日 (2026-09-25 頃) までは目立たせて案内する。
-        公開後は upcomingMonthNotice を null にする or この <section> ごと削除する。 */}
+        翌月分 slot が DB に 1 件も無い期間だけ自動表示 (frontmatter で判定)。
+        毎月 25 日頃の翌月公開ルールに合わせて曜日も動的計算。 */}
     {upcomingMonthNotice && (
       <section class="upcoming-notice">
         <div class="up-card">
