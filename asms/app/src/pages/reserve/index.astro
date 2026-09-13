@@ -102,6 +102,36 @@ for (const s of filteredSlots) {
 }
 const hasSlots = byDate.size > 0;
 
+// 次月開催予定の告知 (calendar 上部にバナー表示)。
+// 例: 10 月分をまだ公開していない期間、「9/25 頃公開」と案内する。
+// 公開が完了したら null に戻す (または削除)。JST の「今日」がバナー
+// 掲載終了日より前かどうかで自動非表示にする。
+type UpcomingNotice = {
+  titleJa: string;
+  titleEn: string;
+  // sub は HTML 文字列 (<strong>, <br> 使用可) として set:html で描画する
+  // (Astro frontmatter は .astro でも JSX を許さないため、React 風の
+  // Fragment <>...</> は書けない)。
+  subJa: string;
+  subEn: string;
+  hideAfter: string;  // YYYY-MM-DD (JST); この日を過ぎたら非表示
+};
+const UPCOMING_MONTH_NOTICE: UpcomingNotice | null = {
+  titleJa: '10 月開催予定日 · 9 月 25 日頃 公開',
+  titleEn: 'October Schedule — Coming ~Sep 25',
+  subJa: '10 月分のご予約は <strong>9 月 25 日 (金) 頃</strong> に開放予定です。<br>改めてこのページをご確認いただくか、下部の「開催のお知らせ」よりご登録ください。',
+  subEn: 'October reservations will open around September 25 (Fri). Please check back then, or sign up below to be notified.',
+  hideAfter: '2026-09-25',
+};
+const upcomingMonthNotice = (() => {
+  if (!UPCOMING_MONTH_NOTICE) return null;
+  const todayJstStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return todayJstStr <= UPCOMING_MONTH_NOTICE.hideAfter ? UPCOMING_MONTH_NOTICE : null;
+})();
+
 // Which month to render the calendar for
 const urlMonth = url.searchParams.get('month');
 let visYear: number;
@@ -384,6 +414,23 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
         </p>
       )}
     </section>
+
+    {/* 次月開催予定の告知バナー。
+        10 月分の公開日 (2026-09-25 頃) までは目立たせて案内する。
+        公開後は upcomingMonthNotice を null にする or この <section> ごと削除する。 */}
+    {upcomingMonthNotice && (
+      <section class="upcoming-notice">
+        <div class="up-card">
+          <div class="up-icon">🗓️</div>
+          <div class="up-body">
+            <div class="up-title">
+              {isEn ? upcomingMonthNotice.titleEn : upcomingMonthNotice.titleJa}
+            </div>
+            <div class="up-sub" set:html={isEn ? upcomingMonthNotice.subEn : upcomingMonthNotice.subJa} />
+          </div>
+        </div>
+      </section>
+    )}
 
     {hasSlots ? (
       <section class="dates" id="dates">
@@ -897,6 +944,27 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     text-decoration: none;
   }
   .toyopet-link:hover { background: var(--sun); color: #fff; }
+
+  /* 次月公開告知バナー (upcoming month notice) */
+  .upcoming-notice { margin: 0 0 1.2rem; }
+  .up-card {
+    display: flex; gap: .8rem; align-items: flex-start;
+    background: linear-gradient(135deg, rgba(58, 169, 232, .10), rgba(58, 169, 232, .04));
+    border: 1px solid rgba(58, 169, 232, .35);
+    border-left: 4px solid var(--sky-deep);
+    padding: .9rem 1rem;
+    border-radius: 10px;
+  }
+  .up-icon { font-size: 1.4rem; line-height: 1; padding-top: 2px; flex-shrink: 0; }
+  .up-body { flex: 1; min-width: 0; }
+  .up-title {
+    font-size: .9rem; font-weight: 800; color: var(--sky-deep);
+    margin-bottom: .3rem;
+  }
+  .up-sub {
+    font-size: .78rem; color: var(--ink-2); line-height: 1.7;
+  }
+  .up-sub strong { color: var(--sky-deep); font-weight: 800; }
 
   /* Calendar */
   .cal-wrap {
