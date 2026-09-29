@@ -287,9 +287,19 @@ if (Astro.request.method === 'POST') {
   }
 
   if (op === 'bulk_add_extra_slots') {
-    // コース × 複数日 × 複数時間の掛け合わせで extra_slot を一括作成し、
-    // その場で generate_slots_for_month を回してスロットまで実体化する。
-    // 「例外追加 → プレビュー → 適用」の 3 ステップを 1 クリックにまとめるのが目的。
+    // コース × 複数日 × 複数時間の掛け合わせで extra_slot exception を一括
+    // 追加し、その場で該当分だけ slots テーブルに直接 INSERT する。
+    //
+    // 【重要】以前は generate_slots_for_month RPC を呼び出して「該当月全体」
+    // を再生成していたが、これは schedule_rules 由来の枠 (毎週土日祝の
+    // 体験・リピート等) も同時に復活させる副作用を持ち、「Rotax 1 枠追加
+    // したかっただけなのに、その日の通常コースが全部並んでしまった」
+    // (2026-09-21) というオーナーの困惑を招いた。
+    //
+    // 現在: extra_slot exception を追加した後、その extra_slot 分だけを
+    // slots テーブルに直接 INSERT する (course.duration_min / default_capacity
+    // を fetch して、start_time + duration で end_time を計算)。schedule_rules
+    // には触らないので、副作用ゼロで「足したコマだけ増える」挙動になる。
     const courseId = ((form.get('course_id') as string) || '').trim();
     const datesRaw = ((form.get('dates') as string) || '').trim();
     const timesRaw = ((form.get('times') as string) || '').trim();
@@ -305,7 +315,20 @@ if (Astro.request.method === 'POST') {
       return finalize('', `一度に登録できるのは 200 枠まで (現在 ${dates.length * times.length} 枠)`);
     }
 
-    const capacity = rawCapacity ? parseInt(rawCapacity, 10) : null;
+    const capacityOverride = rawCapacity ? parseInt(rawCapacity, 10) : null;
+
+    // コース情報 (duration_min と default_capacity) を先に取得。
+    // end_time / capacity の算出に必要。
+    const { data: courseInfo, error: courseErr } = await supabase
+      .from('courses')
+      .select('id, duration_min, default_capacity')
+      .eq('id', courseId)
+      .maybeSingle();
+    if (courseErr) return finalize('', fmtErr(courseErr));
+    if (!courseInfo) return finalize('', '選択したコースが見つかりません');
+    const durationMin = (courseInfo as any).duration_min as number;
+    const defaultCapacity = (courseInfo as any).default_capacity as number;
+    const effectiveCapacity = capacityOverride ?? defaultCapacity;
 
     // Skip combinations already present so re-submit is idempotent
     const { data: existing } = await supabase
@@ -318,64 +341,78 @@ if (Astro.request.method === 'POST') {
       (existing ?? []).map((r: any) => `${r.date}|${(r.start_time ?? '').slice(0, 5)}`)
     );
 
-    const rows: any[] = [];
+    // start_time (HH:MM or HH:MM:SS) + duration_min → end_time (HH:MM:SS)
+    const addMinutes = (time: string, mins: number): string => {
+      const [hhStr, mmStr] = time.split(':');
+      const hh = parseInt(hhStr, 10);
+      const mm = parseInt(mmStr, 10);
+      const total = hh * 60 + mm + mins;
+      const eh = Math.floor(total / 60) % 24;
+      const em = total % 60;
+      return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00`;
+    };
+
+    const exceptionRows: any[] = [];
+    const slotRows: any[] = [];
     for (const date of dates) {
       for (const time of times) {
         const key = `${date}|${time.slice(0, 5)}`;
         if (dupKey.has(key)) continue;
-        const row: any = {
+        const exRow: any = {
           type: 'extra_slot',
           date,
           start_time: time,
           course_id: courseId,
         };
-        if (capacity) row.capacity = capacity;
-        if (title) row.title = title;
-        rows.push(row);
+        if (capacityOverride) exRow.capacity = capacityOverride;
+        if (title) exRow.title = title;
+        exceptionRows.push(exRow);
+        slotRows.push({
+          date,
+          start_time: time,
+          end_time: addMinutes(time, durationMin),
+          course_id: courseId,
+          capacity: effectiveCapacity,
+          generated_from_rule: false,  // extra_slot 由来なので rule ではない
+          status: 'open',
+          note: title,
+        });
       }
     }
-    const dupCount = dates.length * times.length - rows.length;
+    const dupCount = dates.length * times.length - exceptionRows.length;
 
-    if (rows.length === 0) {
+    if (exceptionRows.length === 0) {
       return finalize(
         `指定された ${dates.length * times.length} 枠はすべて登録済みです`,
         ''
       );
     }
 
-    const { error: insErr } = await supabase.from('schedule_exceptions').insert(rows);
-    if (insErr) return finalize('', fmtErr(insErr));
+    // 1) schedule_exceptions に extra_slot 履歴を残す
+    const { error: exInsErr } = await supabase.from('schedule_exceptions').insert(exceptionRows);
+    if (exInsErr) return finalize('', fmtErr(exInsErr));
 
-    // Auto-apply: run generate_slots_for_month for each affected year-month
-    const monthsSet = new Set<string>();
-    for (const date of dates) monthsSet.add(date.slice(0, 7));
-    let totalCreated = 0;
-    let genErr: string | null = null;
-    for (const ym of monthsSet) {
-      const [y, m] = ym.split('-').map(Number);
-      const { data: genResult, error: gErr } = await supabase.rpc('generate_slots_for_month', {
-        p_year: y,
-        p_month: m,
-        p_dry_run: false,
-      });
-      if (gErr) {
-        genErr = fmtErr(gErr);
-        break;
-      }
-      if (genResult) {
-        totalCreated += (genResult as any[]).filter((r) => r.action === 'created').length;
-      }
-    }
-    if (genErr) {
+    // 2) slots に直接 INSERT。UNIQUE (date, start_time, course_id) で
+    //    既存重複は 23505 error になる。1 枠でも既存だと全体が失敗するので、
+    //    現在は「1 個ずつ INSERT で失敗を許容」パターンを取らず、事前の
+    //    dupKey チェックで生成済みは既に除外されている想定で bulk INSERT する。
+    //    (slot 側の重複が起き得るのは、例外は無いが slot だけ残ってるという
+    //    レアケース。その場合はエラーメッセージで気付ける)
+    const { data: insertedSlots, error: slotInsErr } = await supabase
+      .from('slots')
+      .insert(slotRows)
+      .select('id');
+    if (slotInsErr) {
       return finalize(
-        `例外は ${rows.length} 件追加しましたが、スロット生成でエラー: ${genErr}`,
+        `例外 ${exceptionRows.length} 件を追加しましたが、スロット INSERT でエラー: ${fmtErr(slotInsErr)}`,
         ''
       );
     }
+    const totalCreated = (insertedSlots ?? []).length;
 
-    const parts = [`✅ ${rows.length} 枠を追加`];
+    const parts = [`✅ ${exceptionRows.length} 枠を追加`];
     if (dupCount > 0) parts.push(`(既存 ${dupCount} 件はスキップ)`);
-    parts.push(`→ うち ${totalCreated} 枠を実体化`);
+    parts.push(`→ ${totalCreated} 枠を実体化 (他コースの通常ルールには影響なし)`);
     return finalize(parts.join(' '), '');
   }
 
