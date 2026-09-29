@@ -7,7 +7,11 @@ const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
 
 const url = new URL(Astro.request.url);
-const scope = url.searchParams.get('scope') ?? 'upcoming'; // upcoming | today | past
+// URL に ?scope= が明示的にあればそれを使う。無ければ「本日」から始めて、
+// 本日の予約が 0 件だった場合は後段のフォールバックで 'upcoming' に切替える
+// (実データ確定は fetch 後、この let scope は fetch 後に mutate される)。
+const scopeParam = url.searchParams.get('scope'); // may be null
+let scope = scopeParam ?? 'today'; // upcoming | today | past
 const search = (url.searchParams.get('q') ?? '').trim();
 const dateFilter = (url.searchParams.get('date') ?? '').trim(); // YYYY-MM-DD
 const ymParam = (url.searchParams.get('ym') ?? '').trim();     // YYYY-MM (calendar month)
@@ -204,6 +208,16 @@ if (search) {
 const { data: reservationsRaw, error } = await query;
 type Reservation = NonNullable<typeof reservationsRaw>[number];
 let reservations = (reservationsRaw ?? []) as Reservation[];
+
+// scope 未指定で「本日」を default にした場合、本日の予約が 0 件なら
+// 空タブを見せるより「今後」の一覧に自動フォールバック。
+// scope を明示指定した URL (?scope=today など) はユーザーの意思なので変えない。
+if (!scopeParam && scope === 'today' && !search && !dateFilter) {
+  const todayCount = reservations.filter(
+    (r: any) => (r.slots as any)?.date === today
+  ).length;
+  if (todayCount === 0) scope = 'upcoming';
+}
 
 // Client-side filtering for guardian/participant name (Supabase doesn't
 // easily support joined-table ilike in a single query without RPCs).
