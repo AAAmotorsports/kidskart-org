@@ -81,7 +81,15 @@ let backupError: string | null = null;
 const backupBucket = (Astro.locals as any)?.runtime?.env?.BACKUP_BUCKET;
 if (backupBucket) {
   try {
-    const dailyList = await backupBucket.list({ prefix: 'daily/', limit: 20 });
+    // R2 の list() は key の辞書順昇順で返す (Cloudflare docs, S3 互換)。
+    // ファイル名は asms-YYYYMMDD.dump なので辞書順 = 日付昇順 = 古い順。
+    // 以前 limit: 20 にしていたため、daily/ に 20 件以上ある場合は
+    // 「古い方から 20 件」しか取れず、新しい分がクライアントに届かなかった
+    // (2026-09-29 事象: 実バケットには 09/16〜09/29 の 13 件があるのに、
+    //  admin panel は 09/15 で止まって「13 日間動いていない」と誤表示)。
+    // daily の retention は 90 日なので limit: 200 なら余裕を持って全件取れる。
+    // monthly は無期限保存なので同じく 200 に (16+ 年分でも耐える)。
+    const dailyList = await backupBucket.list({ prefix: 'daily/', limit: 200 });
     backups = (dailyList?.objects ?? [])
       .map((o: any) => {
         // key: daily/asms-YYYYMMDD.dump → date part を取り出し
@@ -91,7 +99,7 @@ if (backupBucket) {
       })
       .sort((a: BackupObject, b: BackupObject) => (a.date < b.date ? 1 : -1))
       .slice(0, 10);
-    const monthlyList = await backupBucket.list({ prefix: 'monthly/', limit: 20 });
+    const monthlyList = await backupBucket.list({ prefix: 'monthly/', limit: 200 });
     const monthly = (monthlyList?.objects ?? [])
       .map((o: any) => ({ key: o.key, date: o.key.replace(/^monthly\/asms-|\.dump$/g, ''), size: o.size, uploaded: new Date(o.uploaded) }))
       .sort((a: BackupObject, b: BackupObject) => (a.date < b.date ? 1 : -1));
