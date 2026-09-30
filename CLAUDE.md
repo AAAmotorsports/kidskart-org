@@ -45,7 +45,11 @@
 | arataendo.com | なし | なし | noindex。意図的かは要確認 |
 | rk-a1.com | なし | 未確認 | |
 
-- GSC管理画面の中身（登録プロパティ、sitemap送信状況、カバレッジ）は **未確認**。オーナーのGoogleアカウントでしか見られない。
+- kidskart.org は **ドメインプロパティ（sc-domain:kidskart.org）で登録済み**（オーナー画面で確認）。
+  - 直近3ヶ月（〜2026-09-29）: クリック608 / 表示1.12万 / CTR 5.4%。
+  - 上位クエリ: 福岡キッズカートアカデミー 109/182、ゴーカート 福岡 22/922、キッズカート 12/168、筑紫野 ゴーカート 11/27、ゴーカート 9/617（クリック/表示）。
+  - 課題: 指名検索以外のCTRが低い（「ゴーカート 福岡」2.4%、「ゴーカート」1.5%）。
+- aaa-ms.com 等のGSC登録状況、sitemap送信状況、インデックス状況は未確認。
 - 旧URL対策: kidskart.org の `404.html` は JS の meta refresh で `/stories/` 等へ誘導（ステータスは404のまま）。GitHub Pages は 301 を返せないので、恒久対応は **Cloudflare のリダイレクトルールで 301**（kidskart.org は Cloudflare DNS なので可能）。aaa-ms.com は Xserver DNS のため同じ手は使えない。
 
 ## 4. サイト間リンク（設計）
@@ -79,6 +83,6 @@
 ## 7. 未決事項（オーナー判断待ち）
 
 1. arataendo.com の `noindex` は意図的か（スポンサー営業で検索に出したいなら外す）
-2. 「別Claudeの新kidskart.org（新デザイン）」は存在するか。リポジトリ上は見当たらない（ブランチは booking/pamphlet/sync 系のみ）
+2. 新kidskart.org（新デザイン）は別の Claude Code セッションで制作中（オーナー確認）。GitHub には未push（2026-09-30時点）。本番反映前に統括が GA タグ・canonical・予約URL・404リダイレクトの引き継ぎを確認すること（5/12移行時にGAが抜けた前例あり）
 3. GSC の登録状況（オーナーが画面確認）
 4. A-ONE予約（reserve.rk-a1.com）に GA を入れるか、入れるならどのIDか
