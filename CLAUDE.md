@@ -57,6 +57,17 @@
   - arataendo.com / rk-a1.com は未登録。
 - 旧URL対策: kidskart.org の `404.html` は JS の meta refresh で `/stories/` 等へ誘導（ステータスは404のまま）。GitHub Pages は 301 を返せないので、恒久対応は **Cloudflare のリダイレクトルールで 301**（kidskart.org は Cloudflare DNS なので可能）。aaa-ms.com は Xserver DNS のため同じ手は使えない。
 
+## 3.5 kidskart.org トップを差し替えるときの必須チェック（欠落厳禁）
+
+2026-05 の WP→静的移行で GA タグが抜けた事故の再発防止。デザイン刷新・大改修のPRは以下を全部満たすこと。
+
+1. **GA4**: `G-W3HB0DT0Y3`、`cookie_domain: 'kidskart.org'`（`auto`や省略は不可。reserve.kidskart.org の予約完了CVとセッションが切れる）。index.html / 404.html / stories/**/*.html すべてに入れる。
+2. **予約URL**: 体験予約の導線はすべて `https://reserve.kidskart.org/reserve/`。stories/ 内の旧URL（reserva.be / airrsv.net）は歴史記事なので触らない。
+3. **404.html の旧URL誘導ロジック**: 正規表現は保持。アンカー（`/#access` `/#what` `/#pricing`）が変わるなら誘導先だけ書き換える。
+4. **canonical / description / OGP / JSON-LD** を現行から引き継ぐ。
+5. 電話 092-927-1177 / メール info@kidskart.org。
+6. stories/（2013〜2019 ブログ）は全保持。sitemap.xml（現161件）も維持。
+
 ## 4. サイト間リンク（設計）
 
 - ハブは aaa-ms.com。kidskart / events / jobs は相互リンク。
@@ -88,6 +99,6 @@
 ## 7. 未決事項（オーナー判断待ち）
 
 1. ~~arataendo.com の noindex~~ → **意図的（制作途中の非公開期間）。勝手に外さない。** 公開判断が出たら noindex 削除＋GSC登録＋GA導入をセットで行う
-2. 新kidskart.org（新デザイン）は別の Claude Code セッションで制作中（オーナー確認）。GitHub には未push（2026-09-30時点）。本番反映前に統括が GA タグ・canonical・予約URL・404リダイレクトの引き継ぎを確認すること（5/12移行時にGAが抜けた前例あり）
+2. 「新kidskart.org」＝ 2026-05-12 に WP から移行した現行の静的サイト（main の index.html、9/2 に SEO/GA 改修済み）と判断。未pushの別デザイン版は確認できず（本番運用セッション側も把握していない）。今後の刷新時は 3.5 のチェックを必須とする
 3. GSC の登録状況（オーナーが画面確認）
 4. A-ONE予約（reserve.rk-a1.com）に GA を入れるか、入れるならどのIDか
