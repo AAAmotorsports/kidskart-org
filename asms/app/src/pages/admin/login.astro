@@ -1,0 +1,143 @@
+---
+import Base from '@layouts/Base.astro';
+import { safeNext, SESSION_DAYS } from '@lib/adminAuth';
+
+export const prerender = false;
+
+// 管理画面のログイン。
+// ★ ここは中身の無いフォーム 1 枚。middleware の素通り対象なので、
+//   ここにデータを出すと誰でも見られてしまう。
+// ★ .astro ページは POST を受けられないので、送信先は /api/login の .ts
+//   エンドポイント。失敗時は ?error= を付けてここへ 303 で戻ってくる。
+const next = safeNext(Astro.url.searchParams.get('next'));
+const error = Astro.url.searchParams.get('error');
+const bye = Astro.url.searchParams.get('bye') === '1';
+const message = error === 'unconfigured'
+  ? 'この画面の認証情報がまだ設定されていません。'
+  : error
+    ? 'ユーザー名またはパスワードが違います。'
+    : null;
+---
+<Base title="ログイン — 福岡キッズカートアカデミー 管理">
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>管理画面にログイン</h1>
+      {bye && <div class="login-notice ok">ログアウトしました。</div>}
+      {message && <div class="login-notice ng">{message}</div>}
+
+      {/* ★ ふつうの HTML フォーム (fetch にしない)。
+          パスワードマネージャーは「フォームを送信して画面が変わった」ことを見て
+          保存を提案するので、fetch にすると覚えてもらえない。
+          autocomplete の指定も同じ理由で必要 */}
+      <form method="post" action="/api/login" class="login-form">
+        <input type="hidden" name="next" value={next} />
+        <div class="login-field">
+          <label for="username">ユーザー名</label>
+          <input type="text" id="username" name="username" autocomplete="username"
+            autocapitalize="none" autocorrect="off" spellcheck="false" required />
+        </div>
+        <div class="login-field">
+          <label for="password">パスワード</label>
+          <input type="password" id="password" name="password"
+            autocomplete="current-password" required />
+        </div>
+        <button class="login-btn" type="submit">ログイン</button>
+      </form>
+
+      <p class="login-note">
+        ログインは {SESSION_DAYS} 日ぶん保たれます。共用の端末では、終わったら
+        画面上の「ログアウト」を押してください。
+      </p>
+    </div>
+    <p class="login-back"><a href="/">← kidskart.org へ戻る</a></p>
+  </div>
+</Base>
+
+<style>
+  .login-wrap { max-width: 22rem; margin: 2.5rem auto; padding: 0 1rem; }
+  .login-card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1.4rem 1.2rem;
+    box-shadow: 0 2px 8px rgba(22, 48, 72, .04);
+  }
+  .login-card h1 {
+    font-size: 1.15rem;
+    margin: 0 0 1rem;
+    color: var(--ink);
+    font-weight: 800;
+  }
+  .login-notice {
+    margin-bottom: 1rem;
+    padding: .6rem .8rem;
+    border-radius: 8px;
+    font-size: .85rem;
+    border: 1px solid var(--line);
+  }
+  .login-notice.ok {
+    background: rgba(164, 214, 94, .12);
+    border-color: var(--lime-deep);
+    color: var(--lime-deep);
+  }
+  .login-notice.ng {
+    background: rgba(229, 85, 111, .08);
+    border-color: rgba(229, 85, 111, .3);
+    color: var(--rose-deep);
+  }
+  .login-form { margin: 0 0 1rem; }
+  .login-field { margin: 0 0 .9rem; }
+  .login-field label {
+    display: block;
+    font-size: .78rem;
+    font-weight: 700;
+    color: var(--ink-2);
+    margin: 0 0 .3rem;
+  }
+  /* パスワード欄だけ幅が狭くならないよう、type=password も含めて明示的に */
+  .login-field input[type=text],
+  .login-field input[type=password] {
+    width: 100%;
+    padding: .65rem .8rem;
+    border: 1.5px solid var(--line-2);
+    border-radius: 8px;
+    font-family: var(--jp);
+    font-size: 1rem;
+    background: #fff;
+    color: var(--ink);
+    box-sizing: border-box;
+  }
+  .login-field input:focus {
+    outline: none;
+    border-color: var(--sky-deep);
+    box-shadow: 0 0 0 3px rgba(58, 169, 232, .2);
+  }
+  .login-btn {
+    width: 100%;
+    padding: .75rem 1rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff;
+    font-family: var(--jp);
+    font-weight: 800;
+    font-size: .95rem;
+    cursor: pointer;
+    transition: transform .05s, box-shadow .15s;
+  }
+  .login-btn:hover { box-shadow: 0 4px 12px rgba(58, 169, 232, .3); }
+  .login-btn:active { transform: scale(.98); }
+  .login-note {
+    font-size: .76rem;
+    color: var(--ink-3);
+    line-height: 1.6;
+    margin: .8rem 0 0;
+  }
+  .login-back {
+    text-align: center;
+    margin: 1rem 0 0;
+    font-size: .8rem;
+  }
+  .login-back a { color: var(--ink-3); text-decoration: none; }
+  .login-back a:hover { color: var(--sky-deep); text-decoration: underline; }
+</style>

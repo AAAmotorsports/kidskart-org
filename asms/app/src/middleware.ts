@@ -1,19 +1,23 @@
 import { defineMiddleware } from 'astro:middleware';
+import { ADMIN_COOKIE, readCookie, verifySession, passwordOk, safeEqual } from '@lib/adminAuth';
 
-// HTTP Basic Auth guard for /admin/* and /api/admin/*.
-// The password is stored as a SHA-256 digest in wrangler.jsonc (via
-// ADMIN_PASSWORD_HASH), so the plain value is never committed. On each
-// request we hash what the client submits and compare digests.
+// /admin/* と /api/admin/* を守る。
 //
-// This is an MVP measure — replace with Supabase Auth session cookies
-// once the staff login flow is implemented.
+// ★ ブラウザの Basic 認証ダイアログは出さない。あれはパスワードマネージャーの
+//   保存対象にならず、スタッフが毎回打つことになる (2026-09 オーナー指摘、
+//   A-ONE PR #184 で同じ変更済み)。ふつうのログインフォーム (/admin/login) に
+//   飛ばし、合言葉は署名付き Cookie。
+//   Authorization: Basic は**受け付けるだけ**残してある (手元のスクリプト用)。
+//   受け付けるだけで、こちらから WWW-Authenticate を返さないのでダイアログは出ない。
 export const onRequest = defineMiddleware(async (context, next) => {
   const url = new URL(context.request.url);
-  const needsAuth =
-    url.pathname === '/admin' ||
-    url.pathname.startsWith('/admin/') ||
-    url.pathname.startsWith('/api/admin/');
+  const path = url.pathname;
 
+  // ログインの入口そのものは素通りさせる (でないと入れない)
+  if (path === '/admin/login' || path === '/api/login') return next();
+
+  const needsAuth =
+    path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/');
   if (!needsAuth) return next();
 
   const rt = (context.locals as any)?.runtime?.env;
@@ -26,7 +30,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
       'Admin credentials are not configured.',
       '',
       'Expected ADMIN_USERNAME and ADMIN_PASSWORD_HASH in the Worker',
-      "runtime env (wrangler.jsonc vars).",
+      'runtime env (wrangler.jsonc vars / Dashboard secret).',
       '',
       '--- DEBUG ---',
       `context.locals.runtime.env present: ${!!rt}`,
@@ -40,6 +44,11 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
   }
 
+  // ふだんの経路: ログイン済みの Cookie
+  const cookie = readCookie(context.request, ADMIN_COOKIE);
+  if (cookie && await verifySession(cookie, passHash)) return next();
+
+  // 手元のスクリプト用。ダイアログを出させないため、こちらからは要求しない
   const header = context.request.headers.get('authorization') ?? '';
   const match = header.match(/^Basic\s+(.+)$/i);
   if (match) {
@@ -48,40 +57,23 @@ export const onRequest = defineMiddleware(async (context, next) => {
       const idx = decoded.indexOf(':');
       const u = idx >= 0 ? decoded.slice(0, idx) : decoded;
       const p = idx >= 0 ? decoded.slice(idx + 1) : '';
-      const submittedHash = await sha256Hex(p);
-      if (safeEqual(u, user) && safeEqual(submittedHash, passHash.toLowerCase())) {
-        return next();
-      }
+      if (safeEqual(u, user) && await passwordOk(p, passHash)) return next();
     } catch {
-      // fall through to 401
+      // 壊れたヘッダは無いものとして扱う
     }
   }
 
-  return new Response('Authentication required', {
-    status: 401,
-    headers: {
-      'WWW-Authenticate': 'Basic realm="ASMS admin", charset="UTF-8"',
-      'Content-Type': 'text/plain; charset=utf-8',
-    },
+  // API は画面を返しても意味がないので JSON で断る。
+  // 画面はログインへ送り、戻り先を持たせる (押した先が開けるように)
+  if (path.startsWith('/api/admin/')) {
+    return new Response(JSON.stringify({ error: 'ログインしてください' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  }
+  const next_ = encodeURIComponent(path + url.search);
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `/admin/login?next=${next_}` },
   });
 });
-
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  const bytes = new Uint8Array(buf);
-  let out = '';
-  for (const b of bytes) {
-    out += b.toString(16).padStart(2, '0');
-  }
-  return out;
-}
-
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}

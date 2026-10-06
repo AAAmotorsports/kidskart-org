@@ -21,6 +21,14 @@ const {
 const otherLocale: Locale = lang === 'ja' ? 'en' : 'ja';
 const otherLabel = otherLocale === 'ja' ? '🇯🇵 日本語' : '🇬🇧 English';
 
+// 管理画面 (/admin/*) ではログアウトボタン付きの細いバーを上部に出す。
+// ログイン画面自体では出さない (ログイン前なので意味がない)。
+// URL ベースで自動判定するので、各管理ページ側の変更は不要。
+const adminPath = Astro.url.pathname;
+const showAdminBar =
+  (adminPath === '/admin' || adminPath.startsWith('/admin/'))
+  && adminPath !== '/admin/login';
+
 // GA4: reserve.kidskart.org と kidskart.org (静的サイト側) を同一データ
 // ストリームで計測し、集客 → 予約完了までの単一ファネルとして測る。
 // cookie_domain: 'kidskart.org' が親ドメイン発行のカギ (subdomain 跨ぎで
@@ -117,9 +125,50 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
       box-shadow: 0 4px 10px rgba(0,0,0,.1);
     }
     .locale-switch:active { transform: scale(.96); }
+
+    /* 管理バー (/admin/* の全ページで上部に出る)。
+       ログアウトは POST — リンクにすると、他所のページに
+       <img src="…/api/login"> で貼られただけで勝手にログアウトさせられる。 */
+    .admin-bar {
+      background: var(--ink);
+      color: #fff;
+      padding: .4rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: .8rem;
+      font-size: .82rem;
+    }
+    .admin-bar-label {
+      font-weight: 800;
+      letter-spacing: .02em;
+    }
+    .admin-bar-logout { margin: 0; display: inline; }
+    .admin-bar-logout button {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, .4);
+      color: #fff;
+      padding: .25rem .8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--jp);
+      font-size: .78rem;
+      font-weight: 700;
+      transition: background .15s;
+    }
+    .admin-bar-logout button:hover { background: rgba(255, 255, 255, .12); }
   </style>
 </head>
 <body>
+  {showAdminBar && (
+    <div class="admin-bar">
+      <span class="admin-bar-label">⚙️ 管理モード</span>
+      <form method="post" action="/api/login" class="admin-bar-logout">
+        <input type="hidden" name="action" value="logout" />
+        <button type="submit">ログアウト</button>
+      </form>
+    </div>
+  )}
   {showLocaleSwitch && (
     <button type="button" class="locale-switch" data-locale-switch={otherLocale} aria-label={`Switch to ${otherLabel}`}>
       {otherLabel}
