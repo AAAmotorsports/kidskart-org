@@ -34,11 +34,13 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
   <div class="notice info small" style="margin-bottom:1rem">
     <strong>料金 {basePrice.toLocaleString('ja-JP')} 円 ＋ カート 1 台 1 時間につき {perKart.toLocaleString('ja-JP')} 円</strong>
     （最小 {minKarts} 台から）<br />
-    例: {minKarts} 台を 3 時間なら
-    {(basePrice + perKart * minKarts * 3).toLocaleString('ja-JP')} 円。
+    {/* 例は最小構成 (5 台 1 時間) を出す。3 時間の例だと金額が大きく見えて、
+        「高い」で止まってしまう (2026-10 オーナー指示)。予約メニューと同じ */}
+    例: {minKarts} 台を 1 時間なら
+    {(basePrice + perKart * minKarts).toLocaleString('ja-JP')} 円。
     30 分などの端数は 1 時間として計算します。
-    お支払いは当日現地でお願いします。<br />
-    <strong>カート {minKarts} 台未満・当日のお申し込みは承れません。</strong>
+    お支払いはお振り込み又は現金か PayPay にてお願いします。<br />
+    <strong>お申し込みは前日までとなります。</strong>
   </div>
 
   <form id="form" class="card" novalidate>

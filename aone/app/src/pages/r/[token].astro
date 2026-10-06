@@ -59,7 +59,7 @@ const isSport = r?.kind === 'sport';
             <tr><th>時間</th><td>{customerTimeLabel(r)}</td></tr>
             <tr><th>人数</th><td>{r.party_size} 名</td></tr>
             {r.vehicle_count != null && <tr><th>台数</th><td>{r.vehicle_count} 台</td></tr>}
-            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
+            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (当日現地 / 現金・PayPay)</td></tr>}
             <tr><th>お名前</th><td>{nameWithHonorific(r.contact_name)}</td></tr>
             <tr><th>お電話</th><td>{r.contact_phone ?? '—'}</td></tr>
             <tr><th>メール</th><td>{r.contact_email ?? '—'}</td></tr>
@@ -146,7 +146,7 @@ const isSport = r?.kind === 'sport';
         <ul class="small">
           <li>当日の営業状況 (天候による判断) は <a href="/">トップページ</a> に随時反映されます。</li>
           <li>営業状況が変わった場合は、ご登録のメールアドレスにご連絡します。</li>
-          <li>お支払いは原則として当日現地でのお支払いです。</li>
+          <li>お支払いは原則として当日現地です。現金または PayPay をご利用いただけます。</li>
           <li>ご不明な点はお電話 ({env.PUBLIC_SITE_TEL || '092-919-7186'}) でお問い合わせください。</li>
         </ul>
       </div>

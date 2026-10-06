@@ -50,7 +50,7 @@ const pending = visible && r.status !== 'confirmed';
             <tr><th>日付</th><td>{jaDate(r.date)}</td></tr>
             <tr><th>時間</th><td>{customerTimeLabel(r)}</td></tr>
             <tr><th>人数</th><td>{r.party_size} 名</td></tr>
-            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (現地でのお支払い)</td></tr>}
+            {r.amount != null && <tr><th>料金</th><td>{yen(r.amount)} (当日現地 / 現金・PayPay)</td></tr>}
             <tr><th>お名前</th><td>{nameWithHonorific(r.contact_name)}</td></tr>
           </tbody>
         </table>
@@ -70,7 +70,7 @@ const pending = visible && r.status !== 'confirmed';
         <ul class="small">
           <li>当日の営業状況 (天候による判断) は <a href="/">トップページ</a> でご確認いただけます。</li>
           {cancelPolicyLines(r.kind).map((l) => <li>{l}</li>)}
-          <li>お支払いは原則として当日現地でのお支払いです。</li>
+          <li>お支払いは原則として当日現地です。現金または PayPay をご利用いただけます。</li>
         </ul>
       </div>
     </>
