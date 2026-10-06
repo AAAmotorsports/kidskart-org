@@ -209,7 +209,7 @@ function detailLines(r: ReservationForMail, audience: 'customer' | 'staff' = 'cu
   if (r.vehicle_count != null) {
     lines.push(isCharter(r) ? `カート: ${r.vehicle_count} 台` : `台数: ${r.vehicle_count} 台`);
   }
-  if (r.amount != null) lines.push(`料金: ¥${r.amount.toLocaleString('ja-JP')} (現地でのお支払い)`);
+  if (r.amount != null) lines.push(`料金: ¥${r.amount.toLocaleString('ja-JP')} (当日現地 / 現金・PayPay)`);
   if ((r.request_note ?? '').trim()) lines.push(`ご要望: ${r.request_note!.trim()}`);
   return lines;
 }
