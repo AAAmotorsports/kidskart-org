@@ -1206,17 +1206,18 @@ begin
   end;
 
   -- =========================================================================
-  raise notice '--- 30. 当日の受付は開始の 30 分前まで (2026-10 改定)';
+  raise notice '--- 30. 当日の受付は開始の 1 時間前まで (2026-10 改定)';
   -- =========================================================================
-  -- 「いまから行きます」のお客様を Web で受けられるようにした (120 → 30 分)。
+  -- 「いまから行きます」のお客様を Web で受けられるようにした
+  -- (120 分 → 30 分 → 1 時間。30 分は準備に短すぎた)。
   -- ★ メッセージは分と時間を使い分けること。整数の割り算なので
-  --   (30 / 60) と書くと「0 時間後以降」と出る (実際に出ていた)
+  --   60 分未満を「時間」で書くと「0 時間後以降」と出る (実際に出ていた)
   declare
     v_now  time := (now() at time zone 'Asia/Tokyo')::time;
+    v_lead int  := (select rp_same_day_lead_minutes from aone_settings);
     v_res  jsonb;
   begin
-    assert (select rp_same_day_lead_minutes from aone_settings) = 30,
-      '30-1 当日の受付が 30 分前になっていない';
+    assert v_lead = 60, '30-1 当日の受付が 1 時間前になっていない: ' || v_lead;
 
     -- 営業時間のまん中あたりでしか試せない (朝や夜に回すと別の理由で落ちる)
     if v_now between time '10:00' and time '15:00' then
@@ -1226,16 +1227,28 @@ begin
                    + interval '30 min' * ceil(extract(minute from now() at time zone 'Asia/Tokyo') / 30.0))::time,
                  null, 3, null);
       if (v_res->>'ok')::boolean is false and v_res->>'reason' = 'rp_same_day_too_soon' then
-        assert v_res->>'message' like '%30 分後%',
-          '30-2 分を時間で割って「0 時間後」になっている: ' || (v_res->>'message');
+        assert v_res->>'message' like '%1 時間後%',
+          '30-2 締切の書き方がおかしい (0 時間後など): ' || (v_res->>'message');
       end if;
 
-      -- 2 時間後 … 余裕があるので受ける
+      -- 3 時間後 … 余裕があるので受ける
       v_res := aone_check_availability('rp', aone_today(), null, null,
-                 (date_trunc('hour', now() at time zone 'Asia/Tokyo') + interval '2 hour')::time,
+                 (date_trunc('hour', now() at time zone 'Asia/Tokyo') + interval '3 hour')::time,
                  null, 3, null);
-      assert (v_res->>'ok')::boolean, '30-3 2 時間後が受けられない: ' || (v_res->>'message');
+      assert (v_res->>'ok')::boolean, '30-3 3 時間後が受けられない: ' || (v_res->>'message');
     end if;
+
+    -- 60 分未満にしたときに「0 時間後」と書かないこと (0032 で踏んだ不具合)
+    update aone_settings set rp_same_day_lead_minutes = 30 where id = 1;
+    if v_now between time '10:00' and time '15:00' then
+      v_res := aone_check_availability('rp', aone_today(), null, null,
+                 date_trunc('hour', now() at time zone 'Asia/Tokyo')::time, null, 3, null);
+      if v_res->>'reason' = 'rp_same_day_too_soon' then
+        assert v_res->>'message' like '%30 分後%',
+          '30-2b 分を時間で割って「0 時間後」になっている: ' || (v_res->>'message');
+      end if;
+    end if;
+    update aone_settings set rp_same_day_lead_minutes = v_lead where id = 1;
 
     -- 「17 時最終受付」とご案内するので、当日の 17:00 ちょうどは受ける
     v_res := aone_check_availability('rp', aone_today(), null, null, '17:00', null, 3, null);
