@@ -18,17 +18,24 @@ const charterPerKart: number = cfg?.charter_price_per_kart ?? 11000;
 const charterMinKarts: number = cfg?.charter_min_karts ?? 5;
 const heatPrice: number = cfg?.rental_heat_price ?? 2200;
 const heatMinutes: number = cfg?.rental_heat_minutes ?? 7;
+// ご予約不要のレンタル走行の最終受付 = コースクローズ (既定 17:30)
+const closeTime = String(cfg?.course_close_time ?? '17:30').slice(0, 5);
 const yen = (n: number) => `${n.toLocaleString('ja-JP')} 円`;
 
 const rpOpen = state ? state.rp.slots.filter((s) => s.accepting) : [];
 // 休業・走行中止の日は「満枠」ではなく「お休み」。枠の話をすると誤解される
 const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
+// 当日の最終受付 (既定 17:00)。設定を変えたら文言も一緒に動く
+const rpLastStart = String(cfg?.rp_same_day_last_start ?? '17:00').slice(0, 5);
 const rpSummary = !state
   ? ''
   : closedToday
     ? '本日はお休みです（別の日はご予約いただけます）'
+    // ★「満枠」と書かない (2026-10 オーナー指示)。当日ぶんが出なくなるのは
+    //   埋まっているからではなく、最終受付を過ぎたからであることが多い。
+    //   「満枠」と書くと、空いているのに来ていただけなくなる
     : rpOpen.length === 0
-      ? '本日は満枠です（別の日はご予約いただけます）'
+      ? `${rpLastStart} 最終受付（当日のご予約はお電話にてご確認ください）`
       : rpOpen.length === state.rp.slots.length
         ? `本日は ${rpOpen[0].time}〜${rpOpen[rpOpen.length - 1].time} 空きあり`
         : `本日は ${rpOpen[0].time}〜 空きあり`;
@@ -101,7 +108,9 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
       <div class="menu-title">貸切</div>
       <div class="card-price">レンタルカート付き<br />
         {yen(charterBase)} ＋ {yen(charterPerKart)} × カート台数 × 時間<br />
-        <span class="muted">（最小 {charterMinKarts} 台。3 時間なら {yen(charterBase + charterPerKart * charterMinKarts * 3)}）</span>
+        {/* 例は最小構成 (5 台 1 時間) を出す。3 時間の例だと金額が大きく見えて、
+            「高い」で止まってしまう (2026-10 オーナー指示) */}
+        <span class="muted">（最小 {charterMinKarts} 台。{charterMinKarts} 台 1 時間なら {yen(charterBase + charterPerKart * charterMinKarts)}）</span>
       </div>
       <p class="small muted">
         <strong>コース貸切のみ</strong>もお選びいただけます (お持ち込み車両でのご利用)。
@@ -134,8 +143,8 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
     <h2>レンタルカート走行（1 ヒート {yen(heatPrice)} / {heatMinutes} 分）</h2>
     <p class="small">
       通常のレンタルカート走行は<strong>ご予約不要</strong>です。営業時間内にお越しいただければ、
-      その場で受付して走行できます。本日走れるかどうかは
-      <a href="/">「今日走れる？」</a>でご確認ください。
+      その場で受付して走行できます。<strong>{closeTime} 最終受付</strong>です。
+      本日走れるかどうかは<a href="/">「今日走れる？」</a>でご確認ください。
     </p>
     <p class="small muted">
       グループでレースをしたい方は上のレースパック、コースを独占したい方は貸切をご利用ください。

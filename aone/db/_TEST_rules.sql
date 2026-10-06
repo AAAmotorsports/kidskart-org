@@ -502,12 +502,13 @@ begin
   exception when sqlstate 'AONE1' then null;
   end;
 
-  -- 当日の RP: 17:00 以降は受け付けない
-  r := aone_check_availability('rp', aone_today(), null, null, '17:00', null, 3);
+  -- 当日の RP: 17:00 ちょうどは受ける (「17 時最終受付」とご案内しているため)。
+  -- 17:30 以降は要相談のまま。2026-10 に「17:00 以降は不可」から変えた (0032)
+  r := aone_check_availability('rp', aone_today(), null, null, '17:30', null, 3);
   assert not (r->>'ok')::boolean and (r->>'reason') = 'rp_same_day_late',
-    '17-7 当日 17:00 の RP が受け付けられてしまう: ' || r::text;
+    '17-7 当日 17:30 の RP が受け付けられてしまう: ' || r::text;
 
-  -- 当日の RP: 2 時間後以降のみ (10 分後は不可)
+  -- 当日の RP: 開始の 30 分前まで (10 分後は不可)
   r := aone_check_availability('rp', aone_today(), null, null,
                                ((now() at time zone 'Asia/Tokyo')::time + interval '10 min')::time,
                                null, 3);
@@ -1202,6 +1203,51 @@ begin
     assert b->>'public_label' = 'レンタルカート耐久レース', '29-5 表示名が変わった';
 
     delete from aone_blocks where date = d_am;
+  end;
+
+  -- =========================================================================
+  raise notice '--- 30. 当日の受付は開始の 30 分前まで (2026-10 改定)';
+  -- =========================================================================
+  -- 「いまから行きます」のお客様を Web で受けられるようにした (120 → 30 分)。
+  -- ★ メッセージは分と時間を使い分けること。整数の割り算なので
+  --   (30 / 60) と書くと「0 時間後以降」と出る (実際に出ていた)
+  declare
+    v_now  time := (now() at time zone 'Asia/Tokyo')::time;
+    v_res  jsonb;
+  begin
+    assert (select rp_same_day_lead_minutes from aone_settings) = 30,
+      '30-1 当日の受付が 30 分前になっていない';
+
+    -- 営業時間のまん中あたりでしか試せない (朝や夜に回すと別の理由で落ちる)
+    if v_now between time '10:00' and time '15:00' then
+      -- 10 分後 … 30 分に満たないので断る
+      v_res := aone_check_availability('rp', aone_today(), null, null,
+                 (date_trunc('hour', now() at time zone 'Asia/Tokyo')
+                   + interval '30 min' * ceil(extract(minute from now() at time zone 'Asia/Tokyo') / 30.0))::time,
+                 null, 3, null);
+      if (v_res->>'ok')::boolean is false and v_res->>'reason' = 'rp_same_day_too_soon' then
+        assert v_res->>'message' like '%30 分後%',
+          '30-2 分を時間で割って「0 時間後」になっている: ' || (v_res->>'message');
+      end if;
+
+      -- 2 時間後 … 余裕があるので受ける
+      v_res := aone_check_availability('rp', aone_today(), null, null,
+                 (date_trunc('hour', now() at time zone 'Asia/Tokyo') + interval '2 hour')::time,
+                 null, 3, null);
+      assert (v_res->>'ok')::boolean, '30-3 2 時間後が受けられない: ' || (v_res->>'message');
+    end if;
+
+    -- 「17 時最終受付」とご案内するので、当日の 17:00 ちょうどは受ける
+    v_res := aone_check_availability('rp', aone_today(), null, null, '17:00', null, 3, null);
+    assert (v_res->>'ok')::boolean or v_res->>'reason' <> 'rp_same_day_late',
+      '30-4 当日の 17:00 が「遅すぎる」で断られている';
+    -- 17:30 以降は今までどおり受けない (要相談)
+    v_res := aone_check_availability('rp', aone_today(), null, null, '17:30', null, 3, null);
+    assert (v_res->>'ok')::boolean is false, '30-5 当日の 17:30 を受けてしまっている';
+
+    -- 先の日は当日の制限を受けない
+    v_res := aone_check_availability('rp', aone_today() + 7, null, null, '17:00', null, 3, null);
+    assert (v_res->>'ok')::boolean, '30-6 先の日の 17:00 が受けられない: ' || (v_res->>'message');
   end;
 
   raise notice 'ALL TESTS PASSED';
