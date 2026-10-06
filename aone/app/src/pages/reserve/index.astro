@@ -83,6 +83,14 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
         <li>会社の懇親会・部活・お友達同士のグループに</li>
       </ul>
       {rpSummary && <div class="hero-avail">{rpSummary}</div>}
+      {/* ★ 行き止まりを作らない (2026-10 オーナー指示)。
+          当日の受付が終わったあとに「お電話で」だけだと、ご予約不要で走れる
+          ことに気づかないまま帰ってしまう。ここは <a> の中なのでリンクは
+          張らない (入れ子になる) — 下のレンタルカート走行のカードに続きがある */}
+      <p class="hero-walkin">
+        ご予約なしの<strong>通常のレンタルカート走行</strong>は {closeTime} 最終受付です。
+        その場で受付して走行できます。
+      </p>
     </div>
     <div class="hero-cta">
       <span class="btn primary">レースパックを予約する</span>
@@ -205,6 +213,8 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
     display:inline-block;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
     border-radius:8px;padding:.35rem .7rem;font-size:.85rem;font-weight:700;margin-bottom:.9rem;
   }
+  .hero-walkin{margin:.1rem 0 .9rem;font-size:.82rem;color:#c3d3e2;line-height:1.5}
+  .hero-walkin strong{color:#e8f0f7}
   .hero-cta .btn{font-size:1rem;padding:.7rem 1.6rem}
   .sub-head{font-size:1rem;color:var(--ink-3);margin:0 0 .6rem}
   .menu{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-bottom:1.2rem}
