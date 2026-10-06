@@ -17,6 +17,8 @@ const today = todayJst();
 // 18 時 (コースクローズの 30 分後) を過ぎたら、主役を翌日に切り替える。
 // 営業が終わったあとに今日の空きを出しても、もう誰も来られない。
 const cfg = await settings(env);
+// 当日の最終受付 (既定 17:00)。設定を変えたら文言も一緒に動く
+const rpLastStart = String(cfg?.rp_same_day_last_start ?? '17:00').slice(0, 5);
 const focus = dayFocus({
   course_open: cfg?.course_open_time,
   course_close: cfg?.course_close_time,
@@ -34,12 +36,22 @@ const [state, next] = await Promise.all([
  * 休業・走行中止の日は空文字を返す。枠が 0 なのは「満枠」ではなく
  * 「その日はやっていない」からで、満枠と書くと誤解される
  * (2026-08 オーナー指摘)。呼ぶ側は空なら行ごと出さないこと。
+ *
+ * 当日ぶんが残っていないときも「満枠」と書かない (2026-10 オーナー指示)。
+ * 埋まっているからではなく最終受付を過ぎたからであることが多く、
+ * 「満枠」と書くと、空いているのに来ていただけなくなる。
+ * ★ 先の日は話が別。あちらで枠が 0 なら本当に埋まっているので、
+ *   「当日のご予約はお電話で」と書くと嘘になる。
  */
-function rpSummary(s: DayState | null): string {
+function rpSummary(s: DayState | null, lastStart: string, isToday: boolean): string {
   if (!s) return '';
   if (['cancelled', 'closed'].includes(s.business.status)) return '';
   const open = s.rp.slots.filter((x) => x.accepting);
-  if (open.length === 0) return 'RP はすべて満枠です';
+  if (open.length === 0) {
+    return isToday
+      ? `${lastStart} 最終受付（当日のご予約はお電話にてご確認ください）`
+      : '空きがありません';
+  }
   const first = open[0].time;
   const last = open[open.length - 1].time;
   return open.length === s.rp.slots.length
@@ -212,7 +224,7 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
       {!closedToday && (
         <div class="card">
           <h2>レースパック (RP)</h2>
-          <p style="margin:.2rem 0">{rpSummary(state)}</p>
+          <p style="margin:.2rem 0">{rpSummary(state, rpLastStart, !focus.is_tomorrow)}</p>
           <div class="rp-strip">
             {state.rp.slots.map((s) => (
               s.accepting
@@ -297,8 +309,8 @@ const note = openNote(state?.business.status ?? 'open', focus, state?.hours?.cou
                   </div>
                 ))}
               </div>
-              {rpSummary(next) && (
-                <p class="tiny muted" style="margin:.5rem 0 0">RP: {rpSummary(next)}</p>
+              {rpSummary(next, rpLastStart, false) && (
+                <p class="tiny muted" style="margin:.5rem 0 0">RP: {rpSummary(next, rpLastStart, false)}</p>
               )}
             </>
           )}

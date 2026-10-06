@@ -32,6 +32,8 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
   // ?date= で明示された日はそのまま返す (時間帯は「準備中」扱い)。
   const asked = url.searchParams.get('date');
   const cfg = await settings(env);
+  // 当日の最終受付 (既定 17:00)。設定を変えたら文言も一緒に動く
+  const rpLastStart = String(cfg?.rp_same_day_last_start ?? '17:00').slice(0, 5);
   const focus = dayFocus({
     course_open: cfg?.course_open_time,
     course_close: cfg?.course_close_time,
@@ -96,8 +98,13 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     summary:
       closedDay
         ? `${isTomorrow ? '明日' : '本日'}はお休みです`
+        // ★「満枠」と書かない (2026-10 オーナー指示)。当日ぶんが出なくなるのは
+        //   埋まっているからではなく最終受付を過ぎたからであることが多い。
+        //   明日の話をしているときは本当に埋まっているので、書き分ける
         : openSlots.length === 0
-        ? '本日は満枠です'
+        ? (isTomorrow
+            ? '明日は空きがありません'
+            : `${rpLastStart} 最終受付（当日のご予約はお電話にてご確認ください）`)
         : openSlots.length === state.rp.slots.length
           ? `${openSlots[0].time}〜${openSlots[openSlots.length - 1].time} 空きあり`
           : `${openSlots[0].time}〜 空きあり`,
