@@ -6480,3 +6480,25 @@ alter function aone_check_availability(text, date, text, text, time, time, integ
   security definer set search_path = public, pg_temp;
 grant execute on function aone_check_availability(text, date, text, text, time, time, integer, uuid, integer, text)
   to anon, authenticated, service_role;
+
+-- ###########################################################################
+-- # 0033_same_day_lead_60min.sql
+-- ###########################################################################
+
+-- =============================================================================
+-- 当日の WEB 予約を「開始の 1 時間前まで」にする
+-- =============================================================================
+-- 0032 で 2 時間 → 30 分にしたが、受けてから準備するには短すぎた。
+-- 1 時間に戻す (2026-10 オーナー指示)。
+--
+-- 0032 で入れたメッセージの出し分け (分 / 時間) はそのまま使う。
+-- 60 分なら「1 時間後以降」と出る。
+-- =============================================================================
+
+alter table aone_settings
+  alter column rp_same_day_lead_minutes set default 60;
+
+update aone_settings set rp_same_day_lead_minutes = 60 where id = 1;
+
+comment on column aone_settings.rp_same_day_lead_minutes is
+  '当日の RP を受け付ける下限 (開始の何分前まで)。2026-10: 120 → 30 → 60';

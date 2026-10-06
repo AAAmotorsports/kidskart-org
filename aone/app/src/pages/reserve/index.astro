@@ -27,6 +27,12 @@ const rpOpen = state ? state.rp.slots.filter((s) => s.accepting) : [];
 const closedToday = ['cancelled', 'closed'].includes(state?.business.status ?? '');
 // 当日の最終受付 (既定 17:00)。設定を変えたら文言も一緒に動く
 const rpLastStart = String(cfg?.rp_same_day_last_start ?? '17:00').slice(0, 5);
+// 当日はいつまで受けられるか (既定 60 分前)。設定を変えたら文言も一緒に動く。
+// 分のままだと「60 分前」と読みにくいので、1 時間以上なら時間で書く
+const rpLeadMin: number = Number(cfg?.rp_same_day_lead_minutes ?? 60);
+const rpLeadText = rpLeadMin >= 60 && rpLeadMin % 60 === 0
+  ? `${rpLeadMin / 60} 時間前`
+  : `${rpLeadMin} 分前`;
 const rpSummary = !state
   ? ''
   : closedToday
@@ -70,6 +76,9 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
       <ul class="hero-points">
         <li>練習 → 予選 → レース。表彰台で記念撮影ができます</li>
         <li>10:00〜17:00 の 30 分刻みで開始時間を選べます</li>
+        {/* 当日でも取れることが分からないと、空いていても電話に回ってしまう
+            (2026-10 オーナー指示)。締切は設定から出すので、変えたら一緒に動く */}
+        <li>当日も<strong>開始の {rpLeadText}まで</strong>ご予約いただけます</li>
         <li>ご予約後も、人数・時間は専用ページからいつでも変更できます</li>
         <li>会社の懇親会・部活・お友達同士のグループに</li>
       </ul>
