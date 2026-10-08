@@ -261,6 +261,58 @@ const paidYoy = aggregatePaid(yoyPaidRows);
 const partCur = aggregateParticipations(partRows);
 const partYoy = aggregateParticipations(yoyPartRows);
 
+// ============================================================================
+// freee 月次同期状態 (mode === 'month' のときだけ表示)
+// 毎月 1 日 10:00 JST に Cloudflare Worker Cron が前月分を freee へ送る。
+// この表は結果 (deal_id / status / error) を 1 月 1 行で持つ。
+// 表示上は「本月を見てる時は本月の sync 状況」を出す。手動送信ボタンもここから。
+// ============================================================================
+const monthYm = (mode === 'month' && /^\d{4}-\d{2}$/.test(ymParam || defaultYm))
+  ? (ymParam || defaultYm)
+  : null;
+
+type FreeeSyncRow = {
+  ym: string;
+  cash_amount: number;
+  cash_count: number;
+  cash_deal_id: number | null;
+  paypay_amount: number;
+  paypay_count: number;
+  paypay_deal_id: number | null;
+  credit_amount: number;
+  credit_count: number;
+  other_amount: number;
+  other_count: number;
+  status: 'pending' | 'success' | 'partial' | 'error';
+  error_message: string | null;
+  synced_at: string | null;
+  attempted_count: number;
+};
+
+let freeeSync: FreeeSyncRow | null = null;
+if (monthYm) {
+  // 0036 migration が未適用の環境 (本番 deploy 直後 / dev 環境) で画面が落ちないよう
+  // テーブル不在エラーを握りつぶす。初回 sync が走れば upsert で行が作られる。
+  try {
+    const { data, error } = await supabase
+      .from('monthly_freee_sync')
+      .select('*')
+      .eq('ym', monthYm)
+      .maybeSingle();
+    if (!error) freeeSync = (data as FreeeSyncRow) ?? null;
+  } catch (e) {
+    console.warn('[admin/sales] monthly_freee_sync 読取失敗 (migration 未適用?)', e);
+  }
+}
+
+// 「このページで見ている月」が今月なら「まだ freee 送信しない (翌月送る)」案内。
+// それ以前なら送信可。
+const nowJst2 = new Date(now.getTime() + 9 * 3600 * 1000);
+const currentYm = `${nowJst2.getUTCFullYear()}-${pad2(nowJst2.getUTCMonth() + 1)}`;
+const isPastOrCurrentMonth = monthYm ? monthYm <= currentYm : false;
+const isCurrentMonth = monthYm === currentYm;
+const isPastMonth = monthYm != null && monthYm < currentYm;
+
 // diff helper
 function diffLabel(cur: number, prev: number, unit = ''): { text: string; klass: string } {
   if (prev === 0 && cur === 0) return { text: `±0${unit}`, klass: 'flat' };
@@ -358,6 +410,84 @@ function buildUrl(next: Record<string, string>) {
         <span class="hero-yoy-sub">(前年: {yen(paidYoy.grandTotal)} / {paidYoy.grandCount} 件)</span>
       </div>
     </section>
+
+    {monthYm && (
+      <section class="section freee-sync-section">
+        <h2>📘 freee 送信状態 ({monthYm})</h2>
+        {!freeeSync && isCurrentMonth && (
+          <div class={`freee-card freee-pending`}>
+            <div class="fc-title">🟡 今月はまだ送信されていません</div>
+            <div class="fc-detail">
+              毎月 1 日 10:00 JST に <strong>前月分</strong>が自動で送信されます。
+              当月分は翌月 1 日に送信予定。
+            </div>
+          </div>
+        )}
+        {!freeeSync && isPastMonth && (
+          <div class={`freee-card freee-notyet`}>
+            <div class="fc-title">⚪ まだ freee に送信されていません</div>
+            <div class="fc-detail">
+              この月は自動送信の対象外か、エラーで送信されませんでした。
+              下の「今すぐ送信」で手動実行できます。
+            </div>
+            <div class="fc-actions">
+              <button type="button" class="btn-freee-send" data-ym={monthYm}>今すぐ freee に送信</button>
+            </div>
+          </div>
+        )}
+        {freeeSync && (
+          <div class={`freee-card freee-${freeeSync.status}`}>
+            <div class="fc-title">
+              {freeeSync.status === 'success' && '✅ freee 送信済'}
+              {freeeSync.status === 'partial' && '⚠️ 一部のみ送信済'}
+              {freeeSync.status === 'error'   && '❌ freee 送信エラー'}
+              {freeeSync.status === 'pending' && '🟡 未送信 (集計のみ記録)'}
+            </div>
+            <div class="fc-legs">
+              <div class="fc-leg">
+                <span class="fc-leg-label">💴 現金 {yen(freeeSync.cash_amount)} ({freeeSync.cash_count}件)</span>
+                {freeeSync.cash_deal_id
+                  ? <span class="fc-leg-ok">→ deal #{freeeSync.cash_deal_id}</span>
+                  : (freeeSync.cash_amount === 0
+                      ? <span class="fc-leg-skip">→ 0円のため送信不要</span>
+                      : <span class="fc-leg-miss">→ 未送信</span>)}
+              </div>
+              <div class="fc-leg">
+                <span class="fc-leg-label">📱 PayPay {yen(freeeSync.paypay_amount)} ({freeeSync.paypay_count}件)</span>
+                {freeeSync.paypay_deal_id
+                  ? <span class="fc-leg-ok">→ deal #{freeeSync.paypay_deal_id}</span>
+                  : (freeeSync.paypay_amount === 0
+                      ? <span class="fc-leg-skip">→ 0円のため送信不要</span>
+                      : <span class="fc-leg-miss">→ 未送信</span>)}
+              </div>
+              {(freeeSync.credit_amount > 0 || freeeSync.other_amount > 0) && (
+                <div class="fc-leg fc-leg-warn">
+                  ⚠️ 💳 クレカ {yen(freeeSync.credit_amount)} ({freeeSync.credit_count}件) /
+                  📝 その他 {yen(freeeSync.other_amount)} ({freeeSync.other_count}件) は
+                  自動送信対象外です。freee 側に手動で入力してください。
+                </div>
+              )}
+            </div>
+            {freeeSync.synced_at && (
+              <div class="fc-detail">
+                最終実行: {new Date(freeeSync.synced_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+                {freeeSync.attempted_count > 1 && ` · ${freeeSync.attempted_count} 回試行`}
+              </div>
+            )}
+            {freeeSync.error_message && (
+              <div class="fc-error">エラー: {freeeSync.error_message}</div>
+            )}
+            {isPastOrCurrentMonth && (
+              <div class="fc-actions">
+                <button type="button" class="btn-freee-send" data-ym={monthYm}>
+                  {freeeSync.status === 'success' ? '再送信 (冪等)' : '今すぐ送信'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    )}
 
     <section class="section">
       <h2>💳 支払い方法別</h2>
@@ -571,6 +701,59 @@ function buildUrl(next: Record<string, string>) {
   </main>
 </Base>
 
+<script>
+  // 「今すぐ freee に送信」ボタン: /api/admin/sales-freee-sync に ym を POST。
+  // 結果を alert してリロード (バッジ・deal_id の表示を更新)。
+  document.querySelectorAll('.btn-freee-send').forEach((btn) => {
+    btn.addEventListener('click', async (ev) => {
+      const target = ev.currentTarget as HTMLButtonElement;
+      const ym = target.dataset.ym;
+      if (!ym) return;
+      if (!confirm(`${ym} 分の売上を freee に送信します。よろしいですか?\n(既に送信済みの場合は冪等スキップされます)`)) return;
+
+      target.disabled = true;
+      const originalText = target.textContent;
+      target.textContent = '送信中…';
+
+      try {
+        const res = await fetch('/api/admin/sales-freee-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ym }),
+        });
+        const json = (await res.json()) as {
+          status?: string;
+          error?: string;
+          message?: string;
+          cash?:   { attempted?: boolean; skipped?: boolean; dealId?: number; error?: string };
+          paypay?: { attempted?: boolean; skipped?: boolean; dealId?: number; error?: string };
+        };
+        if (!res.ok) {
+          alert(`❌ 送信失敗 (HTTP ${res.status})\n${json.error ?? JSON.stringify(json)}`);
+        } else {
+          const lines = [`✅ 完了: ${json.status}`];
+          if (json.cash?.attempted) {
+            lines.push(`現金 ${json.cash.skipped ? '(既存再利用)' : '新規'}: deal #${json.cash.dealId ?? '—'}`);
+            if (json.cash.error) lines.push(`現金エラー: ${json.cash.error}`);
+          }
+          if (json.paypay?.attempted) {
+            lines.push(`PayPay ${json.paypay.skipped ? '(既存再利用)' : '新規'}: deal #${json.paypay.dealId ?? '—'}`);
+            if (json.paypay.error) lines.push(`PayPay エラー: ${json.paypay.error}`);
+          }
+          if (json.message) lines.push(json.message);
+          alert(lines.join('\n'));
+        }
+      } catch (e) {
+        alert(`❌ 通信エラー: ${(e as Error).message}`);
+      } finally {
+        target.disabled = false;
+        target.textContent = originalText;
+        window.location.reload();
+      }
+    });
+  });
+</script>
+
 <style>
   main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
   .hd { padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.2rem; }
@@ -661,6 +844,35 @@ function buildUrl(next: Record<string, string>) {
   .yoy-up { color: var(--lime-deep); font-weight: 700; }
   .yoy-down { color: var(--rose-deep); font-weight: 700; }
   .yoy-flat { color: var(--ink-3); }
+
+  /* ---- freee 月次同期カード ---- */
+  .freee-sync-section .freee-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .9rem 1rem;
+  }
+  .freee-card.freee-success { border-left: 4px solid var(--lime-deep); }
+  .freee-card.freee-partial { border-left: 4px solid #e8a833; }
+  .freee-card.freee-error   { border-left: 4px solid var(--rose-deep); background: #fff5f5; }
+  .freee-card.freee-pending { border-left: 4px solid #e8a833; background: #fffcf3; }
+  .freee-card.freee-notyet  { border-left: 4px solid var(--ink-3); }
+  .fc-title { font-size: .95rem; font-weight: 800; color: var(--ink); margin-bottom: .4rem; }
+  .fc-legs { display: flex; flex-direction: column; gap: .25rem; margin: .4rem 0; }
+  .fc-leg { font-size: .82rem; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+  .fc-leg-label { font-weight: 600; }
+  .fc-leg-ok   { color: var(--lime-deep); font-family: var(--mono); font-size: .76rem; }
+  .fc-leg-skip { color: var(--ink-3); font-size: .76rem; }
+  .fc-leg-miss { color: var(--rose-deep); font-size: .76rem; font-weight: 700; }
+  .fc-leg-warn { color: #a66b00; font-size: .78rem; margin-top: .3rem; padding: .4rem .6rem; background: #fff8e5; border-radius: 6px; }
+  .fc-detail { font-size: .74rem; color: var(--ink-3); margin-top: .4rem; }
+  .fc-error  { font-size: .78rem; color: var(--rose-deep); margin-top: .4rem; padding: .4rem .6rem; background: #fff0f0; border-radius: 6px; font-family: var(--mono); }
+  .fc-actions { margin-top: .6rem; }
+  .btn-freee-send {
+    appearance: none; background: var(--sky-deep); color: #fff;
+    border: none; border-radius: 100px;
+    padding: .4rem 1rem; font-size: .78rem; font-weight: 700; cursor: pointer;
+  }
+  .btn-freee-send:disabled { opacity: .5; cursor: wait; }
+  .btn-freee-send:hover:not(:disabled) { background: var(--sky); }
 
   .empty {
     text-align: center; padding: 1.5rem; color: var(--ink-3);

@@ -1,0 +1,65 @@
+# ==============================================================================
+# ASMS → freee 月次売上同期 (手動実行専用)
+# ------------------------------------------------------------------------------
+# 定期実行は Cloudflare Workers Cron Trigger に任せている (worker-entry.mjs 参照)。
+# 毎月 1 日 10:00 JST に /api/cron/freee-sync-monthly が自動発火し、
+# 前月分の現金・PayPay 売上を freee に income deal として投入する。
+#
+# このワークフローは緊急時の手動再送 (ym 指定可能) 用:
+#   - cron が失敗 or skip されたときのリトライ
+#   - 任意の過去月を再送 (冪等なので安全)
+#
+# ym を未指定で実行すると「前月分」を対象にする。
+# ym 指定時はその月だけ処理する。
+#
+# 二重送信防止は freee の ref_number ベースで担保
+# (`KS-YYYY-MM-CASH` / `KS-YYYY-MM-PAYPAY`、金額一致なら skip)。
+#
+# 必要な GitHub Actions Secrets:
+#   ASMS_API_BASE      - 例: https://reserve.kidskart.org
+#   ASMS_CRON_SECRET   - Cloudflare Worker の CRON_SECRET と同じ値
+# ==============================================================================
+
+name: ASMS → freee Monthly Sync (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ym:
+        description: '対象月 (YYYY-MM、空欄なら前月 JST)'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/freee-sync-monthly
+        env:
+          ASMS_API_BASE: ${{ secrets.ASMS_API_BASE }}
+          ASMS_CRON_SECRET: ${{ secrets.ASMS_CRON_SECRET }}
+          YM: ${{ inputs.ym }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASMS_API_BASE:-}" ] || [ -z "${ASMS_CRON_SECRET:-}" ]; then
+            echo "::error::ASMS_API_BASE / ASMS_CRON_SECRET の Secrets が必要です" >&2
+            exit 1
+          fi
+          BASE="${ASMS_API_BASE%/}"
+          URL="$BASE/api/cron/freee-sync-monthly"
+          if [ -n "${YM:-}" ]; then
+            URL="$URL?ym=$YM"
+          fi
+          HTTP_CODE=$(curl -sS -X POST "$URL" \
+            -H "x-cron-secret: $ASMS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "%{http_code}")
+          echo "HTTP $HTTP_CODE"
+          cat response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::freee monthly sync failed with HTTP $HTTP_CODE" >&2
+            exit 1
+          fi

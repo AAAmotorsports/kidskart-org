@@ -50,14 +50,16 @@
   // 二重送信は各 API の DB フラグ (thankyou_email_sent_at 等) で防止済み。
   //
   // 対応する endpoint は worker-entry.mjs の CRON_TO_ENDPOINT を参照。
-  //   09:00 UTC = 18:00 JST  → thankyou-mail  (前日分キャッチアップ含む)
-  //   09:30 UTC = 18:30 JST  → reminder-mail  (翌日開催の予約)
-  //   10:00 UTC = 19:00 JST  → followup-mail  (30 日前参加者)
+  //   09:00 UTC = 18:00 JST  → thankyou-mail       (前日分キャッチアップ含む)
+  //   09:30 UTC = 18:30 JST  → reminder-mail       (翌日開催の予約)
+  //   10:00 UTC = 19:00 JST  → followup-mail       (30 日前参加者)
+  //   01:00 UTC = 10:00 JST  → freee-sync-monthly  (毎月1日、前月分売上を freee へ)
   "triggers": {
     "crons": [
       "0 9 * * *",
       "30 9 * * *",
-      "0 10 * * *"
+      "0 10 * * *",
+      "0 1 1 * *"
     ]
   },
   // ---- Environment variables --------------------------------------------

@@ -9,9 +9,11 @@
 // して再エクスポート)。
 //
 // cron の役割:
-//   09:00 UTC (18:00 JST): /api/cron/thankyou-mail   ← 前日分キャッチアップ含む
-//   09:30 UTC (18:30 JST): /api/cron/reminder-mail   ← 翌日のリマインド
-//   10:00 UTC (19:00 JST): /api/cron/followup-mail   ← 30 日前参加者
+//   09:00 UTC (18:00 JST): /api/cron/thankyou-mail         ← 前日分キャッチアップ含む
+//   09:30 UTC (18:30 JST): /api/cron/reminder-mail         ← 翌日のリマインド
+//   10:00 UTC (19:00 JST): /api/cron/followup-mail         ← 30 日前参加者
+//   01:00 UTC (10:00 JST) 毎月 1 日: /api/cron/freee-sync-monthly
+//                                                           ← 前月分売上を freee に投入
 //
 // GitHub Actions cron は停止済み (workflow_dispatch のみ残す)。Cloudflare
 // Workers Cron Triggers は GitHub Actions より遥かに時刻精度が高い
@@ -24,9 +26,10 @@
 import astroWorker from './dist/_worker.js/index.js';
 
 const CRON_TO_ENDPOINT = {
-  '0 9 * * *':  '/api/cron/thankyou-mail',   // 18:00 JST
-  '30 9 * * *': '/api/cron/reminder-mail',   // 18:30 JST
-  '0 10 * * *': '/api/cron/followup-mail',   // 19:00 JST
+  '0 9 * * *':  '/api/cron/thankyou-mail',       // 18:00 JST (毎日)
+  '30 9 * * *': '/api/cron/reminder-mail',       // 18:30 JST (毎日)
+  '0 10 * * *': '/api/cron/followup-mail',       // 19:00 JST (毎日)
+  '0 1 1 * *':  '/api/cron/freee-sync-monthly',  // 10:00 JST (毎月1日)
 };
 
 export default {
