@@ -48,6 +48,14 @@ interface Env {
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD_HASH?: string;
 
+  // freee API 連携 (ASMS → freee 月次売上同期用、/api/cron/freee-sync-monthly)。
+  // Cloudflare Dashboard の Secret として設定する。
+  // 初回の FREEE_REFRESH_TOKEN は手動で払い出した値を入れる。以降は
+  // freee_oauth_state テーブルに格納されたローテ後の値を優先的に使う。
+  FREEE_CLIENT_ID?: string;
+  FREEE_CLIENT_SECRET?: string;
+  FREEE_REFRESH_TOKEN?: string;
+
   // R2 bucket binding (kidskart-asms-backup) for backup monitoring on
   // /admin. Read-only usage from the Worker; writes are still done by
   // GitHub Actions cron (asms-db-backup.yml) via S3-compatible API.
