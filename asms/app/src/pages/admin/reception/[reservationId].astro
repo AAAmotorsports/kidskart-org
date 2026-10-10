@@ -40,7 +40,8 @@ const { data: res, error } = await supabase
     id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
     slots(date, start_time, end_time, courses(code, name)),
     guardians(id, name, kana, email, phone, address),
-    reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status)
+    reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status),
+    consents(id, consented_at, consenter_name, signature_type, signature_typed_name, signature_image_key)
   `)
   .eq('id', reservationId)
   .maybeSingle();
@@ -62,6 +63,11 @@ const slot: any = (res as any).slots ?? {};
 const course: any = slot.courses ?? {};
 const guardian: any = (res as any).guardians ?? {};
 const participants: any[] = ((res as any).reservation_participants as any[]) ?? [];
+// consents は配列で返るので最新 1 件を取る。
+const consentsArr: any[] = ((res as any).consents as any[]) ?? [];
+const consent: any = consentsArr.length > 0
+  ? [...consentsArr].sort((a, b) => (b.consented_at ?? '').localeCompare(a.consented_at ?? ''))[0]
+  : null;
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
 const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -223,6 +229,32 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
         </div>
       </div>
     </section>
+
+    <!-- 電子署名 (予約時に受領済み) -->
+    {consent && (
+      <section class="signature">
+        <h2>{tr('電子署名', 'Signature')}</h2>
+        <div class="sig-wrap">
+          {consent.signature_type === 'drawn' && consent.signature_image_key ? (
+            <img class="sig-img" src={consent.signature_image_key} alt={tr('電子署名', 'Signature')} />
+          ) : consent.signature_type === 'typed' && consent.signature_typed_name ? (
+            <div class="sig-typed">⌨️ {consent.signature_typed_name}</div>
+          ) : (
+            <div class="sig-none">{tr('(署名データなし)', '(no signature data)')}</div>
+          )}
+        </div>
+        <div class="sig-meta">
+          {tr('署名者', 'Signed by')}: <strong>{consent.consenter_name ?? '—'}</strong>
+          {' · '}
+          {consent.consented_at && (
+            <span>
+              {tr('同意日時', 'at')}:{' '}
+              {new Date(consent.consented_at).toLocaleString(isEn ? 'en-US' : 'ja-JP', { timeZone: 'Asia/Tokyo' })}
+            </span>
+          )}
+        </div>
+      </section>
+    )}
 
     <!-- 編集モード中のみ表示される保存/キャンセル -->
     <section class="edit-actions" id="editActions" hidden>
@@ -467,6 +499,35 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
     color: var(--sky-deep); text-decoration: none; font-weight: 700;
   }
   section.guardian .kana { color: var(--ink-3); font-size: .95rem; font-weight: 400; }
+
+  /* ---- 電子署名セクション ---- */
+  section.signature {
+    background: #fff; border: 2px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1.3rem; margin-bottom: 1.4rem;
+  }
+  section.signature h2 {
+    margin: 0 0 .7rem; font-size: 1.1rem; color: var(--ink-2); font-weight: 700;
+  }
+  .sig-wrap {
+    background: var(--bg-2); border: 1px dashed var(--line); border-radius: 8px;
+    padding: .6rem; min-height: 120px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sig-img {
+    max-width: 100%; max-height: 220px;
+    background: #fff; border-radius: 6px;
+    display: block;
+  }
+  .sig-typed {
+    font-size: 1.6rem; font-weight: 600;
+    font-family: 'Zapfino', 'Snell Roundhand', 'Marker Felt', cursive;
+    color: var(--ink); padding: .5rem 1rem;
+  }
+  .sig-none { color: var(--ink-3); font-size: .9rem; }
+  .sig-meta {
+    margin-top: .6rem; font-size: .82rem; color: var(--ink-3);
+  }
+  .sig-meta strong { color: var(--ink-2); }
 
   /* ---- セクションヘッダ (タイトル + 編集ボタン) ---- */
   .sect-head {
