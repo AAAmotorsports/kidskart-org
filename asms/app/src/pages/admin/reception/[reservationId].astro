@@ -39,7 +39,7 @@ const { data: res, error } = await supabase
   .select(`
     id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
     slots(date, start_time, end_time, courses(code, name)),
-    guardians(name, kana, email, phone, address),
+    guardians(id, name, kana, email, phone, address),
     reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status)
   `)
   .eq('id', reservationId)
@@ -122,7 +122,12 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
 
     <!-- 参加者カード (特大): 名前 / 年齢 / 身長 -->
     <section class="participants">
-      <h2>{tr('参加者', 'Participants')} ({participants.length} {tr('名', 'ppl')})</h2>
+      <div class="sect-head">
+        <h2>{tr('参加者', 'Participants')} ({participants.length} {tr('名', 'ppl')})</h2>
+        <button type="button" class="btn-edit" data-target="participants">
+          ✏️ {tr('編集', 'Edit')}
+        </button>
+      </div>
       <div class="p-grid">
         {participants.map((p) => {
           const birthDate = p.birth_date_snapshot;
@@ -132,15 +137,33 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
           const isAttended = p.attendance_status === 'attended';
           const isNoShow = p.attendance_status === 'no_show';
           return (
-            <div class={`p-card ${isCancel ? 'is-cancel' : ''} ${isAttended ? 'is-attended' : ''} ${isNoShow ? 'is-noshow' : ''}`}>
+            <div class={`p-card ${isCancel ? 'is-cancel' : ''} ${isAttended ? 'is-attended' : ''} ${isNoShow ? 'is-noshow' : ''}`} data-participant-id={p.id}>
               <div class="p-icon">{genderIcon(p.gender_snapshot)}</div>
               <div class="p-main">
-                <div class="p-name">{p.name_snapshot}</div>
-                {p.kana_snapshot && <div class="p-kana">{p.kana_snapshot}</div>}
-                <div class="p-info">
-                  <span class="p-chip">{age} {tr('歳', 'yr')}</span>
-                  <span class="p-chip">{genderLabel(p.gender_snapshot)}</span>
-                  {h && <span class="p-chip hi">📏 {h} cm</span>}
+                <!-- 表示モード -->
+                <div class="view-only">
+                  <div class="p-name">{p.name_snapshot}</div>
+                  {p.kana_snapshot && <div class="p-kana">{p.kana_snapshot}</div>}
+                  <div class="p-info">
+                    <span class="p-chip">{age} {tr('歳', 'yr')}</span>
+                    <span class="p-chip">{genderLabel(p.gender_snapshot)}</span>
+                    {h && <span class="p-chip hi">📏 {h} cm</span>}
+                  </div>
+                </div>
+                <!-- 編集モード (hidden) -->
+                <div class="edit-only" hidden>
+                  <div class="e-field">
+                    <label>{tr('名前', 'Name')}</label>
+                    <input type="text" data-field="name_snapshot" value={p.name_snapshot ?? ''} />
+                  </div>
+                  <div class="e-field">
+                    <label>{tr('フリガナ', 'Kana')}</label>
+                    <input type="text" data-field="kana_snapshot" value={p.kana_snapshot ?? ''} />
+                  </div>
+                  <div class="e-field">
+                    <label>{tr('身長 (cm)', 'Height (cm)')}</label>
+                    <input type="number" min="50" max="220" data-field="height_cm" value={h ?? ''} />
+                  </div>
                 </div>
               </div>
               {isAttended && <div class="p-badge ok">✅ {tr('出席', 'Attended')}</div>}
@@ -152,23 +175,63 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
       </div>
     </section>
 
-    <!-- 保護者情報 (補助): スタッフが身元確認する用、小さめ -->
-    <section class="guardian">
-      <h3>{tr('保護者情報', 'Guardian')}</h3>
-      <dl>
+    <!-- 保護者情報 (大きい文字で見やすく、編集可能) -->
+    <section class="guardian" data-guardian-id={guardian.id ?? ''}>
+      <div class="sect-head">
+        <h2>{tr('保護者情報', 'Guardian')}</h2>
+        <button type="button" class="btn-edit" data-target="guardian">
+          ✏️ {tr('編集', 'Edit')}
+        </button>
+      </div>
+
+      <!-- 表示モード -->
+      <dl class="view-only">
         <dt>{tr('お名前', 'Name')}</dt>
-        <dd>{guardian.name ?? '—'}{guardian.kana && <span class="kana"> ({guardian.kana})</span>}</dd>
+        <dd class="g-name">
+          {guardian.name ?? '—'}
+          {guardian.kana && <span class="kana"> ({guardian.kana})</span>}
+        </dd>
         <dt>{tr('電話', 'Phone')}</dt>
-        <dd><a href={`tel:${guardian.phone ?? ''}`}>{guardian.phone ?? '—'}</a></dd>
-        {guardian.email && <>
-          <dt>{tr('メール', 'Email')}</dt>
-          <dd class="small">{guardian.email}</dd>
-        </>}
-        {guardian.address && <>
-          <dt>{tr('住所', 'Address')}</dt>
-          <dd class="small">{guardian.address}</dd>
-        </>}
+        <dd class="g-phone"><a href={`tel:${guardian.phone ?? ''}`}>{guardian.phone ?? '—'}</a></dd>
+        <dt>{tr('メール', 'Email')}</dt>
+        <dd class="g-email">{guardian.email || '—'}</dd>
+        <dt>{tr('住所', 'Address')}</dt>
+        <dd class="g-addr">{guardian.address || '—'}</dd>
       </dl>
+
+      <!-- 編集モード (hidden) -->
+      <div class="edit-only" hidden>
+        <div class="e-field">
+          <label>{tr('お名前', 'Name')}</label>
+          <input type="text" data-field="name" value={guardian.name ?? ''} />
+        </div>
+        <div class="e-field">
+          <label>{tr('フリガナ', 'Kana')}</label>
+          <input type="text" data-field="kana" value={guardian.kana ?? ''} />
+        </div>
+        <div class="e-field">
+          <label>{tr('電話', 'Phone')}</label>
+          <input type="tel" data-field="phone" value={guardian.phone ?? ''} />
+        </div>
+        <div class="e-field">
+          <label>{tr('メール', 'Email')}</label>
+          <input type="email" data-field="email" value={guardian.email ?? ''} />
+        </div>
+        <div class="e-field">
+          <label>{tr('住所', 'Address')}</label>
+          <input type="text" data-field="address" value={guardian.address ?? ''} />
+        </div>
+      </div>
+    </section>
+
+    <!-- 編集モード中のみ表示される保存/キャンセル -->
+    <section class="edit-actions" id="editActions" hidden>
+      <button type="button" class="btn-save" data-reservation-id={res.id}>
+        💾 {tr('変更を保存', 'Save changes')}
+      </button>
+      <button type="button" class="btn-cancel-edit">
+        {tr('キャンセル', 'Cancel')}
+      </button>
     </section>
 
     <!-- アクションボタン (特大) -->
@@ -212,6 +275,77 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
   }
   const isEn = document.documentElement.lang === 'en';
   const tr = (jp: string, en: string) => isEn ? en : jp;
+
+  // ---- 編集モード -----------------------------------------------------
+  // ✏️ 編集ボタンで in-place に inputs に差し替え → 💾 保存 で API に送信。
+  // ホールド状態 (view/edit) はドキュメント全体で 1 つ (保護者 or 参加者 どちら
+  // を押しても全体を edit mode に切り替える)。
+  const editActions = document.getElementById('editActions')!;
+  function setEditMode(on: boolean) {
+    document.querySelectorAll('.view-only').forEach((el) => { (el as HTMLElement).hidden = on; });
+    document.querySelectorAll('.edit-only').forEach((el) => { (el as HTMLElement).hidden = !on; });
+    document.querySelectorAll('.btn-edit').forEach((el) => { (el as HTMLElement).hidden = on; });
+    editActions.hidden = !on;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach((btn) => {
+    btn.addEventListener('click', () => setEditMode(true));
+  });
+  document.querySelector<HTMLButtonElement>('.btn-cancel-edit')?.addEventListener('click', () => {
+    if (!confirm(tr('編集内容を破棄しますか?', 'Discard changes?'))) return;
+    location.reload();  // 元に戻す簡単な方法: リロード
+  });
+
+  const saveBtn = document.querySelector<HTMLButtonElement>('.btn-save');
+  saveBtn?.addEventListener('click', async () => {
+    const reservationId = saveBtn.dataset.reservationId!;
+    // 保護者情報
+    const gSection = document.querySelector<HTMLElement>('section.guardian');
+    const guardian: Record<string, string> = {};
+    gSection?.querySelectorAll<HTMLInputElement>('.edit-only input[data-field]').forEach((el) => {
+      guardian[el.dataset.field!] = el.value.trim();
+    });
+    // 参加者情報
+    const participants: Array<Record<string, any>> = [];
+    document.querySelectorAll<HTMLElement>('.p-card[data-participant-id]').forEach((card) => {
+      const id = card.dataset.participantId!;
+      const upd: Record<string, any> = { id };
+      card.querySelectorAll<HTMLInputElement>('.edit-only input[data-field]').forEach((el) => {
+        const field = el.dataset.field!;
+        if (field === 'height_cm') {
+          const n = parseInt(el.value, 10);
+          if (!isNaN(n)) upd.height_cm = n;
+        } else {
+          upd[field] = el.value.trim();
+        }
+      });
+      participants.push(upd);
+    });
+
+    saveBtn.disabled = true;
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = tr('保存中…', 'Saving...');
+    try {
+      const r = await fetch('/api/admin/reservation-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservation_id: reservationId, guardian, participants }),
+      });
+      const body = await r.json() as { ok?: boolean; error?: string };
+      if (!r.ok) {
+        showToast(tr('エラー: ', 'Error: ') + (body.error ?? `HTTP ${r.status}`), false);
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalText;
+        return;
+      }
+      showToast(tr('保存しました', 'Saved'), true);
+      setTimeout(() => { location.reload(); }, 800);
+    } catch (e) {
+      showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
+    }
+  });
 
   document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -310,21 +444,82 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
   .p-badge.noshow { background: #e8a833; color: #fff; }
 
   section.guardian {
-    background: var(--bg-2); border-radius: 10px;
-    padding: .9rem 1.1rem; margin-bottom: 1.4rem;
-  }
-  section.guardian h3 {
-    margin: 0 0 .5rem; font-size: .95rem; color: var(--ink-2); font-weight: 700;
+    background: #fff; border: 2px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1.3rem; margin-bottom: 1.4rem;
   }
   section.guardian dl {
-    display: grid; grid-template-columns: 100px 1fr; gap: .3rem .8rem;
-    margin: 0; font-size: .95rem;
+    display: grid; grid-template-columns: 100px 1fr; gap: .6rem .8rem;
+    margin: 0;
   }
-  section.guardian dt { color: var(--ink-3); font-size: .82rem; }
-  section.guardian dd { margin: 0; color: var(--ink); font-weight: 500; }
-  section.guardian dd.small { font-size: .82rem; color: var(--ink-2); }
-  section.guardian dd a { color: var(--sky-deep); text-decoration: none; font-weight: 600; }
-  section.guardian .kana { color: var(--ink-3); font-size: .82rem; }
+  section.guardian dt {
+    color: var(--ink-3); font-size: .9rem; font-weight: 600;
+    align-self: start; padding-top: .25rem;
+  }
+  section.guardian dd {
+    margin: 0; color: var(--ink); font-weight: 500;
+    word-break: break-word;
+  }
+  section.guardian dd.g-name  { font-size: 1.4rem; font-weight: 700; }
+  section.guardian dd.g-phone { font-size: 1.4rem; font-family: var(--mono); }
+  section.guardian dd.g-email { font-size: 1.05rem; color: var(--ink); }
+  section.guardian dd.g-addr  { font-size: 1.05rem; color: var(--ink); }
+  section.guardian dd a {
+    color: var(--sky-deep); text-decoration: none; font-weight: 700;
+  }
+  section.guardian .kana { color: var(--ink-3); font-size: .95rem; font-weight: 400; }
+
+  /* ---- セクションヘッダ (タイトル + 編集ボタン) ---- */
+  .sect-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: .8rem; gap: .5rem;
+  }
+  .sect-head h2, .sect-head h3 { margin: 0; }
+  section.guardian .sect-head h2 { font-size: 1.1rem; color: var(--ink-2); font-weight: 700; }
+  .btn-edit {
+    appearance: none; cursor: pointer;
+    background: var(--bg-2); color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 100px;
+    padding: .4rem .9rem; font-size: .85rem; font-weight: 700;
+  }
+  .btn-edit:hover { background: var(--sky-mist); color: var(--sky-deep); border-color: var(--sky-deep); }
+
+  /* ---- 編集モードの入力欄 ---- */
+  .e-field { margin-bottom: .7rem; }
+  .e-field label {
+    display: block; font-size: .8rem; color: var(--ink-3);
+    font-weight: 600; margin-bottom: .2rem;
+  }
+  .e-field input {
+    width: 100%; box-sizing: border-box;
+    padding: .7rem .9rem; font-size: 1.1rem;
+    border: 2px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--ink);
+  }
+  .e-field input:focus { outline: none; border-color: var(--sky-deep); }
+  .p-card .edit-only { padding-top: .3rem; }
+
+  /* ---- 保存 / キャンセル ボタン (編集モード時) ---- */
+  section.edit-actions {
+    display: flex; gap: .6rem;
+    padding: .8rem 1rem; margin: 0 0 1.2rem;
+    background: #fffcf3; border: 2px solid #e8a833; border-radius: 12px;
+    position: sticky; bottom: 1rem; z-index: 50;
+    box-shadow: 0 4px 16px rgba(232, 168, 51, .2);
+  }
+  .btn-save {
+    flex: 1; appearance: none; border: none; cursor: pointer;
+    background: var(--sky-deep); color: #fff;
+    font-size: 1.1rem; font-weight: 800;
+    padding: .9rem 1.2rem; border-radius: 10px;
+  }
+  .btn-save:disabled { opacity: .5; cursor: wait; }
+  .btn-save:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn-cancel-edit {
+    appearance: none; cursor: pointer;
+    background: #fff; color: var(--ink-2); border: 1px solid var(--line);
+    font-size: 1rem; font-weight: 700;
+    padding: .9rem 1.2rem; border-radius: 10px;
+  }
 
   section.actions {
     display: flex; flex-direction: column; gap: .8rem;
