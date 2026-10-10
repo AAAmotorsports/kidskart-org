@@ -1,0 +1,631 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
+
+export const prerender = false;
+
+// =============================================================================
+// /admin/walk-in/[slotId]
+// -----------------------------------------------------------------------------
+// 当日飛び込み来場者の予約を作る iPad 用フォーム。
+// スタッフが iPad をお客様に渡して、お客様自身が入力する前提。
+//
+// 設計方針:
+//   - 1 ページで完結 (ウィザードじゃない)。スタッフがそばで補助できる前提
+//   - 大きい入力欄・ボタン (iPad 片手でタップしやすく)
+//   - 必須入力は参加者 名前/フリガナ/生年月日/性別/身長、保護者 名前/電話
+//   - 署名: 電子署名パッド (/reserve/[slotId] と同じ canvas 実装を流用)
+//   - CAPTCHA なし (admin 認証経由)
+//   - 送信先: /api/admin/reservations/create (bypass_cutoff + 自動安全項目 ON)
+//   - 完了したら /admin/reception/[reservationId] に遷移
+//
+// 当日飛び込みなので:
+//   - 開催日 = slot.date (今日のはず)
+//   - price_tier = 'regular' (会員判定は後で変更可能にする運用)
+//   - 緊急連絡先は保護者と同じ扱い (省略可)
+// =============================================================================
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
+const tr = (jp: string, en: string) => isEn ? en : jp;
+
+const { slotId } = Astro.params;
+if (!slotId) return new Response('missing slotId', { status: 400 });
+
+const { data: slot, error } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, status, courses(id, code, name, price_regular, price_member)')
+  .eq('id', slotId)
+  .maybeSingle();
+
+if (error || !slot) {
+  return new Response(
+    tr(`スロットが見つかりません: ${slotId}`, `Slot not found: ${slotId}`),
+    { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
+
+const course: any = (slot as any).courses ?? {};
+const priceRegular = course.price_regular ?? 0;
+const priceMember = course.price_member ?? 0;
+
+// 現在使用中の terms (安全項目全 OK として受付) の term_id を取り、
+// create API が省略時にその id を使う。省略で OK。
+
+const weekdayJa = ['日','月','火','水','木','金','土'];
+const weekdayEn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const d = new Date((slot as any).date + 'T00:00:00');
+const dateLabel = isEn
+  ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} (${weekdayEn[d.getDay()]})`
+  : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+const timeLabel = `${(slot as any).start_time?.slice(0,5) ?? ''}${(slot as any).end_time ? '〜' + (slot as any).end_time.slice(0,5) : ''}`;
+
+// デフォルト誕生日 = 今日 - 6 年 (体験教室の典型年齢)
+const defaultBirth = (() => {
+  const t = new Date();
+  t.setFullYear(t.getFullYear() - 6);
+  return t.toISOString().slice(0, 10);
+})();
+---
+<Base
+  title={tr(`飛び込み入力 — ${(slot as any).reservation_number ?? course.name}`, `Walk-in entry — ${course.name}`)}
+  lang={locale}
+  showLocaleSwitch={true}
+>
+  <main class="wi-form">
+    <nav class="back">
+      <a href="/admin/walk-in">← {tr('スロット選択に戻る', 'Back to slot picker')}</a>
+    </nav>
+
+    <!-- 選択済みスロットの情報 (読み取り専用、大きく) -->
+    <section class="slot-info">
+      <div class="si-course">🏁 {course.name}</div>
+      <div class="si-when">
+        <span>📅 {dateLabel}</span>
+        <span>⏰ {timeLabel}</span>
+      </div>
+      <div class="si-price">
+        {tr('料金 / 1名', 'Price / person')}:
+        <strong>¥{priceRegular.toLocaleString()}</strong>
+        {priceMember !== priceRegular && (
+          <span class="price-member">
+            ({tr('会員', 'Member')} ¥{priceMember.toLocaleString()})
+          </span>
+        )}
+      </div>
+    </section>
+
+    <h1>{tr('🏃 飛び込み予約', '🏃 Walk-in reservation')}</h1>
+    <p class="intro">
+      {tr(
+        'iPad を参加者さまに渡して、以下を入力していただいてください。入力完了後、電子署名をいただきます。',
+        'Please hand this iPad to the guest and have them fill in the fields below, then sign at the bottom.'
+      )}
+    </p>
+
+    <form id="wiForm" novalidate>
+      <input type="hidden" name="slot_id" value={(slot as any).id} />
+
+      <!-- 参加人数 + 料金プレビュー -->
+      <section class="sect">
+        <h2>1. {tr('参加人数', 'Number of participants')}</h2>
+        <div class="pcount-row">
+          {[1,2,3,4].map((n) => (
+            <label class={`pc-chip ${n===1?'checked':''}`}>
+              <input type="radio" name="participant_count" value={n} checked={n===1} />
+              <span>{n} {tr('名', '')}</span>
+            </label>
+          ))}
+        </div>
+        <div class="tier-row">
+          <label class="pc-chip checked">
+            <input type="radio" name="price_tier" value="regular" checked />
+            <span>{tr('一般', 'Regular')}</span>
+          </label>
+          <label class="pc-chip">
+            <input type="radio" name="price_tier" value="member" />
+            <span>{tr('トヨピー会員', 'Toyopy member')}</span>
+          </label>
+        </div>
+        <div class="total-row">
+          {tr('合計', 'Total')}: <strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
+        </div>
+      </section>
+
+      <!-- 参加者情報 (動的) -->
+      <section class="sect">
+        <h2>2. {tr('参加者情報', 'Participant info')}</h2>
+        <div id="participantsHost"></div>
+      </section>
+
+      <!-- 保護者情報 -->
+      <section class="sect">
+        <h2>3. {tr('保護者情報', 'Guardian info')}</h2>
+        <div class="field">
+          <label>{tr('お名前', 'Name')} <span class="req">*</span></label>
+          <input type="text" name="g_name" autocomplete="name" required />
+        </div>
+        <div class="field">
+          <label>{tr('フリガナ', 'Kana')} <span class="req">*</span></label>
+          <input type="text" name="g_kana" placeholder={tr('ヤマダタロウ', 'YAMADA TARO')} required />
+        </div>
+        <div class="field">
+          <label>{tr('電話番号', 'Phone')} <span class="req">*</span></label>
+          <input type="tel" name="g_phone" autocomplete="tel" placeholder="090..." required />
+        </div>
+        <div class="field">
+          <label>{tr('メール', 'Email')}</label>
+          <input type="email" name="g_email" autocomplete="email" placeholder={tr('(任意) 完了通知を送ります', '(optional)')} />
+        </div>
+      </section>
+
+      <!-- 緊急連絡先 -->
+      <section class="sect">
+        <h2>4. {tr('緊急連絡先', 'Emergency contact')}</h2>
+        <label class="same-check">
+          <input type="checkbox" name="emg_same" checked />
+          {tr('保護者と同じ', 'Same as guardian')}
+        </label>
+        <div id="emgDetails" hidden>
+          <div class="field">
+            <label>{tr('お名前', 'Name')}</label>
+            <input type="text" name="emg_name" />
+          </div>
+          <div class="field">
+            <label>{tr('電話', 'Phone')}</label>
+            <input type="tel" name="emg_phone" />
+          </div>
+          <div class="field">
+            <label>{tr('続柄', 'Relation')}</label>
+            <input type="text" name="emg_relation" placeholder={tr('例: 父, 母', 'e.g. father, mother')} />
+          </div>
+        </div>
+      </section>
+
+      <!-- 署名 -->
+      <section class="sect">
+        <h2>5. {tr('電子署名', 'Signature')}</h2>
+        <p class="sig-note">
+          {tr(
+            '以下の内容に同意のうえ、ここに保護者さまのお名前を手書きで署名してください。',
+            'Please sign (handwritten) below as the guardian to confirm consent to the terms and safety rules.'
+          )}
+        </p>
+        <ul class="terms-mini">
+          <li>{tr('キャンセルポリシー', 'Cancellation policy')}</li>
+          <li>{tr('安全ルール 10 項目', '10 safety rules')}</li>
+          <li>{tr('写真の肖像権', 'Photo rights')}</li>
+        </ul>
+        <div class="sig-area">
+          <canvas id="sigCanvas"></canvas>
+          <button type="button" id="sigClear" class="sig-clear">{tr('描き直す', 'Clear')}</button>
+        </div>
+      </section>
+
+      <!-- 送信ボタン -->
+      <section class="sect submit-sect">
+        <button type="submit" class="btn-submit">
+          {tr('✅ 予約を作成する', '✅ Create reservation')}
+        </button>
+        <div id="submitErr" class="err" hidden></div>
+      </section>
+    </form>
+
+    <!-- 参加者テンプレート -->
+    <template id="participantTpl">
+      <div class="participant" data-p-index="">
+        <div class="p-head"><span class="p-num"></span> {tr('人目', '')}</div>
+        <div class="field">
+          <label>{tr('お名前', 'Name')} <span class="req">*</span></label>
+          <input type="text" name="p_name" required />
+        </div>
+        <div class="field">
+          <label>{tr('フリガナ', 'Kana')} <span class="req">*</span></label>
+          <input type="text" name="p_kana" placeholder={tr('ヤマダハナコ', 'YAMADA HANAKO')} required />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>{tr('生年月日', 'Birth date')} <span class="req">*</span></label>
+            <input type="date" name="p_birth" required />
+          </div>
+          <div class="field">
+            <label>{tr('性別', 'Gender')} <span class="req">*</span></label>
+            <select name="p_gender" required>
+              <option value="">—</option>
+              <option value="male">{tr('男の子', 'Boy')}</option>
+              <option value="female">{tr('女の子', 'Girl')}</option>
+              <option value="other">{tr('その他', 'Other')}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>{tr('身長', 'Height')} <span class="req">*</span></label>
+            <input type="number" name="p_height" min="80" max="200" placeholder="120" required />
+            <span class="unit">cm</span>
+          </div>
+        </div>
+        <label class="photo-chk">
+          <input type="checkbox" name="p_photo" checked />
+          {tr('イベント写真を SNS 等で使用して良い', 'OK to use photos on SNS')}
+        </label>
+      </div>
+    </template>
+  </main>
+</Base>
+
+<script define:vars={{ priceRegular, priceMember, defaultBirth, slotId }}>
+  const form = document.getElementById('wiForm');
+  const isEn = document.documentElement.lang === 'en';
+  const tr = (jp, en) => isEn ? en : jp;
+
+  // ---- 参加者カード動的生成 --------------------------------------------
+  const host = document.getElementById('participantsHost');
+  const tpl = document.getElementById('participantTpl');
+
+  function renderParticipants() {
+    // 既存入力を保持
+    const captured = [];
+    host.querySelectorAll('.participant').forEach((el) => {
+      const idx = parseInt(el.dataset.pIndex || '0', 10);
+      captured[idx] = {};
+      el.querySelectorAll('input, select').forEach((f) => {
+        if (f.type === 'radio') { if (f.checked) captured[idx][f.name] = f.value; }
+        else if (f.type === 'checkbox') { captured[idx][f.name] = f.checked ? '1' : ''; }
+        else { captured[idx][f.name] = f.value; }
+      });
+    });
+
+    const count = parseInt(form.querySelector('input[name="participant_count"]:checked')?.value || '1', 10);
+    host.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const frag = tpl.content.cloneNode(true);
+      const wrap = frag.querySelector('.participant');
+      wrap.dataset.pIndex = String(i);
+      wrap.querySelector('.p-num').textContent = String(i + 1);
+      const birth = wrap.querySelector('input[name="p_birth"]');
+      if (birth && !captured[i]?.p_birth) birth.value = defaultBirth;
+      // 復元
+      wrap.querySelectorAll('input, select').forEach((f) => {
+        const v = captured[i]?.[f.name];
+        if (v == null) return;
+        if (f.type === 'checkbox') { f.checked = v === '1'; }
+        else { f.value = v; }
+      });
+      host.appendChild(frag);
+    }
+  }
+  renderParticipants();
+
+  form.querySelectorAll('input[name="participant_count"]').forEach((el) => {
+    el.addEventListener('change', () => { renderParticipants(); updateTotal(); });
+  });
+
+  // ---- 合計金額プレビュー ---------------------------------------------
+  const totalEl = document.getElementById('totalPreview');
+  function updateTotal() {
+    const count = parseInt(form.querySelector('input[name="participant_count"]:checked')?.value || '1', 10);
+    const tier = form.querySelector('input[name="price_tier"]:checked')?.value || 'regular';
+    const per = tier === 'member' ? priceMember : priceRegular;
+    totalEl.textContent = '¥' + (per * count).toLocaleString();
+  }
+  form.querySelectorAll('input[name="price_tier"]').forEach((el) => {
+    el.addEventListener('change', updateTotal);
+  });
+
+  // ---- 緊急連絡先: 「保護者と同じ」トグル ------------------------------
+  const emgSame = form.querySelector('input[name="emg_same"]');
+  const emgDetails = document.getElementById('emgDetails');
+  function updateEmgVisibility() { emgDetails.hidden = emgSame.checked; }
+  emgSame.addEventListener('change', updateEmgVisibility);
+  updateEmgVisibility();
+
+  // ---- チップ選択のビジュアル状態 (checked class 切替) -----------------
+  form.querySelectorAll('.pcount-row, .tier-row').forEach((row) => {
+    row.addEventListener('change', () => {
+      row.querySelectorAll('.pc-chip').forEach((chip) => {
+        const input = chip.querySelector('input');
+        chip.classList.toggle('checked', input?.checked);
+      });
+    });
+  });
+
+  // ---- 署名キャンバス (/reserve/[slotId] と同じパターンを簡略化して流用) --
+  const canvas = document.getElementById('sigCanvas');
+  const ctx = canvas.getContext('2d');
+  let sigDrawn = false;
+  function sizeCanvas() {
+    const ratio = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const snap = canvas.toDataURL('image/png');
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0e1a26';
+    if (sigDrawn) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = snap;
+    }
+  }
+  sizeCanvas();
+  window.addEventListener('resize', sizeCanvas);
+  let drawing = false;
+  let lastPt = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    drawing = true;
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    const rect = canvas.getBoundingClientRect();
+    lastPt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const pt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    ctx.beginPath();
+    ctx.moveTo(lastPt.x, lastPt.y);
+    ctx.lineTo(pt.x, pt.y);
+    ctx.stroke();
+    lastPt = pt;
+    sigDrawn = true;
+  });
+  function endStroke() { drawing = false; lastPt = null; }
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  document.getElementById('sigClear').addEventListener('click', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    sigDrawn = false;
+  });
+
+  // ---- フォーム送信 ---------------------------------------------------
+  const errEl = document.getElementById('submitErr');
+  function showErr(msg) {
+    errEl.textContent = msg;
+    errEl.hidden = false;
+    errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.hidden = true;
+
+    // バリデーション (最低限)
+    const fd = new FormData(form);
+    const participants = [];
+    host.querySelectorAll('.participant').forEach((el) => {
+      const get = (name) => (el.querySelector(`[name="${name}"]`)?.value || '').trim();
+      const photoChk = el.querySelector('[name="p_photo"]');
+      const name = get('p_name');
+      const kana = get('p_kana');
+      const birth = get('p_birth');
+      const gender = get('p_gender');
+      const height = parseInt(get('p_height'), 10);
+      if (!name || !kana || !birth || !gender || !height) {
+        return;
+      }
+      participants.push({
+        name, kana, birth_date: birth, gender, height_cm: height,
+        photo_consent: photoChk?.checked ?? true,
+      });
+    });
+    const expectedCount = parseInt(form.querySelector('input[name="participant_count"]:checked')?.value || '1', 10);
+    if (participants.length !== expectedCount) {
+      showErr(tr('参加者情報に未入力があります', 'Some participant fields are missing'));
+      return;
+    }
+
+    const g_name = fd.get('g_name')?.toString().trim();
+    const g_kana = fd.get('g_kana')?.toString().trim();
+    const g_phone = fd.get('g_phone')?.toString().trim();
+    const g_email = fd.get('g_email')?.toString().trim();
+    if (!g_name || !g_kana || !g_phone) {
+      showErr(tr('保護者情報 (お名前・フリガナ・電話) は必須です', 'Guardian name, kana and phone are required'));
+      return;
+    }
+
+    const emgSameOn = emgSame.checked;
+    const emergency = emgSameOn
+      ? { name: g_name, phone: g_phone, relation: tr('本人', 'self') }
+      : {
+          name:     fd.get('emg_name')?.toString().trim() || g_name,
+          phone:    fd.get('emg_phone')?.toString().trim() || g_phone,
+          relation: fd.get('emg_relation')?.toString().trim() || tr('本人', 'self'),
+        };
+
+    if (!sigDrawn) {
+      showErr(tr('電子署名をお願いします', 'Please provide a signature'));
+      return;
+    }
+
+    const payload = {
+      slot_id: slotId,
+      // term_id: 省略 → admin create が現行 terms を自動選択
+      price_tier: fd.get('price_tier')?.toString() === 'member' ? 'member' : 'regular',
+      guardian: {
+        name: g_name,
+        kana: g_kana,
+        phone: g_phone,
+        email: g_email || `walkin-${Date.now()}@noemail.local`,  // email は RPC が必須扱いなのでダミー
+      },
+      emergency,
+      participants,
+      signature: { type: 'drawn', image_data: canvas.toDataURL('image/png') },
+      // checked_safety_items: 省略 → admin create が全自動チェック
+    };
+
+    const submitBtn = form.querySelector('.btn-submit');
+    submitBtn.disabled = true;
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = tr('送信中…', 'Submitting...');
+
+    try {
+      const r = await fetch('/api/admin/reservations/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await r.json();
+      if (!r.ok) {
+        showErr(tr('エラー: ', 'Error: ') + (body.error ?? `HTTP ${r.status}`));
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+        return;
+      }
+      const resId = body.reservation_id;
+      if (resId) {
+        // 受付画面に遷移
+        location.href = `/admin/reception/${resId}`;
+      } else {
+        alert(tr('予約を作成しました', 'Reservation created'));
+        location.href = '/admin/walk-in';
+      }
+    } catch (err) {
+      showErr(tr('通信エラー: ', 'Network error: ') + err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  });
+</script>
+
+<style>
+  main.wi-form {
+    max-width: 820px; margin: 0 auto; padding: 1rem 1rem 3rem;
+  }
+  .back { margin-bottom: .5rem; }
+  .back a { color: var(--ink-3); text-decoration: none; font-size: .85rem; }
+
+  .slot-info {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; border-radius: 14px; padding: 1.1rem 1.3rem;
+    margin-bottom: 1rem;
+  }
+  .si-course { font-size: 1.5rem; font-weight: 800; margin-bottom: .3rem; }
+  .si-when { display: flex; gap: 1.2rem; font-size: 1rem; margin-bottom: .3rem; opacity: .95; }
+  .si-price { font-size: .9rem; opacity: .9; }
+  .si-price strong { font-size: 1.15rem; font-family: var(--mono); }
+  .price-member { opacity: .8; margin-left: .4rem; }
+
+  h1 { font-size: 1.6rem; margin: 0 0 .5rem; }
+  .intro { color: var(--ink-2); font-size: .95rem; margin: 0 0 1.5rem; }
+
+  .sect {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1.2rem; margin-bottom: 1rem;
+  }
+  .sect h2 { margin: 0 0 .9rem; font-size: 1.1rem; }
+
+  .pcount-row, .tier-row {
+    display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .7rem;
+  }
+  .pc-chip {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .7rem 1.3rem; border: 2px solid var(--line); border-radius: 100px;
+    cursor: pointer; font-size: 1.05rem; font-weight: 700;
+    background: #fff;
+  }
+  .pc-chip input { display: none; }
+  .pc-chip.checked { border-color: var(--sky-deep); background: #e8f4fd; color: var(--sky-deep); }
+  .total-row {
+    text-align: right; font-size: 1.2rem; margin-top: .5rem;
+    font-weight: 700; color: var(--ink);
+  }
+  .total-row strong { color: var(--sky-deep); font-family: var(--mono); font-size: 1.6rem; margin-left: .3rem; }
+
+  .field { margin-bottom: .9rem; }
+  .field label {
+    display: block; margin-bottom: .35rem;
+    font-size: .95rem; font-weight: 600; color: var(--ink-2);
+  }
+  .field input, .field select {
+    width: 100%; box-sizing: border-box;
+    padding: .85rem 1rem; font-size: 1.1rem;
+    border: 2px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--ink);
+  }
+  .field input:focus, .field select:focus {
+    outline: none; border-color: var(--sky-deep);
+  }
+  .field .unit {
+    display: inline-block; margin-left: .4rem; color: var(--ink-3);
+  }
+  .req { color: var(--rose-deep); }
+
+  .field-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .6rem;
+  }
+  @media (max-width: 560px) {
+    .field-row { grid-template-columns: 1fr; }
+  }
+
+  .participant {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1rem 1.1rem; margin-bottom: .8rem;
+  }
+  .p-head {
+    font-size: 1rem; font-weight: 700; color: var(--sky-deep);
+    margin-bottom: .7rem;
+  }
+  .p-num {
+    display: inline-block; background: var(--sky-deep); color: #fff;
+    width: 1.8em; height: 1.8em; line-height: 1.8em; text-align: center;
+    border-radius: 50%; font-weight: 800; margin-right: .3rem;
+  }
+  .photo-chk {
+    display: block; margin-top: .5rem; font-size: .85rem; color: var(--ink-2);
+    cursor: pointer;
+  }
+
+  .same-check {
+    display: block; margin-bottom: .5rem; font-size: 1rem; cursor: pointer;
+    color: var(--ink);
+  }
+  .same-check input { margin-right: .4rem; transform: scale(1.3); }
+
+  .sig-note { font-size: .85rem; color: var(--ink-2); margin: 0 0 .4rem; }
+  .terms-mini {
+    display: flex; gap: .4rem; flex-wrap: wrap;
+    list-style: none; padding: 0; margin: 0 0 .7rem;
+  }
+  .terms-mini li {
+    background: var(--bg-2); color: var(--ink-2);
+    padding: .25rem .7rem; border-radius: 100px;
+    font-size: .78rem;
+  }
+  .sig-area {
+    position: relative;
+    border: 2px dashed var(--ink-3); border-radius: 10px;
+    background: #fff; overflow: hidden;
+    touch-action: none;
+  }
+  .sig-area canvas {
+    width: 100%; height: 180px; display: block;
+    touch-action: none;
+  }
+  .sig-clear {
+    position: absolute; top: .4rem; right: .4rem;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: .25rem .6rem; font-size: .75rem; cursor: pointer;
+    color: var(--ink-2);
+  }
+
+  .submit-sect { background: transparent; border: none; padding: 0; }
+  .btn-submit {
+    width: 100%; appearance: none; border: none; cursor: pointer;
+    background: var(--lime-deep); color: #fff;
+    font-size: 1.3rem; font-weight: 800;
+    padding: 1.2rem 1.6rem; border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(66, 171, 73, .25);
+  }
+  .btn-submit:disabled { opacity: .5; cursor: wait; }
+  .btn-submit:hover:not(:disabled) { filter: brightness(1.05); }
+  .err {
+    background: #fff0f0; color: var(--rose-deep);
+    padding: .7rem 1rem; border-radius: 8px; margin-top: .8rem;
+    font-size: .9rem; border: 1px solid #ffd0d0;
+  }
+</style>

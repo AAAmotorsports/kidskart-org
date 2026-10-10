@@ -1099,7 +1099,10 @@ async function sendAdminCancelNotification(env: Env, args: {
                   <span class="p-age">{p.age_at_booking}歳 · {genderJa(p.gender_snapshot)}</span>
                   <span class="p-height">{p.height_cm}cm</span>
                 </div>
-                <a class="p-detail" href={`/admin/customers/${p.customer_id}`}>カルテ →</a>
+                <div class="p-head-actions">
+                  <a class="p-detail receipt" href={`/admin/reception/${r.id}`}>🎫 受付画面</a>
+                  <a class="p-detail" href={`/admin/customers/${p.customer_id}`}>カルテ →</a>
+                </div>
               </div>
 
               <div class="p-status">
@@ -1338,11 +1341,13 @@ async function sendAdminCancelNotification(env: Env, args: {
   .p-kana { color: var(--ink-3); font-size: .74rem; }
   .p-age { color: var(--ink-2); font-size: .74rem; margin-left: .4rem; }
   .p-height { color: var(--ink-2); font-size: .74rem; font-family: var(--mono); }
+  .p-head-actions { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
   .p-detail {
     font-size: .74rem; color: var(--sky-deep); text-decoration: none;
     padding: 3px 10px; border-radius: 100px; background: var(--sky-mist);
     font-weight: 700; white-space: nowrap;
   }
+  .p-detail.receipt { background: #e5f8e8; color: var(--lime-deep); }
 
   .p-status {
     display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
