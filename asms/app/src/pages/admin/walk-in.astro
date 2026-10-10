@@ -8,8 +8,10 @@ export const prerender = false;
 // =============================================================================
 // /admin/walk-in
 // -----------------------------------------------------------------------------
-// 当日飛び込み来場者の予約を作る前段。今日のスロット一覧を大きなボタンで出し、
-// どこに追加するかスタッフが選ぶ。選ぶと /admin/walk-in/[slotId] に遷移。
+// 当日受付 (旧「飛び込み受付」) — 予約なしで来場したお客様の予約を作る前段。
+// 今日のスロット一覧を大きなボタンで出し、どこに追加するかスタッフが選ぶ。
+// 選ぶと /admin/walk-in/[slotId] に遷移。
+// (URL は walk-in のまま、呼び名だけ「当日受付」に統一 — 2026-10-10 変更)
 //
 // 対象スロット: 今日の開催 (status != 'cancelled')。
 // 空席が無くてもリスト表示だけはする (稀に追加枠を切るケースあり)。
@@ -75,7 +77,7 @@ const dateLabel = isEn
   : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
 ---
 <Base
-  title={tr(`飛び込み受付 — ${dateLabel}`, `Walk-in — ${dateLabel}`)}
+  title={tr(`当日受付 — ${dateLabel}`, `Walk-in — ${dateLabel}`)}
   lang={locale}
   showLocaleSwitch={true}
 >
@@ -84,7 +86,7 @@ const dateLabel = isEn
       <a href="/admin">← {tr('管理トップ', 'Admin')}</a>
     </nav>
 
-    <h1>{tr('🏃 飛び込み受付', '🏃 Walk-in Check-in')}</h1>
+    <h1>{tr('🏃 当日受付', '🏃 Walk-in Check-in')}</h1>
 
     <section class="date-nav">
       <a class="d-btn" href={`/admin/walk-in?date=${prevDate}`}>← {tr('前日', 'Prev')}</a>
