@@ -14,8 +14,11 @@ export const prerender = false;
 // {
 //   reservation_id: uuid,
 //   guardian?: { name?, kana?, phone?, email?, address? },  -- 保護者 (guardians テーブル)
-//   participants?: [{ id, name_snapshot?, kana_snapshot?, height_cm? }],
+//   participants?: [{ id, name_snapshot?, kana_snapshot?, birth_date_snapshot?, height_cm? }],
 // }
+//
+// birth_date_snapshot を更新した場合、age_at_booking も自動で再計算して保存する
+// (スロット開催日基準の年齢)。
 //
 // 設計方針:
 //   - guardian は値が与えられたフィールドだけ update (null/'' は空文字で上書き)
@@ -39,14 +42,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const reservationId: string | undefined = body?.reservation_id;
   if (!reservationId) return json({ error: 'reservation_id is required' }, 400);
 
-  // --- 予約と紐づく guardian_id を取得 -----------------------------------
+  // --- 予約と紐づく guardian_id、slot.date を取得 ------------------------
+  // slot.date は birth_date_snapshot 更新時の age_at_booking 再計算で使う。
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id, guardian_id')
+    .select('id, guardian_id, slots(date)')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
+  const slotDate: string | undefined = (res as any).slots?.date;
 
   const results: Record<string, any> = { guardian: null, participants: [] };
 
@@ -87,6 +92,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
         const n = parseInt(String(p.height_cm), 10);
         if (!isNaN(n) && n >= 50 && n <= 220) update.height_cm = n;
       }
+      if ('birth_date_snapshot' in p) {
+        const v = typeof p.birth_date_snapshot === 'string' ? p.birth_date_snapshot.trim() : '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+          update.birth_date_snapshot = v;
+          // 誕生日が変わったら age_at_booking も再計算 (スロット開催日基準)
+          if (slotDate) {
+            update.age_at_booking = computeAge(v, slotDate);
+          }
+        }
+      }
       if (Object.keys(update).length === 0) continue;
 
       // 他予約への誤爆防止: この予約の参加者であることを eq で縛る
@@ -108,4 +123,13 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
   });
+}
+
+/** birth_date (YYYY-MM-DD) 時点から onDate (YYYY-MM-DD) 時点の満年齢 */
+function computeAge(birthDate: string, onDate: string): number {
+  const [by, bm, bd] = birthDate.split('-').map((n) => parseInt(n, 10));
+  const [oy, om, od] = onDate.split('-').map((n) => parseInt(n, 10));
+  let age = oy - by;
+  if (om < bm || (om === bm && od < bd)) age--;
+  return Math.max(0, age);
 }
