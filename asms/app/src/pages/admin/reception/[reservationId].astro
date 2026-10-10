@@ -40,12 +40,18 @@ const { data: res, error } = await supabase
     id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
     slots(date, start_time, end_time, courses(code, name)),
     guardians(name, kana, email, phone, address),
-    reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm_snapshot, age_at_booking, attendance_status)
+    reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status)
   `)
   .eq('id', reservationId)
   .maybeSingle();
 
-if (error || !res) {
+if (error) {
+  return new Response(
+    tr(`予約取得エラー: ${error.message}`, `Fetch error: ${error.message}`),
+    { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
+if (!res) {
   return new Response(
     tr(`予約が見つかりません: ${reservationId}`, `Reservation not found: ${reservationId}`),
     { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
@@ -121,7 +127,7 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
         {participants.map((p) => {
           const birthDate = p.birth_date_snapshot;
           const age = birthDate ? ageOn(birthDate, slot.date) : p.age_at_booking;
-          const h = p.height_cm_snapshot;
+          const h = p.height_cm;
           const isCancel = p.attendance_status === 'cancelled';
           const isAttended = p.attendance_status === 'attended';
           const isNoShow = p.attendance_status === 'no_show';
