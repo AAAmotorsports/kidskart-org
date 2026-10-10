@@ -8,8 +8,9 @@ export const prerender = false;
 // =============================================================================
 // /admin/walk-in/[slotId]
 // -----------------------------------------------------------------------------
-// 当日飛び込み来場者の予約を作る iPad 用フォーム。
-// スタッフが iPad をお客様に渡して、お客様自身が入力する前提。
+// 当日受付 (旧「飛び込み入力」) — 予約なしで来場したお客様の予約を iPad から
+// 作るフォーム。スタッフが iPad をお客様に渡して、お客様自身が入力する前提。
+// (URL は walk-in のまま、呼び名だけ「当日受付」に統一 — 2026-10-10 変更)
 //
 // 設計方針:
 //   - 1 ページで完結 (ウィザードじゃない)。スタッフがそばで補助できる前提
@@ -20,7 +21,7 @@ export const prerender = false;
 //   - 送信先: /api/admin/reservations/create (bypass_cutoff + 自動安全項目 ON)
 //   - 完了したら /admin/reception/[reservationId] に遷移
 //
-// 当日飛び込みなので:
+// 当日受付なので:
 //   - 開催日 = slot.date (今日のはず)
 //   - price_tier = 'regular' (会員判定は後で変更可能にする運用)
 //   - 緊急連絡先は保護者と同じ扱い (省略可)
@@ -83,7 +84,7 @@ const defaultBirth = (() => {
 })();
 ---
 <Base
-  title={tr(`飛び込み入力 — ${(slot as any).reservation_number ?? course.name}`, `Walk-in entry — ${course.name}`)}
+  title={tr(`当日受付 — ${course.name}`, `Walk-in entry — ${course.name}`)}
   lang={locale}
   showLocaleSwitch={true}
 >
@@ -110,7 +111,7 @@ const defaultBirth = (() => {
       </div>
     </section>
 
-    <h1>{tr('🏃 飛び込み予約', '🏃 Walk-in reservation')}</h1>
+    <h1>{tr('🏃 当日受付', '🏃 Walk-in reservation')}</h1>
     <p class="intro">
       {tr(
         'iPad を参加者さまに渡して、以下を入力していただいてください。入力完了後、電子署名をいただきます。',
