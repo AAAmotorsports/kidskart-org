@@ -52,8 +52,20 @@ const course: any = (slot as any).courses ?? {};
 const priceRegular = course.price_regular ?? 0;
 const priceMember = course.price_member ?? 0;
 
-// 現在使用中の terms (安全項目全 OK として受付) の term_id を取り、
-// create API が省略時にその id を使う。省略で OK。
+// 現行の規約 (キャンセルポリシー + 安全項目) を取得。
+// 一般予約ウィザードと同じく最新 version 1 件のみ使う。
+// サーバー側で全文を取得して、キャンセルポリシーはモーダル表示、
+// 安全項目は 1 つずつチェックボックスで同意いただく。
+const { data: terms } = await supabase
+  .from('terms')
+  .select('id, version, cancel_policy_md, safety_items')
+  .order('version', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+const termId = terms?.id ?? null;
+const cancelPolicyMd = (terms?.cancel_policy_md as string) ?? '';
+const safetyItems = (terms?.safety_items as Array<{ id: number; text: string }>) ?? [];
 
 const weekdayJa = ['日','月','火','水','木','金','土'];
 const weekdayEn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -185,25 +197,80 @@ const defaultBirth = (() => {
         </div>
       </section>
 
+      <!-- 同意事項 -->
+      <section class="sect">
+        <h2>5. {tr('同意事項', 'Agreement')}</h2>
+
+        <!-- キャンセルポリシー: モーダルで本文表示 -->
+        <div class="agree-row">
+          <button type="button" class="link-btn" id="openCancelPolicy">
+            📄 {tr('キャンセルポリシーを読む', 'Read cancellation policy')}
+          </button>
+        </div>
+
+        <!-- 安全ルール: アコーディオン展開 → 1 項目ずつチェック -->
+        <details class="safety-accordion" open>
+          <summary>
+            ⚠️ {tr('安全ルール', 'Safety rules')} ({safetyItems.length} {tr('項目', 'items')})
+            <span class="sa-hint">— {tr('すべてチェックしてください', 'Please check all')}</span>
+          </summary>
+          <ul class="safety-list">
+            {safetyItems.map((it) => (
+              <li>
+                <label>
+                  <input type="checkbox" name="safety" value={it.id} class="safety-chk" />
+                  <span>{it.text}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div class="sa-actions">
+            <button type="button" class="link-btn small" id="checkAllSafety">
+              ✓ {tr('全てチェック', 'Check all')}
+            </button>
+          </div>
+        </details>
+
+        <!-- 写真の肖像権: チェックボックス (reservation 全体に適用) -->
+        <label class="photo-rights">
+          <input type="checkbox" name="photo_rights" checked />
+          <span>📸 {tr(
+            '当校の活動紹介で、写真・動画の掲載 (SNS・ウェブサイト) に同意する',
+            'I consent to the use of photos/videos for school promotional purposes (SNS, website)'
+          )}</span>
+        </label>
+      </section>
+
       <!-- 署名 -->
       <section class="sect">
-        <h2>5. {tr('電子署名', 'Signature')}</h2>
+        <h2>6. {tr('電子署名', 'Signature')}</h2>
         <p class="sig-note">
           {tr(
-            '以下の内容に同意のうえ、ここに保護者さまのお名前を手書きで署名してください。',
-            'Please sign (handwritten) below as the guardian to confirm consent to the terms and safety rules.'
+            '上記 (キャンセルポリシー・安全ルール 10 項目) に同意のうえ、保護者さまのお名前を手書きで署名してください。',
+            'By signing below, you acknowledge the cancellation policy and all safety rules above.'
           )}
         </p>
-        <ul class="terms-mini">
-          <li>{tr('キャンセルポリシー', 'Cancellation policy')}</li>
-          <li>{tr('安全ルール 10 項目', '10 safety rules')}</li>
-          <li>{tr('写真の肖像権', 'Photo rights')}</li>
-        </ul>
         <div class="sig-area">
           <canvas id="sigCanvas"></canvas>
           <button type="button" id="sigClear" class="sig-clear">{tr('描き直す', 'Clear')}</button>
         </div>
       </section>
+
+      <!-- キャンセルポリシーモーダル -->
+      <div class="modal-overlay" id="cancelPolicyModal" hidden>
+        <div class="modal">
+          <header>
+            <h3>📄 {tr('キャンセルポリシー', 'Cancellation Policy')}</h3>
+            <button type="button" class="modal-close" id="closeCancelPolicy" aria-label="Close">×</button>
+          </header>
+          <div class="modal-body" id="cancelPolicyBody"></div>
+          <footer>
+            <button type="button" class="btn-submit" id="closeCancelPolicy2">
+              {tr('閉じる', 'Close')}
+            </button>
+          </footer>
+        </div>
+      </div>
 
       <!-- 送信ボタン -->
       <section class="sect submit-sect">
@@ -246,19 +313,46 @@ const defaultBirth = (() => {
             <span class="unit">cm</span>
           </div>
         </div>
-        <label class="photo-chk">
-          <input type="checkbox" name="p_photo" checked />
-          {tr('イベント写真を SNS 等で使用して良い', 'OK to use photos on SNS')}
-        </label>
+        <!-- 写真同意は Section 5 の photo_rights (reservation 単位) で代替 -->
       </div>
     </template>
   </main>
 </Base>
 
-<script define:vars={{ priceRegular, priceMember, defaultBirth, slotId }}>
+<script define:vars={{ priceRegular, priceMember, defaultBirth, slotId, termId, safetyItems, cancelPolicyMd }}>
   const form = document.getElementById('wiForm');
   const isEn = document.documentElement.lang === 'en';
   const tr = (jp, en) => isEn ? en : jp;
+
+  // ---- キャンセルポリシーモーダル ---------------------------------------
+  const cpModal = document.getElementById('cancelPolicyModal');
+  const cpBody = document.getElementById('cancelPolicyBody');
+  // 超簡易 markdown → HTML (改行と見出しだけ対応、XSS 対策で escape)
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function renderMarkdown(md) {
+    const esc = escapeHtml(md || '');
+    return esc
+      .replace(/^###\s+(.+)$/gm, '<h4>$1</h4>')
+      .replace(/^##\s+(.+)$/gm, '<h3>$1</h3>')
+      .replace(/^#\s+(.+)$/gm, '<h2>$1</h2>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+  }
+  cpBody.innerHTML = '<p>' + renderMarkdown(cancelPolicyMd || tr('(規約データが未登録です)', '(No policy data)')) + '</p>';
+
+  function openCp() { cpModal.hidden = false; document.body.style.overflow = 'hidden'; }
+  function closeCp() { cpModal.hidden = true; document.body.style.overflow = ''; }
+  document.getElementById('openCancelPolicy').addEventListener('click', openCp);
+  document.getElementById('closeCancelPolicy').addEventListener('click', closeCp);
+  document.getElementById('closeCancelPolicy2').addEventListener('click', closeCp);
+  cpModal.addEventListener('click', (e) => { if (e.target === cpModal) closeCp(); });
+
+  // ---- 「全てチェック」ボタン (安全ルール) ----------------------------
+  document.getElementById('checkAllSafety').addEventListener('click', () => {
+    form.querySelectorAll('.safety-chk').forEach((el) => { el.checked = true; });
+  });
 
   // ---- 参加者カード動的生成 --------------------------------------------
   const host = document.getElementById('participantsHost');
@@ -396,10 +490,13 @@ const defaultBirth = (() => {
 
     // バリデーション (最低限)
     const fd = new FormData(form);
+    // 写真の肖像権 (reservation 単位、全参加者に適用)
+    const photoConsentOn = form.querySelector('input[name="photo_rights"]')?.checked ?? true;
+    const photoConsentValue = photoConsentOn ? 'allow' : 'deny';
+
     const participants = [];
     host.querySelectorAll('.participant').forEach((el) => {
       const get = (name) => (el.querySelector(`[name="${name}"]`)?.value || '').trim();
-      const photoChk = el.querySelector('[name="p_photo"]');
       const name = get('p_name');
       const kana = get('p_kana');
       const birth = get('p_birth');
@@ -410,7 +507,7 @@ const defaultBirth = (() => {
       }
       participants.push({
         name, kana, birth_date: birth, gender, height_cm: height,
-        photo_consent: photoChk?.checked ?? true,
+        photo_consent: photoConsentValue,
       });
     });
     const expectedCount = parseInt(form.querySelector('input[name="participant_count"]:checked')?.value || '1', 10);
@@ -425,6 +522,18 @@ const defaultBirth = (() => {
     const g_email = fd.get('g_email')?.toString().trim();
     if (!g_name || !g_kana || !g_phone) {
       showErr(tr('保護者情報 (お名前・フリガナ・電話) は必須です', 'Guardian name, kana and phone are required'));
+      return;
+    }
+
+    // 安全ルール: 全項目チェック必須
+    const checkedSafety = Array.from(form.querySelectorAll('.safety-chk:checked'))
+      .map((el) => parseInt(el.value, 10))
+      .filter((n) => !isNaN(n));
+    if (checkedSafety.length !== safetyItems.length) {
+      showErr(tr(
+        `安全ルール ${safetyItems.length} 項目すべてに同意チェックが必要です (現在 ${checkedSafety.length} 項目)`,
+        `All ${safetyItems.length} safety rules must be checked (currently ${checkedSafety.length})`,
+      ));
       return;
     }
 
@@ -444,7 +553,7 @@ const defaultBirth = (() => {
 
     const payload = {
       slot_id: slotId,
-      // term_id: 省略 → admin create が現行 terms を自動選択
+      term_id: termId,  // 現行 terms を明示指定 (admin create は省略時に自動選択するが、確実性のため)
       price_tier: fd.get('price_tier')?.toString() === 'member' ? 'member' : 'regular',
       guardian: {
         name: g_name,
@@ -455,7 +564,7 @@ const defaultBirth = (() => {
       emergency,
       participants,
       signature: { type: 'drawn', image_data: canvas.toDataURL('image/png') },
-      // checked_safety_items: 省略 → admin create が全自動チェック
+      checked_safety_items: checkedSafety,
     };
 
     const submitBtn = form.querySelector('.btn-submit');
@@ -587,14 +696,97 @@ const defaultBirth = (() => {
   .same-check input { margin-right: .4rem; transform: scale(1.3); }
 
   .sig-note { font-size: .85rem; color: var(--ink-2); margin: 0 0 .4rem; }
-  .terms-mini {
-    display: flex; gap: .4rem; flex-wrap: wrap;
-    list-style: none; padding: 0; margin: 0 0 .7rem;
+
+  /* 同意事項セクション */
+  .agree-row { margin-bottom: .9rem; }
+  .link-btn {
+    appearance: none; background: transparent; border: none;
+    color: var(--sky-deep); cursor: pointer;
+    font-size: 1rem; font-weight: 600; text-decoration: underline;
+    padding: .3rem 0; font-family: inherit;
   }
-  .terms-mini li {
-    background: var(--bg-2); color: var(--ink-2);
-    padding: .25rem .7rem; border-radius: 100px;
-    font-size: .78rem;
+  .link-btn:hover { color: var(--sky); }
+  .link-btn.small { font-size: .85rem; }
+
+  .safety-accordion {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: .4rem .9rem;
+    margin-bottom: .9rem;
+  }
+  .safety-accordion summary {
+    cursor: pointer; font-weight: 700; color: var(--ink);
+    padding: .5rem 0; font-size: 1rem;
+    list-style: none;
+  }
+  .safety-accordion summary::-webkit-details-marker { display: none; }
+  .safety-accordion summary::before {
+    content: '▶'; display: inline-block;
+    margin-right: .4rem; font-size: .75rem;
+    transition: transform .15s;
+  }
+  .safety-accordion[open] summary::before { transform: rotate(90deg); }
+  .sa-hint { color: var(--rose-deep); font-weight: 600; font-size: .78rem; }
+  .safety-list {
+    list-style: none; padding: 0; margin: .5rem 0 .3rem;
+  }
+  .safety-list li { margin-bottom: .5rem; }
+  .safety-list label {
+    display: flex; align-items: flex-start; gap: .6rem;
+    cursor: pointer; font-size: .92rem; line-height: 1.4;
+    padding: .4rem .5rem; border-radius: 6px;
+  }
+  .safety-list label:hover { background: #fff; }
+  .safety-list input[type="checkbox"] {
+    margin-top: .18rem; transform: scale(1.3); flex-shrink: 0;
+  }
+  .sa-actions { text-align: right; }
+
+  .photo-rights {
+    display: flex; align-items: flex-start; gap: .6rem;
+    cursor: pointer; padding: .7rem .9rem;
+    background: #f0f8fe; border: 1px solid #cde8f8; border-radius: 10px;
+    font-size: .92rem; line-height: 1.4;
+  }
+  .photo-rights input {
+    margin-top: .15rem; transform: scale(1.3); flex-shrink: 0;
+  }
+
+  /* モーダル */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(14, 26, 38, .55);
+    z-index: 1000; display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal {
+    background: #fff; border-radius: 14px; max-width: 640px; width: 100%;
+    max-height: 85vh; display: flex; flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  }
+  .modal header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.2rem; border-bottom: 1px solid var(--line);
+  }
+  .modal header h3 { margin: 0; font-size: 1.1rem; }
+  .modal-close {
+    appearance: none; background: transparent; border: none; cursor: pointer;
+    font-size: 1.8rem; line-height: 1; color: var(--ink-3);
+    padding: 0 .3rem;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-body {
+    padding: 1rem 1.2rem; overflow-y: auto; flex: 1;
+    font-size: .92rem; line-height: 1.6; color: var(--ink);
+  }
+  .modal-body h2, .modal-body h3, .modal-body h4 {
+    margin: 1rem 0 .5rem; color: var(--ink);
+  }
+  .modal-body p { margin: 0 0 .8rem; }
+  .modal footer {
+    padding: .8rem 1.2rem; border-top: 1px solid var(--line);
+  }
+  .modal footer .btn-submit {
+    padding: .7rem 1.4rem; font-size: 1rem;
+    background: var(--sky-deep);
   }
   .sig-area {
     position: relative;
