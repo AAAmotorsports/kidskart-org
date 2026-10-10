@@ -1,0 +1,356 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
+import { ageOn } from '@lib/admin';
+
+export const prerender = false;
+
+// =============================================================================
+// /admin/reception/[reservationId]
+// -----------------------------------------------------------------------------
+// 当日受付用の大画面表示。スタッフが iPad で開き、お客様に見せて確認してもらう。
+//
+// 動線:
+//   1. スタッフが /admin/slots/[id] から該当予約を開く → 「受付画面」リンク
+//   2. iPad をお客様に渡す
+//   3. お客様が内容確認、「受付完了」をタップ
+//   4. 全参加者の attendance_status = 'attended' に更新
+//
+// 設計方針:
+//   - 情報密度は低く、文字は特大 (iPad を少し離して見てもわかる)
+//   - 参加者ごとに 名前 / 年齢 / 身長 を大きく表示 (身長はカート適合判定の要)
+//   - 保護者情報は補助的に小さく (スタッフが確認する用)
+//   - 日英切替あり (トグル右上)
+//   - 認証: middleware で /admin/* 全体を守っている
+// =============================================================================
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
+const tr = (jp: string, en: string) => isEn ? en : jp;
+
+const { reservationId } = Astro.params;
+if (!reservationId) return new Response('missing reservationId', { status: 400 });
+
+const { data: res, error } = await supabase
+  .from('reservations')
+  .select(`
+    id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
+    slots(date, start_time, end_time, courses(code, name)),
+    guardians(name, kana, email, phone, address),
+    reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm_snapshot, age_at_booking, attendance_status)
+  `)
+  .eq('id', reservationId)
+  .maybeSingle();
+
+if (error || !res) {
+  return new Response(
+    tr(`予約が見つかりません: ${reservationId}`, `Reservation not found: ${reservationId}`),
+    { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
+
+const slot: any = (res as any).slots ?? {};
+const course: any = slot.courses ?? {};
+const guardian: any = (res as any).guardians ?? {};
+const participants: any[] = ((res as any).reservation_participants as any[]) ?? [];
+
+const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
+const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return isEn
+    ? `${monthsEn[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} (${weekdayEn[d.getDay()]})`
+    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+}
+function fmtTime(t: string | undefined): string {
+  if (!t) return '';
+  return t.slice(0, 5);
+}
+function genderIcon(g: string | null): string {
+  if (g === 'male') return '👦';
+  if (g === 'female') return '👧';
+  return '🧒';
+}
+function genderLabel(g: string | null): string {
+  if (g === 'male') return tr('男', 'M');
+  if (g === 'female') return tr('女', 'F');
+  return tr('その他', 'Other');
+}
+
+const dateLabel = fmtDate(slot.date);
+const timeLabel = slot.start_time
+  ? `${fmtTime(slot.start_time)}${slot.end_time ? '〜' + fmtTime(slot.end_time) : ''}`
+  : '—';
+const courseLabel = course.name ?? '—';
+
+// 出欠状態の全体まとめ
+const attendedCount = participants.filter(p => p.attendance_status === 'attended').length;
+const anyAttended = attendedCount > 0;
+const allCancelled = participants.length > 0 && participants.every(p => p.attendance_status === 'cancelled');
+---
+<Base
+  title={tr(`受付 — ${res.reservation_number}`, `Check-in — ${res.reservation_number}`)}
+  lang={locale}
+  showLocaleSwitch={true}
+>
+  <main class="rc">
+    <nav class="back">
+      <a href={`/admin/slots/${slot.id ?? ''}` }>← {tr('スロット画面に戻る', 'Back to slot')}</a>
+      <span class="rsv-num">#{res.reservation_number}</span>
+    </nav>
+
+    <!-- Course / date / time: 一目でわかる大きさ -->
+    <section class="headline">
+      <div class="course">🏁 {courseLabel}</div>
+      <div class="when">
+        <span class="date">📅 {dateLabel}</span>
+        <span class="time">⏰ {timeLabel}</span>
+      </div>
+    </section>
+
+    <!-- 参加者カード (特大): 名前 / 年齢 / 身長 -->
+    <section class="participants">
+      <h2>{tr('参加者', 'Participants')} ({participants.length} {tr('名', 'ppl')})</h2>
+      <div class="p-grid">
+        {participants.map((p) => {
+          const birthDate = p.birth_date_snapshot;
+          const age = birthDate ? ageOn(birthDate, slot.date) : p.age_at_booking;
+          const h = p.height_cm_snapshot;
+          const isCancel = p.attendance_status === 'cancelled';
+          const isAttended = p.attendance_status === 'attended';
+          const isNoShow = p.attendance_status === 'no_show';
+          return (
+            <div class={`p-card ${isCancel ? 'is-cancel' : ''} ${isAttended ? 'is-attended' : ''} ${isNoShow ? 'is-noshow' : ''}`}>
+              <div class="p-icon">{genderIcon(p.gender_snapshot)}</div>
+              <div class="p-main">
+                <div class="p-name">{p.name_snapshot}</div>
+                {p.kana_snapshot && <div class="p-kana">{p.kana_snapshot}</div>}
+                <div class="p-info">
+                  <span class="p-chip">{age} {tr('歳', 'yr')}</span>
+                  <span class="p-chip">{genderLabel(p.gender_snapshot)}</span>
+                  {h && <span class="p-chip hi">📏 {h} cm</span>}
+                </div>
+              </div>
+              {isAttended && <div class="p-badge ok">✅ {tr('出席', 'Attended')}</div>}
+              {isCancel && <div class="p-badge cancel">❌ {tr('キャンセル', 'Cancelled')}</div>}
+              {isNoShow && <div class="p-badge noshow">⚠️ {tr('無断欠席', 'No show')}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- 保護者情報 (補助): スタッフが身元確認する用、小さめ -->
+    <section class="guardian">
+      <h3>{tr('保護者情報', 'Guardian')}</h3>
+      <dl>
+        <dt>{tr('お名前', 'Name')}</dt>
+        <dd>{guardian.name ?? '—'}{guardian.kana && <span class="kana"> ({guardian.kana})</span>}</dd>
+        <dt>{tr('電話', 'Phone')}</dt>
+        <dd><a href={`tel:${guardian.phone ?? ''}`}>{guardian.phone ?? '—'}</a></dd>
+        {guardian.email && <>
+          <dt>{tr('メール', 'Email')}</dt>
+          <dd class="small">{guardian.email}</dd>
+        </>}
+        {guardian.address && <>
+          <dt>{tr('住所', 'Address')}</dt>
+          <dd class="small">{guardian.address}</dd>
+        </>}
+      </dl>
+    </section>
+
+    <!-- アクションボタン (特大) -->
+    {!allCancelled && (
+      <section class="actions">
+        <button
+          type="button"
+          class="btn-primary"
+          data-action="attend"
+          data-reservation-id={res.id}
+          disabled={anyAttended}
+        >
+          {anyAttended
+            ? tr('✅ 受付済み', '✅ Checked in')
+            : tr('✅ 受付完了 (全員出席)', '✅ Check in all')}
+        </button>
+        <button
+          type="button"
+          class="btn-secondary"
+          data-action="no_show"
+          data-reservation-id={res.id}
+        >
+          {tr('⚠️ 無断欠席にする', '⚠️ Mark no-show')}
+        </button>
+      </section>
+    )}
+
+    <div id="toast" class="toast" hidden></div>
+  </main>
+</Base>
+
+<script>
+  // 「受付完了」ボタン: /api/admin/reservation-attendance を叩いて全員 attended に。
+  // 「無断欠席」も同じ API で status を変える。
+  const toast = document.getElementById('toast')!;
+  function showToast(msg: string, ok = true) {
+    toast.textContent = msg;
+    toast.className = 'toast ' + (ok ? 'ok' : 'err');
+    toast.hidden = false;
+    setTimeout(() => { toast.hidden = true; }, 3000);
+  }
+  const isEn = document.documentElement.lang === 'en';
+  const tr = (jp: string, en: string) => isEn ? en : jp;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action!;
+      const reservationId = btn.dataset.reservationId!;
+      const status = action === 'attend' ? 'attended' : 'no_show';
+      const confirmMsg = action === 'attend'
+        ? tr('全員を「出席」として記録します。よろしいですか?', 'Mark all as attended. Continue?')
+        : tr('全員を「無断欠席」として記録します。よろしいですか?', 'Mark all as no-show. Continue?');
+      if (!confirm(confirmMsg)) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/reservation-attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservation_id: reservationId, status }),
+        });
+        const body = await res.json() as { ok?: boolean; updated?: number; error?: string };
+        if (!res.ok) {
+          showToast(tr('エラー: ', 'Error: ') + (body.error ?? `HTTP ${res.status}`), false);
+          btn.disabled = false;
+          return;
+        }
+        showToast(tr(`${body.updated} 名の出欠を更新しました`, `Updated ${body.updated} participant(s)`), true);
+        setTimeout(() => { location.reload(); }, 1200);
+      } catch (e) {
+        showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);
+        btn.disabled = false;
+      }
+    });
+  });
+</script>
+
+<style>
+  main.rc {
+    max-width: 920px; margin: 0 auto; padding: 1rem 1rem 3rem;
+    font-size: 1.05rem;
+  }
+  .back {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: .8rem; font-size: .85rem;
+  }
+  .back a { color: var(--ink-3); text-decoration: none; }
+  .back a:hover { text-decoration: underline; }
+  .rsv-num { font-family: var(--mono); color: var(--ink-3); font-size: .8rem; }
+
+  .headline {
+    background: linear-gradient(135deg, var(--sky), var(--sky-deep));
+    color: #fff; border-radius: 16px; padding: 1.4rem 1.6rem;
+    margin-bottom: 1.2rem; box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  }
+  .headline .course { font-size: 2rem; font-weight: 800; margin-bottom: .4rem; }
+  .headline .when { display: flex; gap: 1.6rem; flex-wrap: wrap; font-size: 1.3rem; }
+  .headline .when .date, .headline .when .time { font-weight: 600; }
+
+  section.participants { margin-bottom: 1.4rem; }
+  section.participants h2 {
+    margin: 0 0 .8rem; font-size: 1.3rem; color: var(--ink);
+  }
+  .p-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .8rem;
+  }
+  @media (min-width: 720px) {
+    .p-grid { grid-template-columns: 1fr 1fr; }
+  }
+  .p-card {
+    background: #fff; border: 2px solid var(--line);
+    border-radius: 14px; padding: 1rem 1.1rem;
+    display: flex; align-items: center; gap: 1rem;
+    position: relative;
+  }
+  .p-card.is-attended { border-color: var(--lime-deep); background: #f3fbf3; }
+  .p-card.is-cancel   { opacity: .55; border-color: var(--ink-3); }
+  .p-card.is-noshow   { border-color: #e8a833; background: #fffcf3; }
+  .p-icon { font-size: 3rem; line-height: 1; }
+  .p-main { flex: 1; min-width: 0; }
+  .p-name { font-size: 1.8rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
+  .p-kana { font-size: .9rem; color: var(--ink-3); margin-top: .15rem; }
+  .p-info { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+  .p-chip {
+    background: var(--bg-2); color: var(--ink-2);
+    padding: .25rem .7rem; border-radius: 100px;
+    font-size: .95rem; font-weight: 600;
+  }
+  .p-chip.hi { background: #fff3d9; color: #8a5a00; font-family: var(--mono); }
+  .p-badge {
+    position: absolute; top: .6rem; right: .6rem;
+    padding: .25rem .7rem; border-radius: 100px;
+    font-size: .78rem; font-weight: 700;
+  }
+  .p-badge.ok     { background: var(--lime-deep); color: #fff; }
+  .p-badge.cancel { background: var(--ink-3); color: #fff; }
+  .p-badge.noshow { background: #e8a833; color: #fff; }
+
+  section.guardian {
+    background: var(--bg-2); border-radius: 10px;
+    padding: .9rem 1.1rem; margin-bottom: 1.4rem;
+  }
+  section.guardian h3 {
+    margin: 0 0 .5rem; font-size: .95rem; color: var(--ink-2); font-weight: 700;
+  }
+  section.guardian dl {
+    display: grid; grid-template-columns: 100px 1fr; gap: .3rem .8rem;
+    margin: 0; font-size: .95rem;
+  }
+  section.guardian dt { color: var(--ink-3); font-size: .82rem; }
+  section.guardian dd { margin: 0; color: var(--ink); font-weight: 500; }
+  section.guardian dd.small { font-size: .82rem; color: var(--ink-2); }
+  section.guardian dd a { color: var(--sky-deep); text-decoration: none; font-weight: 600; }
+  section.guardian .kana { color: var(--ink-3); font-size: .82rem; }
+
+  section.actions {
+    display: flex; flex-direction: column; gap: .8rem;
+    margin-bottom: 1.4rem;
+  }
+  @media (min-width: 720px) {
+    section.actions { flex-direction: row; }
+  }
+  .btn-primary, .btn-secondary {
+    appearance: none; border: none; cursor: pointer;
+    font-size: 1.3rem; font-weight: 800;
+    padding: 1.1rem 1.6rem; border-radius: 14px;
+    flex: 1;
+  }
+  .btn-primary {
+    background: var(--lime-deep); color: #fff;
+    box-shadow: 0 4px 12px rgba(66, 171, 73, .2);
+  }
+  .btn-primary:disabled { opacity: .55; cursor: default; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.05); }
+  .btn-secondary {
+    background: #fff; color: #a66b00; border: 2px solid #e8a833;
+  }
+  .btn-secondary:hover:not(:disabled) { background: #fff8e5; }
+
+  .toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    padding: .9rem 1.4rem; border-radius: 100px;
+    font-size: 1rem; font-weight: 700;
+    box-shadow: 0 6px 20px rgba(0,0,0,.15);
+    z-index: 100;
+  }
+  .toast.ok  { background: var(--lime-deep); color: #fff; }
+  .toast.err { background: var(--rose-deep); color: #fff; }
+</style>
