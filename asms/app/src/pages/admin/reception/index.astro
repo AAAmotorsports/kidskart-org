@@ -1,0 +1,264 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { getLocaleFromRequest, type Locale } from '@lib/i18n';
+import { attendanceLabel, attendanceClass } from '@lib/admin';
+
+export const prerender = false;
+
+// =============================================================================
+// /admin/reception
+// -----------------------------------------------------------------------------
+// 受付画面の「今日の一覧」。
+// 以前は無かったので、/admin/reception に ID 無しで来ると 404 だった。
+// 今は: 今日 (JST) 開催スロットの予約を時刻順で並べ、各予約の 🎫 受付画面
+// リンクを出す。
+// ?date=YYYY-MM-DD で他の日も見られる。
+// =============================================================================
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+const locale: Locale = getLocaleFromRequest(Astro.request);
+const isEn = locale === 'en';
+const tr = (jp: string, en: string) => isEn ? en : jp;
+
+const nowJst = new Date(Date.now() + 9 * 3600 * 1000);
+const todayStr = `${nowJst.getUTCFullYear()}-${String(nowJst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowJst.getUTCDate()).padStart(2, '0')}`;
+
+const url = new URL(Astro.request.url);
+const dateParam = url.searchParams.get('date') || '';
+const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr;
+
+const { data: slots, error } = await supabase
+  .from('slots')
+  .select(`
+    id, date, start_time, end_time, status,
+    courses(code, name),
+    reservations(
+      id, reservation_number, status, price_tier, payment_method, paid_at,
+      guardians(name, phone),
+      reservation_participants(id, name_snapshot, attendance_status)
+    )
+  `)
+  .eq('date', targetDate)
+  .neq('status', 'cancelled')
+  .order('start_time', { ascending: true });
+
+if (error) {
+  return new Response(`slots fetch error: ${error.message}`, { status: 500 });
+}
+
+function shiftDate(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const prevDate = shiftDate(targetDate, -1);
+const nextDate = shiftDate(targetDate, +1);
+const weekdayJa = ['日','月','火','水','木','金','土'];
+const weekdayEn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const d = new Date(targetDate + 'T00:00:00');
+const dateLabel = isEn
+  ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} (${weekdayEn[d.getDay()]})`
+  : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${weekdayJa[d.getDay()]})`;
+
+type Res = {
+  id: string;
+  reservation_number: string;
+  status: string;
+  price_tier: string;
+  payment_method?: string | null;
+  paid_at?: string | null;
+  guardians?: { name?: string; phone?: string } | null;
+  reservation_participants?: Array<{ id: string; name_snapshot: string; attendance_status: string }>;
+};
+
+type SlotRow = {
+  id: string;
+  start_time: string;
+  end_time: string | null;
+  status: string;
+  courses?: { name?: string; code?: string } | null;
+  reservations?: Res[];
+};
+---
+<Base
+  title={tr(`受付画面 一覧 — ${dateLabel}`, `Reception list — ${dateLabel}`)}
+  lang={locale}
+  showLocaleSwitch={true}
+>
+  <main class="rc-idx">
+    <nav class="back">
+      <a href="/admin">← {tr('管理トップ', 'Admin')}</a>
+    </nav>
+
+    <h1>{tr('🎫 受付画面 — 本日の予約', '🎫 Reception — Today\'s reservations')}</h1>
+
+    <section class="date-nav">
+      <a class="d-btn" href={`/admin/reception?date=${prevDate}`}>← {tr('前日', 'Prev')}</a>
+      <div class="d-cur">{dateLabel}</div>
+      <a class="d-btn" href={`/admin/reception?date=${nextDate}`}>{tr('翌日', 'Next')} →</a>
+    </section>
+
+    {targetDate !== todayStr && (
+      <p class="warn">
+        ⚠️ {tr('今日以外の日付を表示しています', 'Showing a day other than today')}
+        · <a href={`/admin/reception?date=${todayStr}`}>{tr('今日に戻る', 'Jump to today')}</a>
+      </p>
+    )}
+
+    {(!slots || slots.length === 0) ? (
+      <p class="empty">{tr('この日は開催スロットがありません', 'No slots on this date')}</p>
+    ) : (
+      <div class="slot-list">
+        {(slots as unknown as SlotRow[]).map((s) => {
+          const course = s.courses ?? {};
+          const activeRes = (s.reservations ?? []).filter(r => r.status !== 'cancelled');
+          const cancelledRes = (s.reservations ?? []).filter(r => r.status === 'cancelled');
+          return (
+            <section class="slot-block">
+              <header class="slot-head">
+                <div class="s-time">⏰ {s.start_time?.slice(0,5)}{s.end_time ? '〜' + s.end_time.slice(0,5) : ''}</div>
+                <div class="s-course">{course.name ?? '—'}</div>
+                <a class="s-slot-link" href={`/admin/slots/${s.id}`}>{tr('スロット詳細 →', 'Slot details →')}</a>
+              </header>
+
+              {activeRes.length === 0 && cancelledRes.length === 0 && (
+                <p class="empty-sm">{tr('予約なし', 'No reservations')}</p>
+              )}
+
+              {activeRes.length > 0 && (
+                <ul class="res-list">
+                  {activeRes.map((r) => {
+                    const g = r.guardians ?? {};
+                    const parts = r.reservation_participants ?? [];
+                    const partsLabel = parts.map(p => p.name_snapshot).join('・');
+                    const paid = !!r.paid_at;
+                    return (
+                      <li class="res-item">
+                        <a class="res-link" href={`/admin/reception/${r.id}`}>
+                          <div class="res-row-1">
+                            <span class="res-num">#{r.reservation_number}</span>
+                            {paid
+                              ? <span class="chip chip-paid">💰 {tr('会計済', 'Paid')}</span>
+                              : <span class="chip chip-unpaid">💴 {tr('未会計', 'Unpaid')}</span>}
+                            <span class={`chip chip-tier chip-${r.price_tier}`}>{r.price_tier === 'member' ? tr('会員','Member') : tr('一般','Reg')}</span>
+                          </div>
+                          <div class="res-row-2">👥 {partsLabel} ({parts.length}{tr('名','p')})</div>
+                          <div class="res-row-3">👤 {g.name ?? '—'} · 📞 {g.phone ?? '—'}</div>
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {cancelledRes.length > 0 && (
+                <details class="cancelled-fold">
+                  <summary>⚠️ {tr('キャンセル済み', 'Cancelled')} ({cancelledRes.length})</summary>
+                  <ul class="res-list cancelled">
+                    {cancelledRes.map((r) => {
+                      const g = r.guardians ?? {};
+                      const parts = r.reservation_participants ?? [];
+                      const partsLabel = parts.map(p => p.name_snapshot).join('・');
+                      return (
+                        <li class="res-item">
+                          <a class="res-link" href={`/admin/reception/${r.id}`}>
+                            <div class="res-row-1">
+                              <span class="res-num">#{r.reservation_number}</span>
+                              <span class="chip chip-cancel">❌ {tr('キャンセル', 'Cancelled')}</span>
+                              <span class="restore-hint">↩️ {tr('復活可', 'Can restore')}</span>
+                            </div>
+                            <div class="res-row-2">👥 {partsLabel}</div>
+                            <div class="res-row-3">👤 {g.name ?? '—'}</div>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    )}
+
+    <p class="note">
+      {tr(
+        '予約をタップすると受付画面が開き、出席記録 / 情報編集 / キャンセル予約の復活 ができます。',
+        'Tap a reservation to open the reception page: mark attendance, edit info, or restore cancelled bookings.'
+      )}
+    </p>
+  </main>
+</Base>
+
+<style>
+  main.rc-idx { max-width: 800px; margin: 0 auto; padding: 1rem 1rem 3rem; }
+  .back a { color: var(--ink-3); text-decoration: none; font-size: .85rem; }
+  h1 { font-size: 1.5rem; margin: .5rem 0 1rem; }
+
+  .date-nav { display: flex; align-items: center; gap: 1rem; margin-bottom: .5rem; }
+  .d-btn {
+    padding: .5rem 1rem; border: 1px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--ink); text-decoration: none; font-weight: 700;
+  }
+  .d-cur { flex: 1; text-align: center; font-weight: 800; font-size: 1.05rem; }
+
+  .warn {
+    background: #fffcf3; color: #8a5a00;
+    padding: .5rem .8rem; border-radius: 8px; font-size: .85rem; margin: .5rem 0;
+  }
+  .warn a { color: #8a5a00; }
+
+  .empty, .empty-sm {
+    padding: 1.5rem; background: var(--bg-2); border-radius: 10px;
+    color: var(--ink-3); text-align: center; font-size: .88rem;
+  }
+  .empty-sm { padding: .7rem; margin: .4rem 0 0; }
+
+  .slot-list { display: grid; gap: 1.2rem; margin-top: .6rem; }
+  .slot-block {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 1rem 1.1rem;
+  }
+  .slot-head {
+    display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;
+    margin-bottom: .6rem; padding-bottom: .5rem;
+    border-bottom: 1px dashed var(--line);
+  }
+  .s-time { font-size: 1.2rem; font-weight: 800; font-family: var(--mono); }
+  .s-course { font-size: 1rem; font-weight: 700; color: var(--ink-2); flex: 1; }
+  .s-slot-link { font-size: .78rem; color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+
+  .res-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+  .res-list.cancelled { margin-top: .5rem; }
+  .res-item {}
+  .res-link {
+    display: block; text-decoration: none; color: var(--ink);
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: .7rem .9rem;
+  }
+  .res-link:hover { border-color: var(--sky-deep); background: #f0f8fe; }
+  .res-row-1 { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-bottom: .3rem; }
+  .res-row-2, .res-row-3 { font-size: .88rem; color: var(--ink-2); }
+  .res-row-3 { color: var(--ink-3); margin-top: .2rem; font-size: .82rem; }
+  .res-num { font-family: var(--mono); font-size: .78rem; color: var(--ink-3); font-weight: 700; }
+
+  .chip { padding: .15rem .55rem; border-radius: 100px; font-size: .72rem; font-weight: 700; }
+  .chip-paid { background: #e5f8e8; color: var(--lime-deep); }
+  .chip-unpaid { background: #fff3d9; color: #8a5a00; }
+  .chip-tier.chip-member { background: #fff0f5; color: #c73854; }
+  .chip-tier.chip-regular { background: var(--bg-3); color: var(--ink-2); }
+  .chip-cancel { background: var(--ink-3); color: #fff; }
+  .restore-hint { font-size: .72rem; color: var(--sky-deep); font-weight: 700; }
+
+  .cancelled-fold {
+    margin-top: .6rem; padding: .3rem .5rem;
+    background: var(--bg-2); border-radius: 8px; font-size: .85rem;
+  }
+  .cancelled-fold summary { cursor: pointer; color: var(--ink-3); font-weight: 700; }
+  .cancelled-fold .res-link { background: transparent; opacity: .75; }
+
+  .note { margin-top: 1.5rem; font-size: .78rem; color: var(--ink-3); text-align: center; }
+</style>
