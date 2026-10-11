@@ -560,7 +560,13 @@ const defaultBirth = (() => {
         name: g_name,
         kana: g_kana,
         phone: g_phone,
-        email: g_email || `walkin-${Date.now()}@noemail.local`,  // email は RPC が必須扱いなのでダミー
+        // email は RPC が必須扱いなのでダミーを合成。
+        // Date.now() だと同 ms に 2 件登録で衝突 (guardians が email ベース
+        // dedupe なので別家族が 1 行に merge されてしまう) → crypto.randomUUID() で
+        // 衝突不能にする。TLD は .local なので Resend 側で届かず (@noemail.local)、
+        // cron メール (thankyou/reminder/followup) は 400 で捨てられるのを
+        // 繰り返すため、cron 側で明示的に除外する (noemail.local は送らない)。
+        email: g_email || `walkin-${crypto.randomUUID()}@noemail.local`,
       },
       emergency,
       participants,

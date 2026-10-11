@@ -25,9 +25,11 @@ const today = new Intl.DateTimeFormat('en-CA', {
 
 // Determine which month to show in calendar (default = current month,
 // or the month containing dateFilter, or ymParam).
+// defaultYm は JST の「今日」から導出する。
+// new Date().getFullYear()/getMonth() は Worker (UTC) 時刻を見るので、
+// 00:00-08:59 JST の時間帯は前月を指してしまい、月初に「翌月」が開けなくなる。
 function ymOf(iso: string) { return iso.slice(0, 7); }
-const now = new Date();
-const defaultYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+const defaultYm = ymOf(today);  // today は JST ベースで既に算出済み (上の const today)
 const calYm = /^\d{4}-\d{2}$/.test(ymParam) ? ymParam
   : (dateFilter ? ymOf(dateFilter) : defaultYm);
 const [calYearS, calMonthS] = calYm.split('-');

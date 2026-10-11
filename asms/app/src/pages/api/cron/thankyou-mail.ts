@@ -234,6 +234,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
       continue;
     }
+    // walk-in フォームでは email 任意なので dummy (walkin-<uuid>@noemail.local) を
+    // 入れている。実在しない TLD で Resend が 400 を返し続けて cron が毎日
+    // 赤くなるのを防ぐため、ここで明示的に skip する。
+    if (/@noemail\.local$/i.test(guardian.email)) {
+      for (const r of groupReservations) {
+        skipped++;
+        details.push({ id: r.id, result: 'skipped', note: 'placeholder email (walk-in no-email)' });
+      }
+      continue;
+    }
 
     // group 内全予約 × active 参加者を bookings 配列に集約
     // 各 booking = 1 予約 (= 1 コース)、各 booking の participants = 参加者と

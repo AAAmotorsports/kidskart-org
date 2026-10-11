@@ -40,11 +40,40 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // --- 対象予約の確認 ----------------------------------------------------
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id, status, cancelled_at')
+    .select('id, status, cancelled_at, total_amount')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
+
+  // --- 復活対象の参加者を特定 ----------------------------------------------
+  // 「予約全体キャンセルで同時に失われた参加者」だけ戻す。
+  // それ以前の個別キャンセル (= 保護者が部分キャンセルした人) は
+  // そのまま cancelled のままにする (over-restoration 防止)。
+  //
+  // 判定: 参加者の cancelled_at >= 予約の cancelled_at
+  // (= 予約キャンセル時 or その後に cancelled になった = 予約全体キャンセル由来)
+  //
+  // 補足: 0037 migration 前の既存 cancelled 行は cancelled_at = NULL なので、
+  //       安全側で復活対象外とする (管理者が SQL で手動対応)。
+  const resCancelledAt: string | null = (res as any).cancelled_at ?? null;
+
+  const { data: allCancelled, error: fetchErr } = await supabase
+    .from('reservation_participants')
+    .select('id, cancelled_at')
+    .eq('reservation_id', reservationId)
+    .eq('attendance_status', 'cancelled');
+  if (fetchErr) return json({ error: `participant fetch failed: ${fetchErr.message}` }, 500);
+
+  const toRestore: string[] = [];
+  const preCancelled: string[] = [];
+  for (const p of (allCancelled ?? []) as Array<{ id: string; cancelled_at: string | null }>) {
+    if (resCancelledAt && p.cancelled_at && p.cancelled_at >= resCancelledAt) {
+      toRestore.push(p.id);
+    } else {
+      preCancelled.push(p.id);
+    }
+  }
 
   // --- reservation 本体を復活 --------------------------------------------
   const { error: updErr } = await supabase
@@ -57,20 +86,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('id', reservationId);
   if (updErr) return json({ error: `reservation restore failed: ${updErr.message}` }, 500);
 
-  // --- 参加者を expected に戻す (cancelled になっているもののみ) -----------
-  const { data: restored, error: pErr } = await supabase
-    .from('reservation_participants')
-    .update({ attendance_status: 'expected' })
-    .eq('reservation_id', reservationId)
-    .eq('attendance_status', 'cancelled')
-    .select('id');
-  if (pErr) return json({ error: `participants restore failed: ${pErr.message}` }, 500);
+  // --- 対象参加者だけ expected に戻す (cancelled_at も NULL に) --------------
+  if (toRestore.length > 0) {
+    const { error: pErr } = await supabase
+      .from('reservation_participants')
+      .update({ attendance_status: 'expected', cancelled_at: null })
+      .in('id', toRestore);
+    if (pErr) return json({ error: `participants restore failed: ${pErr.message}` }, 500);
+  }
+
+  // --- total_amount を 原子的に再計算 (RPC) ------------------------------
+  // active = expected + attended + no_show。復活した参加者は expected 扱いで
+  // カウントされる。先に個別キャンセルされていた人は cancelled のままなので
+  // 料金に含まれない。
+  const { data: newTotal, error: rtErr } = await supabase
+    .rpc('recalculate_reservation_total', { p_reservation_id: reservationId });
+  if (rtErr) return json({ error: `total_amount recalc failed: ${rtErr.message}` }, 500);
 
   return json({
     ok: true,
     reservation_status: 'confirmed',
     was_cancelled: res.status === 'cancelled',
-    participants_restored: (restored ?? []).length,
+    participants_restored: toRestore.length,
+    participants_kept_cancelled: preCancelled.length,
+    new_total_amount: newTotal,
   });
 };
 

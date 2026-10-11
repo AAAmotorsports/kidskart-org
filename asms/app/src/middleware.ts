@@ -25,23 +25,23 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const passHash = rt?.ADMIN_PASSWORD_HASH || import.meta.env.ADMIN_PASSWORD_HASH || '';
 
   if (!user || !passHash) {
+    // 認証前のレスポンスには設定キー名を一切含めない (情報漏洩防止)。
+    // 診断情報はサーバーログ (Cloudflare Logs) にだけ出す。
+    // この分岐に入るのは wrangler vars が wipe される既知事故 (CLAUDE.md
+    // 参照) 時のみ。復旧手順を知っているオーナーが
+    // 「Workers Logs」で検索すれば原因が特定できる。
     const rtKeys = rt ? Object.keys(rt).slice(0, 30).sort() : [];
-    const body = [
-      'Admin credentials are not configured.',
-      '',
-      'Expected ADMIN_USERNAME and ADMIN_PASSWORD_HASH in the Worker',
-      'runtime env (wrangler.jsonc vars / Dashboard secret).',
-      '',
-      '--- DEBUG ---',
-      `context.locals.runtime.env present: ${!!rt}`,
-      `runtime.env keys (${rtKeys.length}): ${JSON.stringify(rtKeys)}`,
-      `ADMIN_USERNAME resolved length: ${user.length}`,
-      `ADMIN_PASSWORD_HASH resolved length: ${passHash.length}`,
-    ].join('\n');
-    return new Response(body, {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    console.error('[middleware] admin credentials missing', {
+      runtime_env_present: !!rt,
+      runtime_env_key_count: rtKeys.length,
+      runtime_env_keys: rtKeys,
+      admin_username_length: user.length,
+      admin_password_hash_length: passHash.length,
     });
+    return new Response(
+      '一時的にサービスを利用できません。しばらく経ってから再度お試しください。',
+      { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    );
   }
 
   // ふだんの経路: ログイン済みの Cookie
