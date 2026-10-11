@@ -290,7 +290,7 @@ export function reminderMail(env: Env, r: ReservationForMail, origin: string) {
       myPageUrl(origin, r),
       '',
       '▼ 当日の営業状況 (天候判断)',
-      `${origin}/`,
+      `${origin}/?from=reminder`,
       '雨天等で営業状況が変わる場合は、こちらとメールでお知らせします。',
       ...footer(env),
     ].join('\n'),
@@ -310,7 +310,7 @@ export function thanksMail(env: Env, r: ReservationForMail, origin: string) {
       ...detailLines(r),
       '',
       '▼ 次回のご予約はこちら',
-      `${origin}/reserve`,
+      `${origin}/reserve?from=thanks`,
       ...footer(env),
     ].join('\n'),
   };
@@ -323,7 +323,9 @@ export function thanksMail(env: Env, r: ReservationForMail, origin: string) {
  * 次の機会はもっと先。3 か月おきに 1 通のほうが「そろそろまた」に効く。
  */
 export function followupMail(env: Env, r: ReservationForMail, origin: string) {
-  const link = r.kind === 'rp' ? `${origin}/reserve/rp` : `${origin}/reserve`;
+  // ?from= … このメールから入った予約を数えるための目印 (0034 / aone_mail_effect)。
+  // 予約フォームが sessionStorage に覚え、予約時に referrer として送る
+  const link = r.kind === 'rp' ? `${origin}/reserve/rp?from=followup` : `${origin}/reserve?from=followup`;
   return {
     subject: 'またのご利用をお待ちしております — A-ONE サーキット',
     text: [

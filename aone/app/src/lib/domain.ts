@@ -519,3 +519,35 @@ export function customerTimeLabel(r: {
   if (r.kind === 'rp' && s) return `${s}〜`;
   return timeRangeLabel(r);
 }
+
+/**
+ * お客様がどこから来たか (?from=)。自動メールの効き目を数えるための目印。
+ *
+ * ★ DB 側の check 制約 (0034) と**同じ並び**にしておく。ここに無い値を
+ *   送っても DB が捨てるだけだが、増やすときは両方を直す
+ * ★ 入力経路 (source: web / 電話 / 店頭 / 管理) とは別の軸。
+ *   メールのリンクから入った Web 予約は source=web / referrer=followup になる
+ */
+export const REFERRERS = ['followup', 'thanks', 'reminder', 'widget', 'schedule'] as const;
+
+export type Referrer = (typeof REFERRERS)[number];
+
+export const REFERRER_LABELS: Record<Referrer, string> = {
+  followup: 'フォロー (3 か月後)',
+  thanks: 'お礼 (当日)',
+  reminder: 'リマインド (前日)',
+  widget: 'ホームページの枠',
+  schedule: 'スケジュール',
+};
+
+/** 自動メールのうち、送信数と予約数を並べて見たいもの (管理トップの集計) */
+export const MAIL_REFERRERS: readonly Referrer[] = ['reminder', 'thanks', 'followup'];
+
+/**
+ * URL から拾った ?from= を安全な値に直す。知らない文字列は捨てる
+ * (URL のパラメータは誰でも書き換えられるので、素通りさせると集計が汚れる)
+ */
+export function safeReferrer(v: string | null | undefined): Referrer | null {
+  const s = (v ?? '').trim().toLowerCase();
+  return (REFERRERS as readonly string[]).includes(s) ? (s as Referrer) : null;
+}
