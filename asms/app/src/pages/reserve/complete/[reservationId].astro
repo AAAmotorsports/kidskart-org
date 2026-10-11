@@ -16,7 +16,7 @@ const { data: res, error: resErr } = await supabase
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount, cancel_token, created_at,
-    slots(date, start_time, end_time, courses(code, name)),
+    slots(id, date, start_time, end_time, courses(code, name)),
     guardians(name, email, phone),
     reservation_participants(name_snapshot, kana_snapshot, age_at_booking)
   `)
@@ -205,10 +205,12 @@ const isTaiken = course.code === 'taiken';
 
   <script is:inline define:vars={{
     reservationId,
+    reservationNumber: res.reservation_number,
+    slotId: slot.id ?? '',
     courseCode: course.code || '',
     priceTier: res.price_tier,
     total: res.total_amount,
-    participants: participants.length,
+    participantsCount: participants.length,
     isPending,
   }}>
     // GA4: 予約完了 (最重要 CV)。GA 側で Key Event としてマークする。
@@ -219,15 +221,22 @@ const isTaiken = course.code === 'taiken';
     // に送信フラグを持ち、同一予約では 1 回だけ発火する。
     // localStorage が読めない環境 (private mode 等) は 1 回目相当として
     // 発火させる (計測欠損の方が二重より痛いため)。
+    //
+    // PII ガイドライン: 保護者名・メール・電話は絶対に送らない。
+    // 送信するのは reservation_number (R-xxxx の内部 ID、個人特定不可)、
+    // slot_id, course, tier, 人数, 合計金額 のみ。
     if (!isPending && typeof window.asmsTrack === 'function') {
       const dedupKey = 'asms:bc_sent:' + reservationId;
       let alreadySent = false;
       try { alreadySent = !!localStorage.getItem(dedupKey); } catch (_e) { /* private mode */ }
       if (!alreadySent) {
         window.asmsTrack('booking_complete', {
+          transaction_id: reservationNumber,  // GA4 標準 (purchase 系) のユニーク ID
+          reservation_number: reservationNumber,
+          slot_id: slotId,
           course: courseCode,
           price_tier: priceTier,
-          participants: participants,
+          participants_count: participantsCount,
           value: total,
           currency: 'JPY',
         });

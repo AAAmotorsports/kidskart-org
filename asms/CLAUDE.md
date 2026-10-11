@@ -256,9 +256,57 @@ reserve.kidskart.org (ASMS) を **同一データストリーム** で計測す�
    `reserve.kidskart.org` を追加 (self referral の除外)
 3. `booking_complete` を「キーイベント」としてマーク
 
-**プライバシー**: PII は params に載せない。GA には slot_id / course_code /
-price_tier / participants 人数 / total_amount (¥) のみ送る。保護者名・
-メール・電話は絶対送らない。
+**プライバシー**: PII は params に載せない。GA には reservation_number
+(内部 ID、個人特定不可) / slot_id / course_code / price_tier /
+participants_count / total_amount (¥) のみ送る。保護者名・メール・電話は
+絶対送らない。
+
+**booking_complete の params** (2026-10-11 強化):
+- `transaction_id`: reservation_number (GA4 標準の purchase 系 dedup キー)
+- `reservation_number`: 同上 (レポート検索用に名前付きでも入れる)
+- `slot_id`: スロット単位の CV 分析用
+- `course` / `price_tier` / `participants_count` / `value` (JPY) / `currency`
+
+**スタッフトラフィック除外** (2026-10-11): `/admin/*` と `/api/*` 配下の
+Astro ページでは `Base.astro` が gtag タグ自体を出さない (`window.asmsTrack`
+は no-op を差すのでページ側の呼び出しは安全)。これで集客 → 予約完了ファネル
+を自社オペの page_view が汚染しない。
+
+### UTM 命名規則
+
+集客施策ごとに流入元を分けて計測するため、`reserve.kidskart.org/reserve/`
+へのリンクには UTM を付ける。基本テンプレ:
+
+```
+?utm_source=<流入元>&utm_medium=<媒体種別>&utm_campaign=reserve_cta&utm_content=<配置>
+```
+
+**自社サイト (kidskart.org) 内 CTA** (2026-10-11 配線):
+- `utm_source=kidskart_org, utm_medium=site, utm_campaign=reserve_cta`
+- `utm_content` で位置を区別: `nav` / `hero` / `final_cta` / `footer` /
+  `goyoyaku_redirect` (ご予約.html の自動遷移) /
+  `goyoyaku_manual` (ご予約.html の手動ボタン)
+
+**パートナーサイト** (外部設定依頼): スポンサー・提携先が自サイトから
+リンクを張るときは以下の URL を使ってもらう。レポートの「集客」→「トラフィック
+獲得」で `utm_source` 別に予約完了が見える:
+
+| パートナー | 配置 | 貼ってもらう URL |
+|-----------|------|-------|
+| エーワンサーキット (rk-a1.com) | トップ・リンク集 | `https://reserve.kidskart.org/reserve/?utm_source=rk_a1&utm_medium=partner&utm_campaign=reserve_cta&utm_content=rk_a1_site` |
+| 福岡トヨペット | スポンサーページ | `https://reserve.kidskart.org/reserve/?utm_source=fukuoka_toyopet&utm_medium=sponsor&utm_campaign=reserve_cta&utm_content=toyopet_sponsor` |
+| 福岡トヨペット (チラシ QR) | 配布物 | `https://reserve.kidskart.org/reserve/?utm_source=fukuoka_toyopet&utm_medium=flyer&utm_campaign=reserve_cta&utm_content=toyopet_qr` |
+
+**ガイドライン**:
+- `utm_source` は英数字 + `_` のみ (ハイフン・空白禁止、URL 混乱回避)
+- `utm_medium` は分類: `site` (自社) / `partner` (提携) / `sponsor`
+  (協賛) / `flyer` (紙) / `email` / `social`
+- `utm_campaign` はキャンペーン単位。恒常導線は `reserve_cta` 固定、
+  期間限定施策 (「夏休みキャンペーン 2026」等) は別 campaign を切る
+- 同じサイト内で位置を区別したいときは `utm_content` を使う
+  (nav / hero / footer / sidebar など)
+- `?utm_*` が付いた状態で予約完了すると、GA の landing_page レポートで
+  CV が流入元別に紐づく
 
 ### サンキューメールの CTA 出し分けポリシー
 

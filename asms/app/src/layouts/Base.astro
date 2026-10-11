@@ -35,8 +35,17 @@ const showAdminBar =
 // client_id / session_id を継続させる)。GA 側 データストリーム設定で
 // kidskart.org と reserve.kidskart.org を「クロスドメインを構成」に登録し、
 // reserve.kidskart.org を「除外する参照のリスト」にも入れる必要あり。
+//
+// 管理画面 (/admin/*) ・API (/api/*) ・内部ツール系はスタッフトラフィック
+// なので集客 → 予約完了ファネルを汚染しないよう GA 送信を抑制する。
+// (ユーザー向けフローは / (ランディング), /reserve/* (ウィザード), /auth/* のみ)
 const env = envFrom(Astro.locals);
 const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
+const isStaffPath =
+  adminPath === '/admin' ||
+  adminPath.startsWith('/admin/') ||
+  adminPath.startsWith('/api/');
+const emitGa = !!gaId && !isStaffPath;
 ---
 <!doctype html>
 <html lang={lang}>
@@ -48,7 +57,7 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>{title}</title>
-  {gaId && (
+  {emitGa && (
     <>
       <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}></script>
       <script is:inline define:vars={{ gaId }}>
@@ -73,9 +82,10 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
       </script>
     </>
   )}
-  {!gaId && (
+  {!emitGa && (
     <script is:inline>
-      // GA 未設定 (dev / preview) でも asmsTrack を呼べるように no-op を差す。
+      // GA 未設定 or 管理画面 (/admin/*) 配下では no-op を差して、
+      // ページ側の asmsTrack(...) 呼び出しが例外にならないようにする。
       window.asmsTrack = function () {};
     </script>
   )}
