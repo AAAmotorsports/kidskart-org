@@ -72,6 +72,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const activeIdSet = new Set(currentlyActive.map((p) => p.id));
   const requestedActive = requestedPartIds.filter((id) => activeIdSet.has(id));
 
+  // Guard: participant_ids を送ってきたが有効な active ID が 1 つも無い
+  //        (無効 ID だけ / 既 cancelled だけ) の時、silent に whole-cancel に
+  //        落ちていた → 400 で明示エラー。
+  //        これが無いと「1 人だけキャンセル」のつもりで全員キャンセル + 全体
+  //        キャンセルメールが飛ぶ事故が起きうる。
+  if (requestedPartIds.length > 0 && requestedActive.length === 0) {
+    return json({
+      error: '指定された参加者が見つからないか、既にキャンセル済みです。参加者 ID をご確認ください。',
+      hint: 'no_active_participants_in_request',
+    }, 400);
+  }
+
   const isPartial =
     requestedActive.length > 0 &&
     requestedActive.length < currentlyActive.length;
