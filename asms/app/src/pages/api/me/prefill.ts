@@ -45,12 +45,26 @@ export const GET: APIRoute = async ({ request, locals }) => {
     .maybeSingle();
 
   if (!guardian && userData.user.email) {
-    const { data: byEmail } = await admin
+    // 情報漏洩防止:
+    //   email で見つかった guardian が「別の auth user に既に紐づいている」場合、
+    //   そのデータを返してはいけない (admin が同じ email でユーザー再作成した時、
+    //   新 JWT で前の家族の PII が読まれる脆弱性)。
+    //   安全なのは:
+    //     - auth_user_id IS NULL (まだ誰にも紐づいていない空きデータ)
+    //     - auth_user_id = this authUserId (自分自身に紐づけ済みで直接 hit しなかっただけ)
+    //   いずれかの場合のみ返す。
+    const { data: byEmailRow } = await admin
       .from('guardians')
-      .select('id, name, kana, phone, email, postal_code, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation')
+      .select('id, name, kana, phone, email, postal_code, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation, auth_user_id')
       .eq('email', userData.user.email)
       .maybeSingle();
-    guardian = byEmail;
+    const row: any = byEmailRow;
+    if (row && (row.auth_user_id == null || row.auth_user_id === authUserId)) {
+      // 返す row から auth_user_id は捨てる (クライアントに不要)
+      const { auth_user_id: _ignored, ...safe } = row;
+      guardian = safe as any;
+    }
+    // それ以外 (別人の auth_user_id に紐づいている) は null のまま → 空レスポンス
   }
 
   if (!guardian) {

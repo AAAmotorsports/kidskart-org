@@ -97,19 +97,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let reservation_status_updated: string | null = null;
   if (resStatusTarget) {
     // 現在値を確認して、必要な時だけ UPDATE (無駄な WAL を避けつつ
-    // cancelled 予約の status を上書きしてしまう事故も予防)。
+    // cancelled / pending_approval 予約の status を上書きしてしまう事故も予防)。
     const { data: curRes } = await supabase
       .from('reservations')
       .select('status')
       .eq('id', reservationId)
       .maybeSingle();
     const curStatus = (curRes as any)?.status;
-    if (curStatus && curStatus !== 'cancelled' && curStatus !== resStatusTarget) {
+    // cancelled: キャンセル予約の状態は触らない (別経路で管理)
+    // pending_approval: 承認待ちは管理者承認を経て 'confirmed' になるべきで、
+    //                   attendance 操作で勝手に 'confirmed' に昇格させない。
+    //                   承認後 (status='confirmed') で改めて attendance 入力時に同期される。
+    const PROTECTED = new Set(['cancelled', 'pending_approval', 'draft']);
+    if (curStatus && !PROTECTED.has(curStatus) && curStatus !== resStatusTarget) {
       const { error: rErr } = await supabase
         .from('reservations')
         .update({ status: resStatusTarget })
         .eq('id', reservationId)
-        .neq('status', 'cancelled');  // cancelled には絶対触らない
+        // 二重防御: UPDATE 時点でも cancelled/pending には触らない
+        .not('status', 'in', '(cancelled,pending_approval,draft)');
       if (rErr) {
         console.warn('[reservation-attendance] status sync failed:', rErr.message);
       } else {

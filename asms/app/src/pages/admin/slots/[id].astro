@@ -14,6 +14,10 @@ import {
   skillLabel,
 } from '@lib/admin';
 
+// 入力バリデーション用 enum セット (form POST で来た値を事前に弾く)
+const ATTENDANCE_CODE_SET = new Set(ATTENDANCE_STATUSES.map((a) => a.code));
+const SKILL_CODE_SET = new Set(SKILL_LEVELS.map((s) => s.code));
+
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
 
@@ -37,6 +41,11 @@ if (Astro.request.method === 'POST') {
     const partId = form.get('participant_id') as string;
     const status = form.get('status') as string;
     if (!partId || !status) return back('', 'participant_id と status は必須です');
+    // enum 事前バリデーション: 不正値は Postgres の 22P02 ではなく明確な
+    // メッセージで戻す (toast にそのまま出す)。
+    if (!ATTENDANCE_CODE_SET.has(status as any)) {
+      return back('', `出欠ステータス "${status}" は不正です。許可: ${[...ATTENDANCE_CODE_SET].join(', ')}`);
+    }
     const { error } = await supabase
       .from('reservation_participants')
       .update({ attendance_status: status })
@@ -468,6 +477,13 @@ if (Astro.request.method === 'POST') {
     const toLevel = form.get('to_level') as string;
     const reason = ((form.get('reason') as string) || '').trim() || null;
     if (!partId || !customerId || !toLevel) return back('', '必要な項目が不足しています');
+    // enum 事前バリデーション (fromLevel が null はこの操作では許容)
+    if (!SKILL_CODE_SET.has(toLevel as any)) {
+      return back('', `習熟度 "${toLevel}" は不正です。許可: ${[...SKILL_CODE_SET].join(', ')}`);
+    }
+    if (fromLevel && !SKILL_CODE_SET.has(fromLevel as any)) {
+      return back('', `元の習熟度 "${fromLevel}" は不正です。許可: ${[...SKILL_CODE_SET].join(', ')}`);
+    }
 
     const { error: pErr } = await supabase.from('customer_progressions').insert({
       customer_id: customerId,

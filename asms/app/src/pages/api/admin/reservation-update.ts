@@ -94,12 +94,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
       if ('birth_date_snapshot' in p) {
         const v = typeof p.birth_date_snapshot === 'string' ? p.birth_date_snapshot.trim() : '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        const validation = validateBirthDate(v, slotDate);
+        if (validation.ok) {
           update.birth_date_snapshot = v;
           // 誕生日が変わったら age_at_booking も再計算 (スロット開催日基準)
           if (slotDate) {
             update.age_at_booking = computeAge(v, slotDate);
           }
+        } else if (validation.reason) {
+          // 明示的な 400 で原因を伝える (DB の 22P02 を素通りさせない)
+          return json({ error: `生年月日が不正です (participant ${p.id}): ${validation.reason}` }, 400);
         }
       }
       if (Object.keys(update).length === 0) continue;
@@ -132,4 +136,39 @@ function computeAge(birthDate: string, onDate: string): number {
   let age = oy - by;
   if (om < bm || (om === bm && od < bd)) age--;
   return Math.max(0, age);
+}
+
+/**
+ * birth_date_snapshot のバリデーション。
+ * - 'YYYY-MM-DD' 形式
+ * - 年は 1900〜現在年 (未来の誕生日は不許可)
+ * - 月は 1-12、日は 1-31 (より厳密に実在日付であること、Date で round-trip 確認)
+ * - 任意の slotDate より未来だとエラー (参加者が未来生まれは不可)
+ */
+function validateBirthDate(v: string, slotDate: string | undefined): { ok: boolean; reason?: string } {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return { ok: false, reason: 'YYYY-MM-DD 形式ではありません' };
+  }
+  const [y, m, d] = v.split('-').map((n) => parseInt(n, 10));
+  const currentYear = new Date().getUTCFullYear();
+  if (y < 1900 || y > currentYear) {
+    return { ok: false, reason: `年は 1900〜${currentYear} の範囲で指定してください (指定: ${y})` };
+  }
+  if (m < 1 || m > 12) {
+    return { ok: false, reason: `月は 1〜12 の範囲で指定してください (指定: ${m})` };
+  }
+  if (d < 1 || d > 31) {
+    return { ok: false, reason: `日は 1〜31 の範囲で指定してください (指定: ${d})` };
+  }
+  // round-trip check: 2月30日 等の実在しない日付を弾く
+  // Date コンストラクタは 2月30日 → 3月2日 に正規化するので、戻った値が一致するか見る
+  const roundTrip = new Date(Date.UTC(y, m - 1, d));
+  if (roundTrip.getUTCFullYear() !== y || roundTrip.getUTCMonth() !== m - 1 || roundTrip.getUTCDate() !== d) {
+    return { ok: false, reason: `${y}年${m}月${d}日 は存在しない日付です` };
+  }
+  // slotDate が指定されていて、birth_date が未来 → 未参加の未来児
+  if (slotDate && v > slotDate) {
+    return { ok: false, reason: `生年月日 (${v}) が開催日 (${slotDate}) より後です` };
+  }
+  return { ok: true };
 }

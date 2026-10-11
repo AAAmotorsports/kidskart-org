@@ -46,6 +46,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
 
+  // --- status gate ---------------------------------------------------------
+  // 「復活」は cancelled 予約を元に戻す操作。
+  // confirmed / attended / no_show / pending_approval 等に POST された場合、
+  // 無条件で status='confirmed' + cancelled_at=null を書くと:
+  //   - 出席記録済みの attended / no_show 予約が「予約中」に戻ってしまう
+  //   - 元のキャンセル履歴 (cancelled_at, cancelled_reason) が消える
+  //   - 承認待ちが承認スキップされて 'confirmed' になる
+  // いずれも誤操作ないし replay 攻撃で起こりうる → 明示的に 409 で弾く。
+  if ((res as any).status !== 'cancelled') {
+    return json({
+      error: `この予約は現在 "${(res as any).status}" のため復活対象外です。復活は cancelled 状態の予約のみ可能です。`,
+      hint: 'not_cancelled',
+      current_status: (res as any).status,
+    }, 409);
+  }
+
   // --- 復活対象の参加者を特定 ----------------------------------------------
   // 「予約全体キャンセルで同時に失われた参加者」だけ戻す。
   // それ以前の個別キャンセル (= 保護者が部分キャンセルした人) は
