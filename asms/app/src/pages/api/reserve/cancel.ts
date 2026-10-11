@@ -485,7 +485,9 @@ async function sendCancellationEmailToAdmin(env: Env, args: {
   const subject = `【予約キャンセル】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} ${args.guardianName}様`;
 
   const slotUrl = `${args.origin}/admin/slots/${args.slotId}`;
-  const resUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
+  // 受付画面には「↩️ 復活」ボタンがあるので、誤キャンセル対応はこちら経由。
+  // (customer-facing /reserve/complete には復活ボタン無し)
+  const receptionUrl = `${args.origin}/admin/reception/${args.reservationId}`;
 
   const text = [
     '予約がキャンセルされました。',
@@ -500,8 +502,8 @@ async function sendCancellationEmailToAdmin(env: Env, args: {
     `▼ スロット詳細`,
     slotUrl,
     '',
-    `▼ 予約詳細`,
-    resUrl,
+    `▼ 受付画面 (誤キャンセルの場合はこちらから「↩️ 復活」できます)`,
+    receptionUrl,
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     'ASMS 自動通知',
@@ -528,9 +530,12 @@ async function sendCancellationEmailToAdmin(env: Env, args: {
     </table>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
       <a href="${slotUrl}" style="flex:1;padding:.6rem 1rem;background:#3aa9e8;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.84rem;text-align:center">📋 スロット詳細</a>
-      <a href="${resUrl}" style="flex:1;padding:.6rem 1rem;background:#f4f9fc;color:#163048;border:1px solid #d8e6f0;text-decoration:none;border-radius:6px;font-weight:700;font-size:.84rem;text-align:center">予約詳細</a>
+      <a href="${receptionUrl}" style="flex:1;padding:.6rem 1rem;background:#06c755;color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.84rem;text-align:center">↩️ 復活/受付画面</a>
     </div>
-    <p style="margin:1rem 0 0;padding:.6rem;background:rgba(255,201,67,.1);border:1px solid rgba(255,201,67,.4);border-radius:6px;font-size:.78rem">
+    <p style="margin:.8rem 0 0;padding:.6rem;background:#f0f8fe;border:1px solid #cde8f8;border-radius:6px;font-size:.76rem;color:#1a5a8a;line-height:1.5">
+      誤キャンセルの場合は「↩️ 復活/受付画面」から 1 タップで予約を復活できます。
+    </p>
+    <p style="margin:.6rem 0 0;padding:.6rem;background:rgba(255,201,67,.1);border:1px solid rgba(255,201,67,.4);border-radius:6px;font-size:.78rem">
       キャンセル料の判定・徴収が必要な場合はキャンセルポリシーに沿って対応してください。
     </p>
   </div>
