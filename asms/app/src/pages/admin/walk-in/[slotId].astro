@@ -170,8 +170,10 @@ const defaultBirth = (() => {
           <input type="tel" name="g_phone" autocomplete="tel" placeholder="090..." required />
         </div>
         <div class="field">
-          <label>{tr('メール', 'Email')}</label>
-          <input type="email" name="g_email" autocomplete="email" placeholder={tr('(任意) 完了通知を送ります', '(optional)')} />
+          <label>{tr('メール', 'Email')} <span class="req">*</span></label>
+          <input type="email" name="g_email" autocomplete="email"
+            placeholder={tr('サンキューメール・リマインド配信に使います', 'For thank-you / reminder emails')}
+            required />
         </div>
         <div class="field">
           <label>{tr('住所 (都道府県・市区町村)', 'Address (prefecture / city)')}</label>
@@ -536,8 +538,13 @@ const defaultBirth = (() => {
     const g_kana = fd.get('g_kana')?.toString().trim();
     const g_phone = fd.get('g_phone')?.toString().trim();
     const g_email = fd.get('g_email')?.toString().trim();
-    if (!g_name || !g_kana || !g_phone) {
-      showErr(tr('保護者情報 (お名前・フリガナ・電話) は必須です', 'Guardian name, kana and phone are required'));
+    if (!g_name || !g_kana || !g_phone || !g_email) {
+      showErr(tr('保護者情報 (お名前・フリガナ・電話・メール) は必須です', 'Guardian name, kana, phone and email are required'));
+      return;
+    }
+    // メール形式を最低限 check (ブラウザの type=email と二重防御)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(g_email)) {
+      showErr(tr('メールアドレスの形式が正しくありません', 'Email format is invalid'));
       return;
     }
 
@@ -581,13 +588,7 @@ const defaultBirth = (() => {
         kana: g_kana,
         phone: g_phone,
         address: combinedAddress || undefined,
-        // email は RPC が必須扱いなのでダミーを合成。
-        // Date.now() だと同 ms に 2 件登録で衝突 (guardians が email ベース
-        // dedupe なので別家族が 1 行に merge されてしまう) → crypto.randomUUID() で
-        // 衝突不能にする。TLD は .local なので Resend 側で届かず (@noemail.local)、
-        // cron メール (thankyou/reminder/followup) は 400 で捨てられるのを
-        // 繰り返すため、cron 側で明示的に除外する (noemail.local は送らない)。
-        email: g_email || `walkin-${crypto.randomUUID()}@noemail.local`,
+        email: g_email,
       },
       emergency,
       participants,
