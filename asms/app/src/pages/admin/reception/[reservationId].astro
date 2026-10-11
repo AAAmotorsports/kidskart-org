@@ -105,6 +105,8 @@ const courseLabel = course.name ?? '—';
 const attendedCount = participants.filter(p => p.attendance_status === 'attended').length;
 const anyAttended = attendedCount > 0;
 const allCancelled = participants.length > 0 && participants.every(p => p.attendance_status === 'cancelled');
+// 予約全体のキャンセル状態 (reservations.status か、全員 cancelled か)
+const resCancelled = (res as any).status === 'cancelled' || allCancelled;
 ---
 <Base
   title={tr(`受付 — ${res.reservation_number}`, `Check-in — ${res.reservation_number}`)}
@@ -118,13 +120,29 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
     </nav>
 
     <!-- Course / date / time: 一目でわかる大きさ -->
-    <section class="headline">
+    <section class={`headline ${resCancelled ? 'is-cancelled' : ''}`}>
       <div class="course">🏁 {courseLabel}</div>
       <div class="when">
         <span class="date">📅 {dateLabel}</span>
         <span class="time">⏰ {timeLabel}</span>
       </div>
     </section>
+
+    <!-- キャンセル予約の警告 + 復活ボタン -->
+    {resCancelled && (
+      <section class="cancel-banner">
+        <div class="cb-title">❌ {tr('この予約はキャンセル済みです', 'This reservation is cancelled')}</div>
+        <div class="cb-detail">
+          {tr(
+            '誤キャンセルの場合は下のボタンで予約を復活できます (ステータス → confirmed、参加者 → expected)。',
+            'If cancelled by mistake, you can restore it (status → confirmed, participants → expected).'
+          )}
+        </div>
+        <button type="button" class="btn-restore" data-reservation-id={res.id}>
+          ↩️ {tr('予約を復活する', 'Restore this reservation')}
+        </button>
+      </section>
+    )}
 
     <!-- 参加者カード (特大): 名前 / 年齢 / 身長 -->
     <section class="participants">
@@ -274,7 +292,7 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
     </section>
 
     <!-- アクションボタン (特大) -->
-    {!allCancelled && (
+    {!resCancelled && (
       <section class="actions">
         <button
           type="button"
@@ -386,6 +404,40 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
     }
   });
 
+  // ---- 予約の復活 (キャンセル取消) --------------------------------------
+  document.querySelector<HTMLButtonElement>('.btn-restore')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget as HTMLButtonElement;
+    const reservationId = btn.dataset.reservationId!;
+    if (!confirm(tr(
+      'この予約を復活します。\n・ステータスを confirmed に戻します\n・参加者を expected に戻します\nよろしいですか?',
+      'Restore this reservation?\n- Status → confirmed\n- Participants → expected\nContinue?',
+    ))) return;
+
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = tr('復活中…', 'Restoring...');
+    try {
+      const r = await fetch('/api/admin/reservation-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservation_id: reservationId }),
+      });
+      const body = await r.json() as { ok?: boolean; participants_restored?: number; error?: string };
+      if (!r.ok) {
+        showToast(tr('エラー: ', 'Error: ') + (body.error ?? `HTTP ${r.status}`), false);
+        btn.disabled = false;
+        btn.textContent = original;
+        return;
+      }
+      showToast(tr(`復活しました (参加者 ${body.participants_restored ?? 0} 名)`, `Restored (${body.participants_restored ?? 0} participants)`), true);
+      setTimeout(() => { location.reload(); }, 1000);
+    } catch (e) {
+      showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.action!;
@@ -440,6 +492,30 @@ const allCancelled = participants.length > 0 && participants.every(p => p.attend
   .headline .course { font-size: 2rem; font-weight: 800; margin-bottom: .4rem; }
   .headline .when { display: flex; gap: 1.6rem; flex-wrap: wrap; font-size: 1.3rem; }
   .headline .when .date, .headline .when .time { font-weight: 600; }
+  .headline.is-cancelled {
+    background: linear-gradient(135deg, #c9d4df, #8ca2b7);
+    filter: grayscale(.2);
+  }
+
+  /* ---- キャンセル予約の警告 + 復活ボタン ---- */
+  .cancel-banner {
+    background: #fff0f0; border: 2px solid var(--rose-deep); border-radius: 14px;
+    padding: 1.1rem 1.3rem; margin-bottom: 1.2rem;
+  }
+  .cb-title {
+    font-size: 1.25rem; font-weight: 800; color: var(--rose-deep);
+    margin-bottom: .4rem;
+  }
+  .cb-detail { font-size: .9rem; color: var(--ink-2); margin-bottom: .8rem; line-height: 1.5; }
+  .btn-restore {
+    appearance: none; cursor: pointer; border: none;
+    background: var(--sky-deep); color: #fff;
+    font-size: 1.1rem; font-weight: 800;
+    padding: .9rem 1.4rem; border-radius: 12px;
+    box-shadow: 0 3px 10px rgba(26, 127, 184, .25);
+  }
+  .btn-restore:disabled { opacity: .5; cursor: wait; }
+  .btn-restore:hover:not(:disabled) { filter: brightness(1.08); }
 
   section.participants { margin-bottom: 1.4rem; }
   section.participants h2 {
