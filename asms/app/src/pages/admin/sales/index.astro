@@ -10,7 +10,7 @@ const supabase = getSupabaseAdmin(env);
 // 期間モード決定 (月別 / 年別 / 期間指定)
 // ============================================================================
 const url = new URL(Astro.request.url);
-const mode = (url.searchParams.get('mode') || 'month') as 'month' | 'year' | 'range';
+const mode = (url.searchParams.get('mode') || 'month') as 'day' | 'month' | 'year' | 'range';
 const excludeRain = url.searchParams.get('exclude_rain') === '1';
 const now = new Date();
 
@@ -31,14 +31,36 @@ const ymParam = (url.searchParams.get('ym') || '').trim();
 const yParam = (url.searchParams.get('y') || '').trim();
 const rangeFromParam = (url.searchParams.get('from') || '').trim();
 const rangeToParam = (url.searchParams.get('to') || '').trim();
+const dayParam = (url.searchParams.get('d') || '').trim();
 
 // current-period defaults for controls (kept for UI reuse below)
 const defaultYm = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 const defaultY = String(now.getFullYear());
 const defaultFrom = isoDay(new Date(now.getFullYear(), now.getMonth() - 2, 1));
 const defaultTo = isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+// 今日 (JST ベース): サーバーが UTC で動いていても、JST の「今日」を正しく出すため +9h して ISO 切り出し
+const todayJstStr = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
-if (mode === 'year') {
+if (mode === 'day') {
+  // 1 日モード: ?d=YYYY-MM-DD 指定、省略時は今日 (JST)
+  const dstr = /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : todayJstStr;
+  const [dy, dm, dd] = dstr.split('-').map(Number);
+  startIso = jstMidnightUtcIso(dy, dm, dd);
+  endIso   = jstMidnightUtcIso(dy, dm, dd + 1);  // 翌日 00:00 JST
+  startDate = dstr;
+  const nd = new Date(dy, dm - 1, dd + 1);
+  endDateExcl = isoDay(nd);
+  // YoY: 同じ日付の 1 年前
+  yoyStartIso   = jstMidnightUtcIso(dy - 1, dm, dd);
+  yoyEndIso     = jstMidnightUtcIso(dy - 1, dm, dd + 1);
+  yoyStartDate  = `${dy - 1}-${pad2(dm)}-${pad2(dd)}`;
+  const yoyNd   = new Date(dy - 1, dm - 1, dd + 1);
+  yoyEndDateExcl = isoDay(yoyNd);
+  const weekdayJa = ['日','月','火','水','木','金','土'];
+  const wd = new Date(dstr + 'T00:00:00').getDay();
+  periodLabel = `${dy}年${dm}月${dd}日 (${weekdayJa[wd]})` + (dstr === todayJstStr ? ' · 今日' : '');
+  yoyLabel    = `${dy - 1}年${dm}月${dd}日 (前年同日)`;
+} else if (mode === 'year') {
   const y = /^\d{4}$/.test(yParam) ? parseInt(yParam, 10) : now.getFullYear();
   startIso = jstMidnightUtcIso(y, 1, 1);
   endIso = jstMidnightUtcIso(y + 1, 1, 1);
@@ -334,6 +356,7 @@ const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
 function buildUrl(next: Record<string, string>) {
   const q = new URLSearchParams();
   q.set('mode', next.mode ?? mode);
+  if ((next.mode ?? mode) === 'day')   q.set('d', next.d ?? dayParam ?? todayJstStr);
   if ((next.mode ?? mode) === 'month') q.set('ym', next.ym ?? ymParam ?? defaultYm);
   if ((next.mode ?? mode) === 'year') q.set('y', next.y ?? yParam ?? defaultY);
   if ((next.mode ?? mode) === 'range') {
@@ -354,12 +377,24 @@ function buildUrl(next: Record<string, string>) {
     </header>
 
     <section class="mode-tabs">
+      <a class={`tab ${mode === 'day' ? 'active' : ''}`} href={buildUrl({ mode: 'day', d: todayJstStr })}>☀️ 今日</a>
       <a class={`tab ${mode === 'month' ? 'active' : ''}`} href={buildUrl({ mode: 'month' })}>📅 月別</a>
       <a class={`tab ${mode === 'year' ? 'active' : ''}`} href={buildUrl({ mode: 'year' })}>📆 年別</a>
       <a class={`tab ${mode === 'range' ? 'active' : ''}`} href={buildUrl({ mode: 'range' })}>📊 期間指定</a>
     </section>
 
     <section class="period-form">
+      {mode === 'day' && (
+        <form method="get" class="pf">
+          <input type="hidden" name="mode" value="day" />
+          {excludeRain && <input type="hidden" name="exclude_rain" value="1" />}
+          <input type="date" name="d" value={dayParam || todayJstStr} />
+          <button type="submit" class="btn-jump">表示</button>
+          {dayParam && dayParam !== todayJstStr && (
+            <a class="btn-today-jump" href={buildUrl({ mode: 'day', d: todayJstStr })}>→ 今日</a>
+          )}
+        </form>
+      )}
       {mode === 'month' && (
         <form method="get" class="pf">
           <input type="hidden" name="mode" value="month" />
@@ -786,6 +821,14 @@ function buildUrl(next: Record<string, string>) {
     border: none; border-radius: 6px; cursor: pointer;
     background: var(--sky); color: #fff;
   }
+  .btn-today-jump {
+    display: inline-block; margin-left: .4rem;
+    padding: .4rem .8rem; font-size: .78rem; font-weight: 700;
+    background: var(--bg-2); color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 6px;
+    text-decoration: none;
+  }
+  .btn-today-jump:hover { background: var(--sky-mist); color: var(--sky-deep); border-color: var(--sky-deep); }
 
   .rain-filter { margin: 0 0 1rem; }
   .rf-toggle {
