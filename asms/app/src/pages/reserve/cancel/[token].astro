@@ -12,7 +12,9 @@ const isEn = locale === 'en';
 if (!token) return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
 
 // Load reservation by cancel token
-const { data: res } = await admin
+// DB エラーと「該当なし」を区別する: error を無視すると 500 を 404 相当表示に
+// してしまい、本当の原因 (RLS/サービス停止) を隠してしまう。
+const { data: res, error: resErr } = await admin
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount,
@@ -23,6 +25,15 @@ const { data: res } = await admin
   `)
   .eq('cancel_token', token)
   .maybeSingle();
+
+if (resErr) {
+  return new Response(
+    isEn
+      ? `Reservation lookup failed. Please contact info@kidskart.org (ref: ${resErr.message})`
+      : `予約情報の取得に失敗しました。お手数ですが info@kidskart.org までご連絡ください (ref: ${resErr.message})`,
+    { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
 
 const slot: any = res?.slots ?? {};
 const course: any = slot.courses ?? {};

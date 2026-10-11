@@ -262,12 +262,22 @@ const msg = url.searchParams.get('msg');
 const err = url.searchParams.get('err');
 
 // Load the customer
+// cErr を無視して redirect すると「存在しない」と「DB エラー」が区別できない。
+// 明示的にエラーメッセージを返す。
 const { data: customer, error: cErr } = await supabase
   .from('customers')
   .select('*')
   .eq('id', id)
   .maybeSingle();
 
+if (cErr) {
+  const q = new URLSearchParams();
+  q.set('err', `カルテ取得エラー: ${cErr.message}`);
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `/admin/customers?${q.toString()}` },
+  });
+}
 if (!customer) {
   return new Response(null, { status: 302, headers: { Location: '/admin/customers' } });
 }

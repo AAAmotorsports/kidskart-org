@@ -54,14 +54,14 @@ const priceRegular = course.price_regular ?? 0;
 const priceMember = course.price_member ?? 0;
 
 // 現行の規約 (キャンセルポリシー + 安全項目) を取得。
-// 一般予約ウィザードと同じく最新 version 1 件のみ使う。
-// サーバー側で全文を取得して、キャンセルポリシーはモーダル表示、
-// 安全項目は 1 つずつチェックボックスで同意いただく。
+// 一般予約ウィザード (/reserve/[slotId]) や /api/admin/reservations/create
+// は is_current=true フラグを使って「現行」を特定しているので、
+// この walk-in フォームもそれに揃える (version 文字列ソートだと 1.0.10 < 1.0.9
+// のような罠がある + 新バージョンの下書きを誤って拾う可能性もある)。
 const { data: terms } = await supabase
   .from('terms')
   .select('id, version, cancel_policy_md, safety_items')
-  .order('version', { ascending: false })
-  .limit(1)
+  .eq('is_current', true)
   .maybeSingle();
 
 const termId = terms?.id ?? null;
