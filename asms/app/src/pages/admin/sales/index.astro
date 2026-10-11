@@ -425,6 +425,71 @@ const chartMaxValue = Math.max(
   ...chartCompare.map((b) => b.total),
 );
 
+// ============================================================================
+// 日次売上グラフ (day モードのみ: 選択日を右端に過去 14 日)
+// -----------------------------------------------------------------------------
+// 比較は 1 年前の同 14 日間 (前年同週あたりの参考値)
+// ============================================================================
+type DailyBucket = { d: string; total: number; count: number };
+
+async function fetchDailyBuckets(fromIso: string, toIso: string): Promise<Map<string, { total: number; count: number }>> {
+  const { data } = await supabase
+    .from('reservations')
+    .select('paid_at, paid_amount')
+    .not('paid_at', 'is', null)
+    .gte('paid_at', fromIso)
+    .lt('paid_at', toIso);
+  const buckets = new Map<string, { total: number; count: number }>();
+  for (const r of (data ?? []) as any[]) {
+    const d = new Date(r.paid_at);
+    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
+    const key = `${jst.getUTCFullYear()}-${pad2(jst.getUTCMonth() + 1)}-${pad2(jst.getUTCDate())}`;
+    const cur = buckets.get(key) ?? { total: 0, count: 0 };
+    cur.total += Number(r.paid_amount ?? 0);
+    cur.count += 1;
+    buckets.set(key, cur);
+  }
+  return buckets;
+}
+
+let dailyChart: DailyBucket[] = [];
+let dailyChartCompare: DailyBucket[] = [];
+let dailyChartDays: string[] = [];
+const DAILY_CHART_SPAN = 14;
+
+if (mode === 'day') {
+  const anchorStr = /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : todayJstStr;
+  const [ay, am, ad] = anchorStr.split('-').map(Number);
+  // 14 日分 (anchor を右端)
+  for (let i = DAILY_CHART_SPAN - 1; i >= 0; i--) {
+    const d = new Date(ay, am - 1, ad - i);
+    dailyChartDays.push(isoDay(d));
+  }
+  const first = dailyChartDays[0].split('-').map(Number);
+  const last  = dailyChartDays[DAILY_CHART_SPAN - 1].split('-').map(Number);
+  const curStart = jstMidnightUtcIso(first[0], first[1], first[2]);
+  const curEnd   = jstMidnightUtcIso(last[0],  last[1],  last[2] + 1);
+  // 比較: 1 年前の同 14 日
+  const compDays = dailyChartDays.map((s) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return `${y - 1}-${pad2(m)}-${pad2(d)}`;
+  });
+  const compStart = jstMidnightUtcIso(first[0] - 1, first[1], first[2]);
+  const compEnd   = jstMidnightUtcIso(last[0] - 1,  last[1],  last[2] + 1);
+  const [curB, compB] = await Promise.all([
+    fetchDailyBuckets(curStart, curEnd),
+    fetchDailyBuckets(compStart, compEnd),
+  ]);
+  dailyChart = dailyChartDays.map((d) => ({ d, ...(curB.get(d) ?? { total: 0, count: 0 }) }));
+  dailyChartCompare = compDays.map((d) => ({ d, ...(compB.get(d) ?? { total: 0, count: 0 }) }));
+}
+
+const dailyChartMax = Math.max(
+  1,
+  ...dailyChart.map((b) => b.total),
+  ...dailyChartCompare.map((b) => b.total),
+);
+
 // 「このページで見ている月」が今月なら「まだ freee 送信しない (翌月送る)」案内。
 // それ以前なら送信可。
 const nowJst2 = new Date(now.getTime() + 9 * 3600 * 1000);
@@ -475,7 +540,7 @@ function buildUrl(next: Record<string, string>) {
     </header>
 
     <section class="mode-tabs">
-      <a class={`tab ${mode === 'day' ? 'active' : ''}`} href={buildUrl({ mode: 'day', d: todayJstStr })}>☀️ 今日</a>
+      <a class={`tab ${mode === 'day' ? 'active' : ''}`} href={buildUrl({ mode: 'day', d: todayJstStr })}>☀️ 日別</a>
       <a class={`tab ${mode === 'month' ? 'active' : ''}`} href={buildUrl({ mode: 'month' })}>📅 月別</a>
       <a class={`tab ${mode === 'year' ? 'active' : ''}`} href={buildUrl({ mode: 'year' })}>📆 年別</a>
       <a class={`tab ${mode === 'range' ? 'active' : ''}`} href={buildUrl({ mode: 'range' })}>📊 期間指定</a>
@@ -619,6 +684,81 @@ function buildUrl(next: Record<string, string>) {
             )}
           </div>
         )}
+      </section>
+    )}
+
+    {/* ===== 日次売上グラフ (14 日、日別モードのみ) ===== */}
+    {mode === 'day' && (
+      <section class="section chart-section">
+        <div class="chart-head">
+          <h2>📈 過去 14 日の推移</h2>
+          <span class="chart-sub">右端が選択日 ({periodLabel.replace(' · 今日', '')})</span>
+        </div>
+
+        <svg class="chart-svg" viewBox="0 0 880 260" preserveAspectRatio="none" aria-label="日別売上推移">
+          {/* Y 軸グリッド (4 本) */}
+          {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+            const y = 220 - 200 * p;
+            return (
+              <>
+                <line x1="60" y1={y} x2="860" y2={y} stroke="#e3edf3" stroke-width="1" />
+                <text x="55" y={y + 4} text-anchor="end" font-size="10" fill="#7d8fa0">
+                  ¥{Math.round(dailyChartMax * p / 1000).toLocaleString('ja-JP')}k
+                </text>
+              </>
+            );
+          })}
+          {/* 棒グラフ: 1 日 2 本 (比較 + 現在) */}
+          {dailyChartDays.map((dstr, i) => {
+            const slotW = (860 - 60) / DAILY_CHART_SPAN;
+            const groupX = 60 + i * slotW + slotW * 0.1;
+            const barW = (slotW * 0.8) / 2;
+            const cur = dailyChart[i]?.total ?? 0;
+            const comp = dailyChartCompare[i]?.total ?? 0;
+            const curH = (cur / dailyChartMax) * 200;
+            const compH = (comp / dailyChartMax) * 200;
+            const [, mm, dd] = dstr.split('-');
+            const label = `${parseInt(mm, 10)}/${parseInt(dd, 10)}`;
+            const isToday = dstr === todayJstStr;
+            const isAnchor = i === DAILY_CHART_SPAN - 1;
+            return (
+              <>
+                {/* 比較年バー (左、薄め) */}
+                <rect
+                  x={groupX} y={220 - compH} width={barW} height={compH}
+                  fill="#c9d4df" rx="2"
+                >
+                  <title>{dailyChartCompare[i]?.d} ¥{comp.toLocaleString()}</title>
+                </rect>
+                {/* 現在年バー (右、濃い; 今日は orange でハイライト) */}
+                <rect
+                  x={groupX + barW} y={220 - curH} width={barW} height={curH}
+                  fill={isToday ? '#ff9f3f' : '#3aa9e8'} rx="2"
+                >
+                  <title>{dstr} ¥{cur.toLocaleString()}</title>
+                </rect>
+                {/* 日付ラベル (anchor と 今日 は太字) */}
+                <text x={groupX + barW} y="240" text-anchor="middle" font-size="10"
+                      fill={isToday ? '#d87818' : (isAnchor ? '#1a7fb8' : '#4a5a6a')}
+                      font-weight={isToday || isAnchor ? '700' : '400'}>
+                  {label}
+                </text>
+                {cur > 0 && (
+                  <text x={groupX + barW} y={220 - curH - 3} text-anchor="middle" font-size="9"
+                        fill={isToday ? '#d87818' : '#1a7fb8'} font-weight="700">
+                    {Math.round(cur / 1000)}k
+                  </text>
+                )}
+              </>
+            );
+          })}
+        </svg>
+
+        <div class="chart-legend">
+          <span class="lg-item"><span class="sw sw-cur"></span>当期間 ({dailyChart.reduce((a, b) => a + b.total, 0).toLocaleString()} 円)</span>
+          <span class="lg-item"><span class="sw sw-today"></span>今日</span>
+          <span class="lg-item"><span class="sw sw-comp"></span>前年同日 ({dailyChartCompare.reduce((a, b) => a + b.total, 0).toLocaleString()} 円)</span>
+        </div>
       </section>
     )}
 
@@ -1035,6 +1175,8 @@ function buildUrl(next: Record<string, string>) {
   .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
   .sw-cur  { background: #3aa9e8; }
   .sw-comp { background: #c9d4df; }
+  .sw-today { background: #ff9f3f; }
+  .chart-sub { font-size: .72rem; color: var(--ink-3); }
 
   .rain-filter { margin: 0 0 1rem; }
   .rf-toggle {
