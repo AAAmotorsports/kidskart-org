@@ -11,12 +11,20 @@ const isEn = locale === 'en';
 
 const { slotId } = Astro.params;
 
-const { data: slot } = await supabase
+// DB エラーは silent redirect ではなく明示表示する
+// (スロットは閉じてるのか、DB が落ちてるのかを区別するため)。
+const { data: slot, error: slotErr } = await supabase
   .from('slots')
   .select('id, date, start_time, end_time, capacity, status, course_id, courses(id, code, name, description, duration_min, price_regular, price_member, vehicle, requires_approval)')
   .eq('id', slotId)
   .maybeSingle();
 
+if (slotErr) {
+  return new Response(
+    `スロット情報の取得に失敗しました。恐れ入りますが info@kidskart.org までご連絡ください (ref: ${slotErr.message})`,
+    { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
 if (!slot || slot.status !== 'open') {
   return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
 }

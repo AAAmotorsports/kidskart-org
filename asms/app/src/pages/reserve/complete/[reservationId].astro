@@ -10,7 +10,9 @@ const isEn = locale === 'en';
 
 const { reservationId } = Astro.params;
 
-const { data: res } = await supabase
+// DB エラーは silent redirect ではなく明示表示。
+// 決済直後にリダイレクトされると、お客様は予約完了画面を失うので致命的。
+const { data: res, error: resErr } = await supabase
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount, cancel_token, created_at,
@@ -21,6 +23,14 @@ const { data: res } = await supabase
   .eq('id', reservationId)
   .maybeSingle();
 
+if (resErr) {
+  return new Response(
+    isEn
+      ? `Reservation lookup failed. Please contact info@kidskart.org (ref: ${resErr.message})`
+      : `予約情報の取得に失敗しました。恐れ入りますが info@kidskart.org までご連絡ください (ref: ${resErr.message})`,
+    { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
 if (!res) {
   return new Response(null, { status: 302, headers: { Location: '/reserve/' } });
 }

@@ -10,7 +10,8 @@ const { reservationId } = Astro.params;
 if (!reservationId) return new Response('missing reservationId', { status: 400 });
 
 // Load consent + reservation + related for full legal context
-const { data: consent } = await supabase
+// DB error と「同意書なし」を区別して出す (silent 404 で原因不明にしない)。
+const { data: consent, error: consentErr } = await supabase
   .from('consents')
   .select(`
     id, term_id, term_version, term_body_snapshot, term_hash_snapshot,
@@ -28,6 +29,12 @@ const { data: consent } = await supabase
   .eq('reservation_id', reservationId)
   .maybeSingle();
 
+if (consentErr) {
+  return new Response(
+    `同意書取得エラー: ${consentErr.message}`,
+    { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
 if (!consent) {
   return new Response('同意書が見つかりません (この予約は同意書なしで作成されたか、reservation_id が不正です)', { status: 404 });
 }

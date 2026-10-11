@@ -111,43 +111,49 @@ export const POST: APIRoute = async ({ request, locals }) => {
       .map((p) => p.name_snapshot);
     const remainingNames = remaining.map((p) => p.name_snapshot);
 
-    const guardianEmailP = sendPartialCancellationEmailToGuardian(env, {
-      to: guardian.email ?? '',
-      guardianName: guardian.name ?? '',
-      reservationNumber: res.reservation_number,
-      dateIso: slot.date,
-      startTime: slot.start_time,
-      endTime: slot.end_time,
-      courseName: course.name ?? '',
-      cancelledNames,
-      remainingNames,
-      newTotal,
-      priceTier: res.price_tier ?? 'regular',
-      origin,
-      reason,
-    }).catch((e) => console.warn('[reserve/cancel] partial guardian email failed:', e));
-
-    const adminEmailP = sendCancellationEmailToAdmin(env, {
-      to: env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '',
-      reservationNumber: res.reservation_number,
-      dateIso: slot.date,
-      startTime: slot.start_time,
-      endTime: slot.end_time,
-      courseName: course.name ?? '',
-      guardianName: guardian.name ?? '',
-      guardianPhone: guardian.phone ?? '',
-      guardianEmail: guardian.email ?? '',
-      participants: cancelledNames, // 一部キャンセル分だけ
-      reason: `[一部キャンセル] ${reason} / 残り: ${remainingNames.join('・')} (${remainingNames.length}名) ¥${newTotal.toLocaleString()}`,
-      origin,
-      slotId: res.slot_id,
-      reservationId: res.id,
-    }).catch((e) => console.warn('[reserve/cancel] admin email failed:', e));
-
-    const runtimeCtx = (locals as any).runtime?.ctx;
-    if (runtimeCtx?.waitUntil) {
-      runtimeCtx.waitUntil(guardianEmailP);
-      runtimeCtx.waitUntil(adminEmailP);
+    // await Promise.allSettled: fire-and-forget を廃止
+    // (2026-09 事故を受けて admin 側は await に移行済み、顧客側もそれに追従)
+    const emailResults = await Promise.allSettled([
+      sendPartialCancellationEmailToGuardian(env, {
+        to: guardian.email ?? '',
+        guardianName: guardian.name ?? '',
+        reservationNumber: res.reservation_number,
+        dateIso: slot.date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        courseName: course.name ?? '',
+        cancelledNames,
+        remainingNames,
+        newTotal,
+        priceTier: res.price_tier ?? 'regular',
+        origin,
+        reason,
+      }),
+      sendCancellationEmailToAdmin(env, {
+        to: env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '',
+        reservationNumber: res.reservation_number,
+        dateIso: slot.date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        courseName: course.name ?? '',
+        guardianName: guardian.name ?? '',
+        guardianPhone: guardian.phone ?? '',
+        guardianEmail: guardian.email ?? '',
+        participants: cancelledNames, // 一部キャンセル分だけ
+        reason: `[一部キャンセル] ${reason} / 残り: ${remainingNames.join('・')} (${remainingNames.length}名) ¥${newTotal.toLocaleString()}`,
+        origin,
+        slotId: res.slot_id,
+        reservationId: res.id,
+      }),
+    ]);
+    const emailWarnings: string[] = [];
+    if (emailResults[0].status === 'rejected') {
+      console.warn('[reserve/cancel] partial guardian email failed:', emailResults[0].reason);
+      emailWarnings.push('guardian_email_failed');
+    }
+    if (emailResults[1].status === 'rejected') {
+      console.warn('[reserve/cancel] partial admin email failed:', emailResults[1].reason);
+      emailWarnings.push('admin_email_failed');
     }
 
     return json({
@@ -157,10 +163,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
       cancelled_at: cancelledAt,
       remaining_count: remaining.length,
       new_total: newTotal,
+      email_warnings: emailWarnings.length > 0 ? emailWarnings : undefined,
     });
   }
 
-  // ---------- Whole cancel path (existing behavior) ----------
+  // ---------- Whole cancel path ----------
+  // 1) reservations.status → 'cancelled'
   const { error: uErr } = await supabase
     .from('reservations')
     .update({
@@ -171,7 +179,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('id', res.id);
   if (uErr) return json({ error: `キャンセル更新に失敗: ${uErr.message}` }, 500);
 
-  // Fire-and-forget emails
+  // 2) 参加者の attendance_status も 'cancelled' に cascade
+  //    (admin 側 /admin/slots/[id].astro の cancel 分岐は cascade していたが、
+  //     顧客側の自己キャンセルがこれを漏らしていた。
+  //     結果、/admin/walk-in の残席計算が占有数を誤って多く数えてしまう)。
+  //    既に cancelled の参加者は触らない。
+  const { error: pErr } = await supabase
+    .from('reservation_participants')
+    .update({ attendance_status: 'cancelled' })
+    .eq('reservation_id', res.id)
+    .neq('attendance_status', 'cancelled');
+  if (pErr) {
+    console.warn('[reserve/cancel] participant cascade failed:', pErr.message);
+    // reservation は既に cancelled に。cascade 失敗は致命ではないが admin に通知
+  }
+
+  // 3) Emails (await Promise.allSettled: fire-and-forget を廃止)
+  //    admin 側 (/admin/slots/[id].astro) は 2026-09 の silent-fail 事故で
+  //    await に移行済み。顧客側もそれに追従する。
+  //    allSettled で片方失敗しても全体を落とさない。
   const apiUrl = new URL(request.url);
   const origin = `${apiUrl.protocol}//${apiUrl.host}`;
   const slot: any = res.slots ?? {};
@@ -179,49 +205,54 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const guardian: any = res.guardians ?? {};
   const parts = allParts.map((p) => p.name_snapshot);
 
-  const guardianEmailP = sendCancellationEmailToGuardian(env, {
-    to: guardian.email ?? '',
-    guardianName: guardian.name ?? '',
-    reservationNumber: res.reservation_number,
-    dateIso: slot.date,
-    startTime: slot.start_time,
-    endTime: slot.end_time,
-    courseName: course.name ?? '',
-    participants: parts,
-    totalAmount: res.total_amount ?? 0,
-    priceTier: res.price_tier ?? 'regular',
-    origin,
-    cancelledAt,
-    reason,
-  }).catch((e) => console.warn('[reserve/cancel] guardian email failed:', e));
-
-  const adminEmailP = sendCancellationEmailToAdmin(env, {
-    to: env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '',
-    reservationNumber: res.reservation_number,
-    dateIso: slot.date,
-    startTime: slot.start_time,
-    endTime: slot.end_time,
-    courseName: course.name ?? '',
-    guardianName: guardian.name ?? '',
-    guardianPhone: guardian.phone ?? '',
-    guardianEmail: guardian.email ?? '',
-    participants: parts,
-    reason,
-    origin,
-    slotId: res.slot_id,
-    reservationId: res.id,
-  }).catch((e) => console.warn('[reserve/cancel] admin email failed:', e));
-
-  const runtimeCtx = (locals as any).runtime?.ctx;
-  if (runtimeCtx && typeof runtimeCtx.waitUntil === 'function') {
-    runtimeCtx.waitUntil(guardianEmailP);
-    runtimeCtx.waitUntil(adminEmailP);
+  const emailResults = await Promise.allSettled([
+    sendCancellationEmailToGuardian(env, {
+      to: guardian.email ?? '',
+      guardianName: guardian.name ?? '',
+      reservationNumber: res.reservation_number,
+      dateIso: slot.date,
+      startTime: slot.start_time,
+      endTime: slot.end_time,
+      courseName: course.name ?? '',
+      participants: parts,
+      totalAmount: res.total_amount ?? 0,
+      priceTier: res.price_tier ?? 'regular',
+      origin,
+      cancelledAt,
+      reason,
+    }),
+    sendCancellationEmailToAdmin(env, {
+      to: env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '',
+      reservationNumber: res.reservation_number,
+      dateIso: slot.date,
+      startTime: slot.start_time,
+      endTime: slot.end_time,
+      courseName: course.name ?? '',
+      guardianName: guardian.name ?? '',
+      guardianPhone: guardian.phone ?? '',
+      guardianEmail: guardian.email ?? '',
+      participants: parts,
+      reason,
+      origin,
+      slotId: res.slot_id,
+      reservationId: res.id,
+    }),
+  ]);
+  const emailWarnings: string[] = [];
+  if (emailResults[0].status === 'rejected') {
+    console.warn('[reserve/cancel] guardian email failed:', emailResults[0].reason);
+    emailWarnings.push('guardian_email_failed');
+  }
+  if (emailResults[1].status === 'rejected') {
+    console.warn('[reserve/cancel] admin email failed:', emailResults[1].reason);
+    emailWarnings.push('admin_email_failed');
   }
 
   return json({
     ok: true,
     reservation_number: res.reservation_number,
     cancelled_at: cancelledAt,
+    email_warnings: emailWarnings.length > 0 ? emailWarnings : undefined,
   });
 };
 
