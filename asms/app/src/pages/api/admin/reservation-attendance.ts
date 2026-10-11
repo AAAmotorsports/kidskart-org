@@ -56,7 +56,73 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .select('id');
   if (updErr) return json({ error: `update failed: ${updErr.message}` }, 500);
 
-  return json({ ok: true, updated: (updated ?? []).length });
+  // --- reservations.status を参加者の集約結果に同期 ------------------------
+  // 目的: 将来のダッシュボードや cron がステータスをキーに集計するときに
+  //       「全員 no_show なのに reservations.status='confirmed' のまま」等の
+  //       ドリフトを防ぐ。
+  //
+  // 判定ルール (非 cancelled 参加者のみ対象、cancelled は除外):
+  //   - 残参加者が 0 (= 全員が cancelled) → reservation.status には触らない
+  //     (キャンセルは別経路 /api/reserve/cancel で status='cancelled' を書く)
+  //   - 非 cancelled 全員が同じステータス (attended / no_show) → 同じ値に同期
+  //   - 混在 → reservation.status = 'confirmed' に戻す
+  //     (以前「全員 attended」で確定していたのを 1 人だけ expected に戻した場合)
+  //
+  // reservation_status enum は 'draft' | 'pending_approval' | 'confirmed' |
+  //   'attended' | 'no_show' | 'cancelled' を含む (0001_initial_schema.sql:44-47)
+  const { data: allParts, error: pErr } = await supabase
+    .from('reservation_participants')
+    .select('attendance_status')
+    .eq('reservation_id', reservationId);
+  if (pErr) return json({ error: `participants fetch failed: ${pErr.message}` }, 500);
+
+  const activeStatuses = (allParts ?? [])
+    .map((p: any) => p.attendance_status)
+    .filter((s: string) => s !== 'cancelled');
+
+  let resStatusTarget: 'confirmed' | 'attended' | 'no_show' | null = null;
+  if (activeStatuses.length === 0) {
+    // 残 0: この API は cancelled 参加者を触らないので、ここに来るのは
+    // 前段で全員 cancelled 状態の予約を叩いた場合。何もしない。
+    resStatusTarget = null;
+  } else if (activeStatuses.every((s) => s === 'attended')) {
+    resStatusTarget = 'attended';
+  } else if (activeStatuses.every((s) => s === 'no_show')) {
+    resStatusTarget = 'no_show';
+  } else {
+    // expected と attended の混在、attended と no_show の混在など
+    resStatusTarget = 'confirmed';
+  }
+
+  let reservation_status_updated: string | null = null;
+  if (resStatusTarget) {
+    // 現在値を確認して、必要な時だけ UPDATE (無駄な WAL を避けつつ
+    // cancelled 予約の status を上書きしてしまう事故も予防)。
+    const { data: curRes } = await supabase
+      .from('reservations')
+      .select('status')
+      .eq('id', reservationId)
+      .maybeSingle();
+    const curStatus = (curRes as any)?.status;
+    if (curStatus && curStatus !== 'cancelled' && curStatus !== resStatusTarget) {
+      const { error: rErr } = await supabase
+        .from('reservations')
+        .update({ status: resStatusTarget })
+        .eq('id', reservationId)
+        .neq('status', 'cancelled');  // cancelled には絶対触らない
+      if (rErr) {
+        console.warn('[reservation-attendance] status sync failed:', rErr.message);
+      } else {
+        reservation_status_updated = resStatusTarget;
+      }
+    }
+  }
+
+  return json({
+    ok: true,
+    updated: (updated ?? []).length,
+    reservation_status_updated,
+  });
 };
 
 function json(body: unknown, status = 200): Response {

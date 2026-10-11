@@ -151,6 +151,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
       continue;
     }
+    // walk-in の placeholder email (@noemail.local) は Resend で届かないので skip
+    if (/@noemail\.local$/i.test(guardian.email)) {
+      for (const r of groupReservations) {
+        skipped++;
+        details.push({ id: r.id, result: 'skipped', note: 'placeholder email (walk-in no-email)' });
+      }
+      continue;
+    }
 
     // group 内全予約 × active 参加者を bookings 配列に集約
     const bookings: Array<{

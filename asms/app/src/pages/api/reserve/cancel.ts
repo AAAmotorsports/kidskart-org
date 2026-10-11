@@ -80,25 +80,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   // ---------- Partial cancel path ----------
   if (isPartial) {
-    // 1) Mark selected participants as cancelled
+    // 1) Mark selected participants as cancelled (+ cancelled_at の記録)
+    //    cancelled_at は復活時に「予約全体キャンセルに巻き込まれた参加者」と
+    //    「それ以前の個別キャンセル参加者」を区別するため。
     const { error: pErr } = await supabase
       .from('reservation_participants')
-      .update({ attendance_status: 'cancelled' })
+      .update({ attendance_status: 'cancelled', cancelled_at: cancelledAt })
       .in('id', requestedActive);
     if (pErr) return json({ error: `参加者更新に失敗: ${pErr.message}` }, 500);
 
-    // 2) Recalculate total_amount
-    const remaining = currentlyActive.filter((p) => !requestedActive.includes(p.id));
-    const perPerson = res.price_tier === 'member'
-      ? ((res.slots as any)?.courses?.price_member ?? 0)
-      : ((res.slots as any)?.courses?.price_regular ?? 0);
-    const newTotal = remaining.length * perPerson;
-
-    const { error: rrErr } = await supabase
-      .from('reservations')
-      .update({ total_amount: newTotal })
-      .eq('id', res.id);
+    // 2) Recalculate total_amount via atomic RPC (TOCTOU 回避)
+    //    SELECT FOR UPDATE で reservation 行を lock してから再計算する RPC。
+    //    同時に 2 件キャンセル来ても両者が自分の view の active count で
+    //    上書きしないので total_amount が狂わない。
+    const { data: newTotal, error: rrErr } = await supabase
+      .rpc('recalculate_reservation_total', { p_reservation_id: res.id });
     if (rrErr) return json({ error: `料金再計算に失敗: ${rrErr.message}` }, 500);
+    const remaining = currentlyActive.filter((p) => !requestedActive.includes(p.id));
 
     // 3) Emails
     const apiUrl = new URL(request.url);
@@ -179,19 +177,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('id', res.id);
   if (uErr) return json({ error: `キャンセル更新に失敗: ${uErr.message}` }, 500);
 
-  // 2) 参加者の attendance_status も 'cancelled' に cascade
-  //    (admin 側 /admin/slots/[id].astro の cancel 分岐は cascade していたが、
-  //     顧客側の自己キャンセルがこれを漏らしていた。
-  //     結果、/admin/walk-in の残席計算が占有数を誤って多く数えてしまう)。
-  //    既に cancelled の参加者は触らない。
+  // 2) 参加者の attendance_status も 'cancelled' に cascade (+ cancelled_at 記録)
+  //    cancelled_at は復活時に「予約全体キャンセル時に失われた参加者」と
+  //    「それ以前の個別キャンセル参加者」を区別するために必須。
+  //    既に cancelled の参加者は触らない (元のキャンセル日時を温存)。
   const { error: pErr } = await supabase
     .from('reservation_participants')
-    .update({ attendance_status: 'cancelled' })
+    .update({ attendance_status: 'cancelled', cancelled_at: cancelledAt })
     .eq('reservation_id', res.id)
     .neq('attendance_status', 'cancelled');
   if (pErr) {
     console.warn('[reserve/cancel] participant cascade failed:', pErr.message);
-    // reservation は既に cancelled に。cascade 失敗は致命ではないが admin に通知
+    // reservation は既に cancelled に。cascade 失敗は致命ではないがログに残す
   }
 
   // 3) Emails (await Promise.allSettled: fire-and-forget を廃止)

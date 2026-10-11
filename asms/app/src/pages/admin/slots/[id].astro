@@ -73,38 +73,41 @@ if (Astro.request.method === 'POST') {
     const res: any = (part as any).reservations;
     if (!res) return back('', '予約が見つかりません');
 
-    // 1) 参加者ステータスを cancelled に
+    // 1) 参加者ステータスを cancelled に (+ cancelled_at を記録)
+    //    cancelled_at は復活時に「予約全体キャンセル時か個別キャンセルか」を
+    //    区別するためで、個別キャンセルでも必ず記録する。
+    const cancelTs = new Date().toISOString();
     const { error: uErr } = await supabase
       .from('reservation_participants')
-      .update({ attendance_status: 'cancelled' })
+      .update({ attendance_status: 'cancelled', cancelled_at: cancelTs })
       .eq('id', partId);
     if (uErr) return back('', `参加者キャンセルに失敗: ${fmt(uErr)}`);
 
-    // 2) 残り active 参加者を数え直して total_amount を再計算
+    // 2) total_amount を 原子的に 再計算 (TOCTOU 回避の RPC)。
+    //    同時に 2 人分キャンセルが来ても SELECT FOR UPDATE で serialize される。
+    const { error: rtErr } = await supabase
+      .rpc('recalculate_reservation_total', { p_reservation_id: res.id });
+    if (rtErr) return back(`参加者はキャンセル済ですが料金再計算でエラー: ${fmt(rtErr)}`, '');
+
+    // 3) active 参加者を数え直し、残り 0 なら reservation.status も cancelled に
     const { data: siblings } = await supabase
       .from('reservation_participants')
       .select('id, name_snapshot, attendance_status')
       .eq('reservation_id', res.id);
     const activeCount = (siblings ?? []).filter((s: any) => s.attendance_status !== 'cancelled').length;
     const activeNames = (siblings ?? []).filter((s: any) => s.attendance_status !== 'cancelled').map((s: any) => s.name_snapshot);
-    const perPerson = res.price_tier === 'member'
-      ? (res.slots?.courses?.price_member ?? 0)
-      : (res.slots?.courses?.price_regular ?? 0);
-    const newTotal = activeCount * perPerson;
-
-    // 3) 予約全員キャンセルなら reservation.status = cancelled も併せて
     const shouldCancelReservation = activeCount === 0;
-    const resUpdate: any = { total_amount: newTotal };
     if (shouldCancelReservation) {
-      resUpdate.status = 'cancelled';
-      resUpdate.cancelled_at = new Date().toISOString();
-      resUpdate.cancelled_reason = reason;
+      const { error: rErr } = await supabase
+        .from('reservations')
+        .update({
+          status: 'cancelled',
+          cancelled_at: cancelTs,
+          cancelled_reason: reason,
+        })
+        .eq('id', res.id);
+      if (rErr) return back(`参加者はキャンセル済ですが予約状態更新でエラー: ${fmt(rErr)}`, '');
     }
-    const { error: rErr } = await supabase
-      .from('reservations')
-      .update(resUpdate)
-      .eq('id', res.id);
-    if (rErr) return back(`参加者はキャンセル済ですが予約金額更新でエラー: ${fmt(rErr)}`, '');
 
     // 4) メール通知: 保護者 (notify=true 時) + 管理者 (常時)
     // 過去に waitUntil の fire-and-forget が Cloudflare Worker 側で
