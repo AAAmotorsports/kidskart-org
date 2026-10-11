@@ -462,10 +462,21 @@ const termsHtml = terms
                 </p>
               </div>
               <div class="field field-wide">
-                <label>{isEn ? 'Address' : '住所'}</label>
+                <label>{isEn ? 'Address (prefecture / city / district)' : '住所 (都道府県・市区町村)'}</label>
                 <input type="text" id="g_address" name="g_address" maxlength="200"
-                  placeholder={isEn ? 'e.g. Fukuoka, Fukuoka-shi…' : '福岡県福岡市…'}
+                  placeholder={isEn ? 'e.g. Fukuoka, Fukuoka-shi, Chuo-ku Tenjin' : '福岡県福岡市中央区天神'}
                   autocomplete="street-address" />
+              </div>
+              <div class="field field-wide">
+                <label>
+                  {isEn ? 'Building number / room (please do not forget)' : '番地・建物名・部屋番号'}
+                  <span class="hint-inline">
+                    {isEn ? '(easy to forget — please fill in!)' : '(入れ忘れが多いのでご記入ください)'}
+                  </span>
+                </label>
+                <input type="text" id="g_banchi" name="g_banchi" maxlength="100"
+                  placeholder={isEn ? 'e.g. 1-2-3 Sunshine Bldg #501' : '例: 1-2-3 サンシャインビル 501号室'}
+                  autocomplete="address-line2" />
               </div>
             </div>
             <div class="nav-btns">
@@ -1184,9 +1195,14 @@ const termsHtml = terms
         ? { type: 'drawn', image_data: sigDrawn ? canvas.toDataURL('image/png') : null }
         : { type: 'typed', typed_name: gd('sig_typed_name') };
       const per = tier === 'member' ? priceMember : priceRegular;
+      // 住所 は 住所 (都道府県・市区町村) + 番地 (建物名含む) を半角スペースで結合して保存。
+      // DB は address 単一カラムなので、UI 分割 → 保存結合 で back-compat 維持。
+      const addr = gd('g_address').trim();
+      const banchi = gd('g_banchi').trim();
+      const combinedAddress = banchi ? `${addr} ${banchi}` : addr;
       const guardian = {
         name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
-        email: gd('g_email'), postal_code: gd('g_postal'), address: gd('g_address'),
+        email: gd('g_email'), postal_code: gd('g_postal'), address: combinedAddress,
       };
       const sameAsGuardian = !!sameChk?.checked;
       const emergency = sameAsGuardian
