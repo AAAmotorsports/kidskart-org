@@ -2,7 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { getLocaleFromRequest, type Locale } from '@lib/i18n';
-import { ageOn } from '@lib/admin';
+import { ageOn, PAYMENT_METHODS, paymentLabel } from '@lib/admin';
 
 export const prerender = false;
 
@@ -94,6 +94,12 @@ function genderLabel(g: string | null): string {
   if (g === 'female') return tr('女', 'F');
   return tr('その他', 'Other');
 }
+
+// 会計状態
+const isPaid = !!(res as any).paid_at && !!(res as any).payment_method;
+const paidAmount: number = Number((res as any).paid_amount ?? 0);
+const totalAmount: number = Number((res as any).total_amount ?? 0);
+const paymentMethodCode: string | null = (res as any).payment_method ?? null;
 
 const dateLabel = fmtDate(slot.date);
 const timeLabel = slot.start_time
@@ -291,19 +297,66 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
       </button>
     </section>
 
+    <!-- 💰 会計セクション (受付完了と同じ画面で記録) -->
+    {!resCancelled && (
+      <section class="payment" data-reservation-id={res.id}>
+        <div class="sect-head">
+          <h2>💰 {tr('会計', 'Payment')}</h2>
+          {isPaid && (
+            <span class="pay-done">
+              ✅ {paymentLabel(paymentMethodCode)} ¥{paidAmount.toLocaleString('ja-JP')}
+            </span>
+          )}
+        </div>
+
+        <div class="pay-total-row">
+          <span class="pay-total-label">{tr('合計金額', 'Total')}</span>
+          <span class="pay-total-value">¥{totalAmount.toLocaleString('ja-JP')}</span>
+        </div>
+
+        <div class="pay-methods">
+          {PAYMENT_METHODS.map((m) => (
+            <label class={`pay-method ${paymentMethodCode === m.code ? 'active' : ''}`}>
+              <input type="radio" name="pay_method"
+                     value={m.code}
+                     checked={paymentMethodCode === m.code} />
+              <span class="pm-emoji">{m.emoji}</span>
+              <span class="pm-label">{m.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div class="pay-amount-row">
+          <label>
+            {tr('入金額', 'Received')}
+            <input type="number" id="payAmount" min="0" step="1"
+                   value={isPaid ? paidAmount : totalAmount} />
+            <span class="pay-unit">円</span>
+          </label>
+          <button type="button" class="btn-record-pay" data-reservation-id={res.id}>
+            {isPaid ? tr('💾 会計を更新', '💾 Update payment') : tr('💾 会計を記録', '💾 Record payment')}
+          </button>
+        </div>
+      </section>
+    )}
+
     <!-- アクションボタン (特大) -->
     {!resCancelled && (
       <section class="actions">
         <button
           type="button"
           class="btn-primary"
-          data-action="attend"
+          data-action="attend_and_pay"
           data-reservation-id={res.id}
-          disabled={anyAttended}
+          disabled={anyAttended && isPaid}
         >
-          {anyAttended
-            ? tr('✅ 受付済み', '✅ Checked in')
-            : tr('✅ 受付完了 (全員出席)', '✅ Check in all')}
+          {anyAttended && isPaid
+            ? tr('✅ 受付・会計 済み', '✅ Checked in & paid')
+            : anyAttended
+            ? tr('💰 会計を記録して完了', '💰 Record payment & finish')
+            : isPaid
+            ? tr('✅ 受付完了 (全員出席)', '✅ Check in all')
+            : tr('✅ 受付+会計 完了', '✅ Check in & pay')}
         </button>
         <button
           type="button"
@@ -438,14 +491,100 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
     }
   });
 
+  // ---- 💰 会計の記録のみ (「会計を記録」ボタン) ------------------------
+  async function recordPayment(reservationId: string): Promise<{ ok: boolean; error?: string }> {
+    const methodEl = document.querySelector<HTMLInputElement>('input[name="pay_method"]:checked');
+    const amountEl = document.getElementById('payAmount') as HTMLInputElement | null;
+    if (!methodEl) return { ok: false, error: tr('支払い方法を選んでください', 'Select payment method') };
+    const method = methodEl.value;
+    const amount = parseInt((amountEl?.value || '0').replace(/[^\d]/g, ''), 10);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return { ok: false, error: tr('入金額が不正です', 'Invalid amount') };
+    }
+    const r = await fetch('/api/admin/reservation-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reservation_id: reservationId, payment_method: method, paid_amount: amount }),
+    });
+    const b = await r.json() as { ok?: boolean; error?: string };
+    if (!r.ok) return { ok: false, error: b.error ?? `HTTP ${r.status}` };
+    return { ok: true };
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.btn-record-pay').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const reservationId = btn.dataset.reservationId!;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = tr('記録中…', 'Recording...');
+      const r = await recordPayment(reservationId);
+      if (!r.ok) {
+        showToast(tr('エラー: ', 'Error: ') + (r.error ?? ''), false);
+        btn.disabled = false;
+        btn.textContent = original;
+        return;
+      }
+      showToast(tr('会計を記録しました', 'Payment recorded'), true);
+      setTimeout(() => { location.reload(); }, 900);
+    });
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.action!;
       const reservationId = btn.dataset.reservationId!;
-      const status = action === 'attend' ? 'attended' : 'no_show';
-      const confirmMsg = action === 'attend'
-        ? tr('全員を「出席」として記録します。よろしいですか?', 'Mark all as attended. Continue?')
-        : tr('全員を「無断欠席」として記録します。よろしいですか?', 'Mark all as no-show. Continue?');
+
+      // 「受付+会計 完了」の合体ボタン: 出欠を attended にし、会計も同時に記録する
+      if (action === 'attend_and_pay') {
+        const methodEl = document.querySelector<HTMLInputElement>('input[name="pay_method"]:checked');
+        if (!methodEl) {
+          showToast(tr('支払い方法を選んでください', 'Select payment method'), false);
+          return;
+        }
+        const confirmMsg = tr(
+          '全員を「出席」として記録し、会計も同時に確定します。よろしいですか?',
+          'Mark all attended and record payment. Continue?'
+        );
+        if (!confirm(confirmMsg)) return;
+
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = tr('処理中…', 'Processing...');
+        try {
+          // 1) 出欠を attended に (既に attended なら API は no-op)
+          const attRes = await fetch('/api/admin/reservation-attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reservation_id: reservationId, status: 'attended' }),
+          });
+          const attBody = await attRes.json() as { ok?: boolean; updated?: number; error?: string };
+          if (!attRes.ok) {
+            showToast(tr('出欠エラー: ', 'Attendance error: ') + (attBody.error ?? `HTTP ${attRes.status}`), false);
+            btn.disabled = false;
+            btn.textContent = original;
+            return;
+          }
+          // 2) 会計を記録
+          const payRes = await recordPayment(reservationId);
+          if (!payRes.ok) {
+            showToast(tr('会計エラー: ', 'Payment error: ') + (payRes.error ?? ''), false);
+            btn.disabled = false;
+            btn.textContent = original;
+            return;
+          }
+          showToast(tr('受付・会計を記録しました', 'Check-in & payment recorded'), true);
+          setTimeout(() => { location.reload(); }, 1200);
+        } catch (e) {
+          showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+        return;
+      }
+
+      // 無断欠席ボタン (既存ロジック)
+      const status = 'no_show';
+      const confirmMsg = tr('全員を「無断欠席」として記録します。よろしいですか?', 'Mark all as no-show. Continue?');
       if (!confirm(confirmMsg)) return;
 
       btn.disabled = true;
@@ -467,6 +606,14 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
         showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);
         btn.disabled = false;
       }
+    });
+  });
+
+  // ---- 支払い方法ラジオの active スタイル同期 ----
+  document.querySelectorAll<HTMLInputElement>('input[name="pay_method"]').forEach((el) => {
+    el.addEventListener('change', () => {
+      document.querySelectorAll('.pay-method').forEach((lab) => lab.classList.remove('active'));
+      el.closest('.pay-method')?.classList.add('active');
     });
   });
 </script>
@@ -668,6 +815,69 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
     font-size: 1rem; font-weight: 700;
     padding: .9rem 1.2rem; border-radius: 10px;
   }
+
+  /* ---- 💰 会計セクション ---- */
+  section.payment {
+    background: #fff; border: 2px solid #ffd98b; border-radius: 14px;
+    padding: 1.1rem 1.3rem; margin-bottom: 1rem;
+  }
+  section.payment .sect-head { margin-bottom: .6rem; }
+  section.payment .sect-head h2 { color: #a66b00; }
+  .pay-done {
+    display: inline-block; padding: .3rem .7rem;
+    background: #e6f6d7; color: #3f7a1b; border-radius: 100px;
+    font-size: .85rem; font-weight: 700;
+  }
+  .pay-total-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: .7rem 1rem; background: #fff8e5; border-radius: 10px;
+    margin-bottom: .7rem;
+  }
+  .pay-total-label { font-size: 1rem; color: var(--ink-2); font-weight: 700; }
+  .pay-total-value { font-family: var(--mono); font-size: 1.6rem; color: var(--orange-deep); font-weight: 800; }
+  .pay-methods {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem;
+    margin-bottom: .7rem;
+  }
+  @media (max-width: 520px) {
+    .pay-methods { grid-template-columns: repeat(2, 1fr); }
+  }
+  .pay-method {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: .7rem .4rem; border: 2px solid var(--line); border-radius: 10px;
+    background: #fff; cursor: pointer; position: relative;
+    font-size: .9rem; font-weight: 700;
+  }
+  .pay-method input { position: absolute; opacity: 0; pointer-events: none; }
+  .pay-method.active, .pay-method:has(input:checked) {
+    background: #fff8e5; border-color: #e8a833; color: #a66b00;
+    box-shadow: 0 0 0 3px rgba(232,168,51,.15);
+  }
+  .pay-method .pm-emoji { font-size: 1.5rem; margin-bottom: .2rem; }
+  .pay-amount-row {
+    display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  }
+  .pay-amount-row label {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: .95rem; font-weight: 700; color: var(--ink-2);
+    flex: 1 1 auto;
+  }
+  .pay-amount-row input[type="number"] {
+    flex: 1; max-width: 180px;
+    padding: .55rem .7rem; font-size: 1.1rem; font-family: var(--mono);
+    border: 2px solid var(--line); border-radius: 8px;
+    text-align: right;
+  }
+  .pay-unit { color: var(--ink-3); }
+  .btn-record-pay {
+    appearance: none; border: none; cursor: pointer;
+    padding: .7rem 1.2rem; border-radius: 10px;
+    background: #e8a833; color: #fff;
+    font-weight: 800; font-size: .95rem;
+    box-shadow: 0 3px 10px rgba(232,168,51,.3);
+  }
+  .btn-record-pay:hover:not(:disabled) { filter: brightness(1.05); }
+  .btn-record-pay:disabled { opacity: .55; cursor: default; }
 
   section.actions {
     display: flex; flex-direction: column; gap: .8rem;
