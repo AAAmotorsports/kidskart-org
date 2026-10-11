@@ -327,6 +327,104 @@ if (monthYm) {
   }
 }
 
+// ============================================================================
+// 月別 / 年別モードで表示する「月次売上グラフ (12 ヶ月)」
+// -----------------------------------------------------------------------------
+// - 年別モード: 選択年 Jan-Dec の 12 本の棒
+// - 月別モード: 選択月を右端に、過去 12 ヶ月の 12 本の棒
+// - 比較年: ?cy=YYYY で明示指定 (省略時は 1 年前)
+//   same shape を比較年の同月に対して並べて表示
+// 集計: paid_at (JST YYYY-MM) で bucket 化、paid_amount を合計
+// ============================================================================
+type ChartBucket = { ym: string; total: number; count: number };
+
+const chartMode = (mode === 'month' || mode === 'year') ? mode : null;
+
+async function fetchMonthlyBuckets(fromIso: string, toIso: string): Promise<Map<string, { total: number; count: number }>> {
+  const { data } = await supabase
+    .from('reservations')
+    .select('paid_at, paid_amount')
+    .not('paid_at', 'is', null)
+    .gte('paid_at', fromIso)
+    .lt('paid_at', toIso);
+  const buckets = new Map<string, { total: number; count: number }>();
+  for (const r of (data ?? []) as any[]) {
+    const d = new Date(r.paid_at);
+    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
+    const ym = `${jst.getUTCFullYear()}-${pad2(jst.getUTCMonth() + 1)}`;
+    const cur = buckets.get(ym) ?? { total: 0, count: 0 };
+    cur.total += Number(r.paid_amount ?? 0);
+    cur.count += 1;
+    buckets.set(ym, cur);
+  }
+  return buckets;
+}
+
+const cyParam = (url.searchParams.get('cy') || '').trim();
+
+let chartCurrent: ChartBucket[] = [];
+let chartCompare: ChartBucket[] = [];
+let chartYearCur = 0;
+let chartYearComp = 0;
+let chartMonths: string[] = [];  // ['YYYY-MM', ...] の順序 (左→右)
+
+if (chartMode === 'year') {
+  const y = /^\d{4}$/.test(yParam) ? parseInt(yParam, 10) : now.getFullYear();
+  chartYearCur = y;
+  chartYearComp = /^\d{4}$/.test(cyParam) ? parseInt(cyParam, 10) : y - 1;
+
+  // 12 ヶ月 (Jan-Dec)
+  for (let m = 1; m <= 12; m++) {
+    chartMonths.push(`${y}-${pad2(m)}`);
+  }
+  const curStart = jstMidnightUtcIso(y, 1, 1);
+  const curEnd   = jstMidnightUtcIso(y + 1, 1, 1);
+  const compStart = jstMidnightUtcIso(chartYearComp, 1, 1);
+  const compEnd   = jstMidnightUtcIso(chartYearComp + 1, 1, 1);
+  const [curB, compB] = await Promise.all([
+    fetchMonthlyBuckets(curStart, curEnd),
+    fetchMonthlyBuckets(compStart, compEnd),
+  ]);
+  chartCurrent = chartMonths.map((ym) => ({ ym, ...(curB.get(ym) ?? { total: 0, count: 0 }) }));
+  // 比較側: 同月 (year 置換)
+  const compMonths = chartMonths.map((ym) => ym.replace(/^\d{4}/, String(chartYearComp)));
+  chartCompare = compMonths.map((ym) => ({ ym, ...(compB.get(ym) ?? { total: 0, count: 0 }) }));
+} else if (chartMode === 'month') {
+  const ym = /^\d{4}-\d{2}$/.test(ymParam) ? ymParam : defaultYm;
+  const [y, m] = ym.split('-').map(Number);
+  chartYearCur = y;
+  chartYearComp = /^\d{4}$/.test(cyParam) ? parseInt(cyParam, 10) : y - 1;
+  // 選択月を右端に、過去 12 ヶ月
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    chartMonths.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`);
+  }
+  const firstY = chartMonths[0].split('-').map(Number);
+  const lastY  = chartMonths[11].split('-').map(Number);
+  const curStart = jstMidnightUtcIso(firstY[0], firstY[1], 1);
+  const curEnd   = jstMidnightUtcIso(lastY[0],  lastY[1] + 1, 1);
+  // 比較: 同じ 12 ヶ月の yearDiff 年前
+  const yearDiff = chartYearCur - chartYearComp;
+  const compMonths = chartMonths.map((ym) => {
+    const [cy, cm] = ym.split('-').map(Number);
+    return `${cy - yearDiff}-${pad2(cm)}`;
+  });
+  const compStart = jstMidnightUtcIso(firstY[0] - yearDiff, firstY[1], 1);
+  const compEnd   = jstMidnightUtcIso(lastY[0]  - yearDiff, lastY[1] + 1, 1);
+  const [curB, compB] = await Promise.all([
+    fetchMonthlyBuckets(curStart, curEnd),
+    fetchMonthlyBuckets(compStart, compEnd),
+  ]);
+  chartCurrent = chartMonths.map((ym) => ({ ym, ...(curB.get(ym) ?? { total: 0, count: 0 }) }));
+  chartCompare = compMonths.map((ym) => ({ ym, ...(compB.get(ym) ?? { total: 0, count: 0 }) }));
+}
+
+const chartMaxValue = Math.max(
+  1,
+  ...chartCurrent.map((b) => b.total),
+  ...chartCompare.map((b) => b.total),
+);
+
 // 「このページで見ている月」が今月なら「まだ freee 送信しない (翌月送る)」案内。
 // それ以前なら送信可。
 const nowJst2 = new Date(now.getTime() + 9 * 3600 * 1000);
@@ -521,6 +619,83 @@ function buildUrl(next: Record<string, string>) {
             )}
           </div>
         )}
+      </section>
+    )}
+
+    {/* ===== 月次売上グラフ (12 ヶ月、月別 / 年別モードのみ) ===== */}
+    {chartMode && (
+      <section class="section chart-section">
+        <div class="chart-head">
+          <h2>📈 {chartMode === 'year' ? `${chartYearCur}年 月別推移` : '過去 12 ヶ月の推移'}</h2>
+          <form method="get" class="chart-compare-form">
+            <input type="hidden" name="mode" value={mode} />
+            {chartMode === 'month' && <input type="hidden" name="ym" value={ymParam || defaultYm} />}
+            {chartMode === 'year'  && <input type="hidden" name="y"  value={yParam || defaultY} />}
+            {excludeRain && <input type="hidden" name="exclude_rain" value="1" />}
+            <label>比較年:</label>
+            <input type="number" name="cy" min="2020" max="2100" value={cyParam || chartYearComp} style="width:5em" />
+            <button type="submit" class="btn-jump">更新</button>
+          </form>
+        </div>
+
+        <svg class="chart-svg" viewBox="0 0 880 260" preserveAspectRatio="none" aria-label="月別売上推移">
+          {/* Y 軸グリッド (4 本) */}
+          {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+            const y = 220 - 200 * p;
+            return (
+              <>
+                <line x1="60" y1={y} x2="860" y2={y} stroke="#e3edf3" stroke-width="1" />
+                <text x="55" y={y + 4} text-anchor="end" font-size="10" fill="#7d8fa0">
+                  ¥{Math.round(chartMaxValue * p / 1000).toLocaleString('ja-JP')}k
+                </text>
+              </>
+            );
+          })}
+          {/* 棒グラフ: 月あたり 2 本 (比較 + 現在) */}
+          {chartMonths.map((ym, i) => {
+            const slotW = (860 - 60) / 12;
+            const groupX = 60 + i * slotW + slotW * 0.1;
+            const barW = (slotW * 0.8) / 2;
+            const cur = chartCurrent[i]?.total ?? 0;
+            const comp = chartCompare[i]?.total ?? 0;
+            const curH = (cur / chartMaxValue) * 200;
+            const compH = (comp / chartMaxValue) * 200;
+            const monthLabel = ym.split('-')[1] + '月';
+            return (
+              <>
+                {/* 比較年バー (左、薄め) */}
+                <rect
+                  x={groupX} y={220 - compH} width={barW} height={compH}
+                  fill="#c9d4df" rx="2"
+                >
+                  <title>{chartCompare[i]?.ym} ¥{comp.toLocaleString()}</title>
+                </rect>
+                {/* 現在年バー (右、濃い) */}
+                <rect
+                  x={groupX + barW} y={220 - curH} width={barW} height={curH}
+                  fill="#3aa9e8" rx="2"
+                >
+                  <title>{ym} ¥{cur.toLocaleString()}</title>
+                </rect>
+                {/* 月ラベル */}
+                <text x={groupX + barW} y="240" text-anchor="middle" font-size="11" fill="#4a5a6a">
+                  {monthLabel}
+                </text>
+                {/* 当月なら合計金額を上にちょこっと */}
+                {cur > 0 && (
+                  <text x={groupX + barW} y={220 - curH - 3} text-anchor="middle" font-size="9" fill="#1a7fb8" font-weight="700">
+                    {Math.round(cur / 1000)}k
+                  </text>
+                )}
+              </>
+            );
+          })}
+        </svg>
+
+        <div class="chart-legend">
+          <span class="lg-item"><span class="sw sw-cur"></span>{chartYearCur}年 ({chartCurrent.reduce((a, b) => a + b.total, 0).toLocaleString()} 円)</span>
+          <span class="lg-item"><span class="sw sw-comp"></span>{chartYearComp}年 ({chartCompare.reduce((a, b) => a + b.total, 0).toLocaleString()} 円)</span>
+        </div>
       </section>
     )}
 
@@ -829,6 +1004,37 @@ function buildUrl(next: Record<string, string>) {
     text-decoration: none;
   }
   .btn-today-jump:hover { background: var(--sky-mist); color: var(--sky-deep); border-color: var(--sky-deep); }
+
+  /* ---- 月次売上グラフ ---- */
+  .chart-section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; }
+  .chart-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: .8rem; flex-wrap: wrap; margin-bottom: .6rem;
+  }
+  .chart-head h2 { margin: 0; font-size: 1rem; }
+  .chart-compare-form {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: .82rem; color: var(--ink-3);
+  }
+  .chart-compare-form input[type="number"] {
+    padding: .3rem .5rem; font-size: .85rem;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: #fff;
+  }
+  .chart-svg {
+    width: 100%; height: auto; max-height: 320px;
+    background: #fcfdfe; border-radius: 8px;
+    display: block;
+  }
+  .chart-legend {
+    display: flex; justify-content: center; gap: 1.2rem;
+    margin-top: .6rem; font-size: .82rem; color: var(--ink-2);
+    flex-wrap: wrap;
+  }
+  .lg-item { display: inline-flex; align-items: center; gap: .4rem; }
+  .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+  .sw-cur  { background: #3aa9e8; }
+  .sw-comp { background: #c9d4df; }
 
   .rain-filter { margin: 0 0 1rem; }
   .rf-toggle {
