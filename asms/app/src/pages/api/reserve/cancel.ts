@@ -93,9 +93,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     //    SELECT FOR UPDATE で reservation 行を lock してから再計算する RPC。
     //    同時に 2 件キャンセル来ても両者が自分の view の active count で
     //    上書きしないので total_amount が狂わない。
-    const { data: newTotal, error: rrErr } = await supabase
+    const { data: newTotalRpc, error: rrErr } = await supabase
       .rpc('recalculate_reservation_total', { p_reservation_id: res.id });
     if (rrErr) return json({ error: `料金再計算に失敗: ${rrErr.message}` }, 500);
+    const newTotal: number = Number(newTotalRpc ?? 0);
     const remaining = currentlyActive.filter((p) => !requestedActive.includes(p.id));
 
     // 3) Emails
