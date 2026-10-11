@@ -173,6 +173,21 @@ const defaultBirth = (() => {
           <label>{tr('メール', 'Email')}</label>
           <input type="email" name="g_email" autocomplete="email" placeholder={tr('(任意) 完了通知を送ります', '(optional)')} />
         </div>
+        <div class="field">
+          <label>{tr('住所 (都道府県・市区町村)', 'Address (prefecture / city)')}</label>
+          <input type="text" name="g_address" autocomplete="street-address"
+            placeholder={tr('例: 福岡県福岡市中央区天神', 'e.g. Fukuoka, Fukuoka-shi…')} />
+        </div>
+        <div class="field">
+          <label>
+            {tr('番地・建物名・部屋番号', 'Building number / room')}
+            <span class="hint-inline">
+              {tr('(入れ忘れが多いのでご記入ください)', '(easy to forget — please fill in!)')}
+            </span>
+          </label>
+          <input type="text" name="g_banchi" autocomplete="address-line2"
+            placeholder={tr('例: 1-2-3 サンシャインビル 501号室', 'e.g. 1-2-3 Sunshine #501')} />
+        </div>
       </section>
 
       <!-- 緊急連絡先 -->
@@ -552,6 +567,11 @@ const defaultBirth = (() => {
       return;
     }
 
+    // 住所 (都道府県・市区町村) + 番地 を半角スペースで結合
+    const g_address = fd.get('g_address')?.toString().trim() || '';
+    const g_banchi = fd.get('g_banchi')?.toString().trim() || '';
+    const combinedAddress = g_banchi ? `${g_address} ${g_banchi}`.trim() : g_address;
+
     const payload = {
       slot_id: slotId,
       term_id: termId,  // 現行 terms を明示指定 (admin create は省略時に自動選択するが、確実性のため)
@@ -560,6 +580,7 @@ const defaultBirth = (() => {
         name: g_name,
         kana: g_kana,
         phone: g_phone,
+        address: combinedAddress || undefined,
         // email は RPC が必須扱いなのでダミーを合成。
         // Date.now() だと同 ms に 2 件登録で衝突 (guardians が email ベース
         // dedupe なので別家族が 1 行に merge されてしまう) → crypto.randomUUID() で

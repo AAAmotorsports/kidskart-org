@@ -398,6 +398,11 @@ if (searchQ.length >= 1) {
         <span class="hd-num">{customer.customer_number}</span>
         <span>{customer.birth_date} · {ageOn(customer.birth_date)}歳 · {genderJa(customer.gender)}</span>
       </div>
+      <div class="hd-actions">
+        <a class="btn-new-reservation" href={`/admin/reservations/new?customer_id=${customer.id}`}>
+          ➕ このお客様で新規予約
+        </a>
+      </div>
       <form method="POST" class="hd-edit-form" hidden data-edit="customer">
         <input type="hidden" name="op" value="update_customer" />
         <div class="hd-edit-row">
@@ -886,6 +891,20 @@ if (searchQ.length >= 1) {
     font-family: var(--mono);
   }
   .hd-num { color: var(--ink-3); }
+
+  .hd-actions { margin-top: .7rem; }
+  .btn-new-reservation {
+    display: inline-block;
+    padding: .5rem .95rem;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff;
+    font-size: .82rem;
+    font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 3px 10px rgba(229,99,26,.25);
+  }
+  .btn-new-reservation:hover { filter: brightness(1.05); }
 
   .ok-banner {
     background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
