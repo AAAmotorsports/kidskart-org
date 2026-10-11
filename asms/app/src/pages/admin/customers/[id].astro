@@ -173,16 +173,55 @@ if (Astro.request.method === 'POST') {
     if (!target) return back('', '統合先のカルテが見つかりません');
     if (target.is_deleted) return back('', '統合先のカルテは既に削除されています');
 
-    // Move all history to target
+    // Move all history to target.
+    //
+    // guardian_customer_links だけ特別扱い:
+    // UNIQUE (guardian_id, customer_id) 制約があるため、
+    // ソースの guardian がすでにターゲットにも紐づいている場合、
+    // 単純 UPDATE だと 23505 (duplicate key value) になる。
+    // 事前に重複する源行を削除してから UPDATE する。
     const moves = [
       supabase.from('reservation_participants').update({ customer_id: targetId }).eq('customer_id', id),
       supabase.from('customer_progressions').update({ customer_id: targetId }).eq('customer_id', id),
       supabase.from('customer_bests').update({ customer_id: targetId }).eq('customer_id', id),
-      supabase.from('guardian_customer_links').update({ customer_id: targetId }).eq('customer_id', id),
     ];
     for (const p of moves) {
       const { error } = await p;
       if (error) return back('', `統合中にエラー: ${fmt(error)}`);
+    }
+
+    // --- guardian_customer_links: dedupe + move ---------------------------
+    const { data: targetLinks, error: tlErr } = await supabase
+      .from('guardian_customer_links')
+      .select('guardian_id')
+      .eq('customer_id', targetId);
+    if (tlErr) return back('', `統合中にエラー (target links fetch): ${fmt(tlErr)}`);
+    const targetGuardianIds = new Set((targetLinks ?? []).map((r: any) => r.guardian_id));
+
+    const { data: sourceLinks, error: slErr } = await supabase
+      .from('guardian_customer_links')
+      .select('id, guardian_id')
+      .eq('customer_id', id);
+    if (slErr) return back('', `統合中にエラー (source links fetch): ${fmt(slErr)}`);
+
+    const dupIds = (sourceLinks ?? [])
+      .filter((r: any) => targetGuardianIds.has(r.guardian_id))
+      .map((r: any) => r.id);
+    const moveIds = (sourceLinks ?? [])
+      .filter((r: any) => !targetGuardianIds.has(r.guardian_id))
+      .map((r: any) => r.id);
+
+    if (dupIds.length > 0) {
+      const { error: dErr } = await supabase
+        .from('guardian_customer_links').delete().in('id', dupIds);
+      if (dErr) return back('', `統合中にエラー (重複リンク削除): ${fmt(dErr)}`);
+    }
+    if (moveIds.length > 0) {
+      const { error: uErr } = await supabase
+        .from('guardian_customer_links')
+        .update({ customer_id: targetId })
+        .in('id', moveIds);
+      if (uErr) return back('', `統合中にエラー (リンク移行): ${fmt(uErr)}`);
     }
 
     // Mark source as merged + deleted
