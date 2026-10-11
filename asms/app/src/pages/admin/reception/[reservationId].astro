@@ -38,7 +38,7 @@ const { data: res, error } = await supabase
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
-    slots(date, start_time, end_time, courses(code, name)),
+    slots(id, date, start_time, end_time, courses(code, name)),
     guardians(id, name, kana, email, phone, address),
     reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status),
     consents(id, consented_at, consenter_name, signature_type, signature_typed_name, signature_image_key)
