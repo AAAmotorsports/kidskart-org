@@ -43,6 +43,35 @@ if (Astro.request.method === 'POST') {
     return error ? back('', fmt(error)) : back('メモを更新しました');
   }
 
+  if (op === 'update_customer') {
+    // 氏名・フリガナ・生年月日・性別 の修正。typo 訂正や性別取り違えなど。
+    // 入力値は 400 で明示的に弾く (DB の 22P02 を素通りさせない)。
+    const name = ((form.get('name') as string) || '').trim();
+    const kana = ((form.get('kana') as string) || '').trim();
+    const birth = ((form.get('birth_date') as string) || '').trim();
+    const gender = ((form.get('gender') as string) || '').trim();
+
+    if (!name) return back('', '氏名は必須です');
+    if (!kana) return back('', 'フリガナは必須です');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birth)) return back('', '生年月日の形式が不正です (YYYY-MM-DD)');
+    const [by, bm, bd] = birth.split('-').map((n) => parseInt(n, 10));
+    const curYear = new Date().getUTCFullYear();
+    if (by < 1900 || by > curYear) return back('', `生年月日: 年は 1900〜${curYear} の範囲で指定`);
+    if (bm < 1 || bm > 12) return back('', '生年月日: 月は 1〜12 の範囲で指定');
+    if (bd < 1 || bd > 31) return back('', '生年月日: 日は 1〜31 の範囲で指定');
+    const rt = new Date(Date.UTC(by, bm - 1, bd));
+    if (rt.getUTCFullYear() !== by || rt.getUTCMonth() !== bm - 1 || rt.getUTCDate() !== bd) {
+      return back('', `${by}年${bm}月${bd}日 は存在しない日付です`);
+    }
+    if (!['male', 'female', 'other'].includes(gender)) return back('', '性別が不正です');
+
+    const { error } = await supabase
+      .from('customers')
+      .update({ name, kana, birth_date: birth, gender })
+      .eq('id', id);
+    return error ? back('', fmt(error)) : back('カルテ基本情報を更新しました');
+  }
+
   if (op === 'set_team_member') {
     const raw = ((form.get('team_member_since') as string) || '').trim();
     const dateVal = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
@@ -361,11 +390,46 @@ if (searchQ.length >= 1) {
       <div class="hd-name">
         <h1>{customer.name}</h1>
         <span class="hd-kana">（{customer.kana}）</span>
+        <button type="button" class="hd-edit-btn" data-toggle-edit="customer">
+          ✏️ 編集
+        </button>
       </div>
       <div class="hd-meta">
         <span class="hd-num">{customer.customer_number}</span>
         <span>{customer.birth_date} · {ageOn(customer.birth_date)}歳 · {genderJa(customer.gender)}</span>
       </div>
+      <div class="hd-actions">
+        <a class="btn-new-reservation" href={`/admin/reservations/new?customer_id=${customer.id}`}>
+          ➕ このお客様で新規予約
+        </a>
+      </div>
+      <form method="POST" class="hd-edit-form" hidden data-edit="customer">
+        <input type="hidden" name="op" value="update_customer" />
+        <div class="hd-edit-row">
+          <label>氏名 <span class="req">*</span></label>
+          <input type="text" name="name" value={customer.name} maxlength="60" required />
+        </div>
+        <div class="hd-edit-row">
+          <label>フリガナ <span class="req">*</span></label>
+          <input type="text" name="kana" value={customer.kana} maxlength="60" required />
+        </div>
+        <div class="hd-edit-row">
+          <label>生年月日 <span class="req">*</span></label>
+          <input type="date" name="birth_date" value={customer.birth_date} required />
+        </div>
+        <div class="hd-edit-row">
+          <label>性別 <span class="req">*</span></label>
+          <select name="gender" required>
+            <option value="male" selected={customer.gender === 'male'}>男の子</option>
+            <option value="female" selected={customer.gender === 'female'}>女の子</option>
+            <option value="other" selected={customer.gender === 'other'}>その他</option>
+          </select>
+        </div>
+        <div class="hd-edit-actions">
+          <button type="submit" class="btn-save">💾 保存</button>
+          <button type="button" class="btn-cancel" data-cancel-edit="customer">キャンセル</button>
+        </div>
+      </form>
     </header>
 
     {msg && <div class="ok-banner">{msg}</div>}
@@ -828,6 +892,20 @@ if (searchQ.length >= 1) {
   }
   .hd-num { color: var(--ink-3); }
 
+  .hd-actions { margin-top: .7rem; }
+  .btn-new-reservation {
+    display: inline-block;
+    padding: .5rem .95rem;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff;
+    font-size: .82rem;
+    font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 3px 10px rgba(229,99,26,.25);
+  }
+  .btn-new-reservation:hover { filter: brightness(1.05); }
+
   .ok-banner {
     background: rgba(164,214,94,.12); border: 1px solid var(--lime-deep);
     color: var(--lime-deep);
@@ -976,6 +1054,38 @@ if (searchQ.length >= 1) {
   }
   .g-addr { font-size: .74rem; color: var(--ink-3); margin-top: .3rem; }
   .g-zip { display: inline-block; margin-right: .3rem; font-family: var(--mono); color: var(--ink-4); }
+  /* ---- カルテ基本情報 (ヘッダ) の編集 ---- */
+  .hd-edit-btn {
+    margin-left: .6rem; padding: .3rem .8rem; font-size: .78rem;
+    background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-2);
+    border-radius: 100px; cursor: pointer; font-weight: 700;
+    vertical-align: middle;
+  }
+  .hd-edit-btn:hover { background: var(--sky-mist); color: var(--sky-deep); border-color: var(--sky-deep); }
+  .hd-edit-form {
+    display: grid; gap: .7rem; margin-top: 1rem; padding: 1rem;
+    background: #fffcf3; border: 2px solid #e8a833; border-radius: 10px;
+  }
+  .hd-edit-row { display: flex; flex-direction: column; gap: .3rem; }
+  .hd-edit-row label { font-size: .78rem; font-weight: 700; color: var(--ink-2); }
+  .hd-edit-row .req { color: var(--rose-deep); }
+  .hd-edit-row input, .hd-edit-row select {
+    padding: .55rem .7rem; font-size: .95rem; border: 1.5px solid var(--line);
+    border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  .hd-edit-row input:focus, .hd-edit-row select:focus {
+    outline: none; border-color: var(--sky-deep);
+  }
+  .hd-edit-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .3rem; }
+  .hd-edit-actions .btn-save {
+    padding: .5rem 1.2rem; background: var(--sky-deep); color: #fff;
+    border: none; border-radius: 6px; font-weight: 800; font-size: .9rem; cursor: pointer;
+  }
+  .hd-edit-actions .btn-cancel {
+    padding: .5rem 1.2rem; background: #fff; color: var(--ink-2); border: 1.5px solid var(--line);
+    border-radius: 6px; font-weight: 700; font-size: .9rem; cursor: pointer;
+  }
+
   .g-edit-btn {
     margin-left: auto; padding: .3rem .7rem; font-size: .72rem;
     background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-2);

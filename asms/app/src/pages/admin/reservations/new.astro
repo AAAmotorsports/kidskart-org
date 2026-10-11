@@ -51,6 +51,69 @@ const slotsJson = JSON.stringify(slots.reduce((acc, s) => {
   acc[s.id] = { priceRegular: s.priceRegular, priceMember: s.priceMember, remaining: s.remaining };
   return acc;
 }, {} as any));
+
+// ---- Prefill support ------------------------------------------------------
+// ?customer_id=UUID が指定されたら、そのカルテ + 主連絡先保護者を取り出して
+// 画面ロード時に 参加者 1 名目 と 保護者情報 を自動入力する。
+// カルテからの「リピート予約を追加」ボタン用。
+const url = new URL(Astro.request.url);
+const prefillCustomerId = url.searchParams.get('customer_id') || '';
+let prefillData: any = null;
+if (/^[0-9a-f-]{36}$/i.test(prefillCustomerId)) {
+  const { data: cust } = await supabase
+    .from('customers')
+    .select('id, name, kana, birth_date, gender')
+    .eq('id', prefillCustomerId)
+    .eq('is_deleted', false)
+    .maybeSingle();
+  if (cust) {
+    // 直近予約から身長・写真同意を復元 (snapshot カラム経由)
+    const { data: lastRp } = await supabase
+      .from('reservation_participants')
+      .select('height_cm, photo_consent, kart_experience_note, reservation:reservations(created_at)')
+      .eq('customer_id', cust.id)
+      .order('reservation(created_at)', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // 主連絡先保護者を取る (guardian_customer_links.is_primary 優先、なければ最新)
+    const { data: links } = await supabase
+      .from('guardian_customer_links')
+      .select('is_primary, created_at, guardians(id, name, kana, phone, email, postal_code, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation)')
+      .eq('customer_id', cust.id)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const linkRow: any = (links ?? [])[0];
+    const guardian: any = linkRow?.guardians ?? null;
+
+    prefillData = {
+      participant: {
+        name: cust.name,
+        kana: cust.kana,
+        birth_date: cust.birth_date,
+        gender: cust.gender,
+        height_cm: lastRp?.height_cm ?? null,
+        photo_consent: lastRp?.photo_consent ?? null,
+        kart_experience_note: (lastRp as any)?.kart_experience_note ?? '',
+      },
+      guardian: guardian ? {
+        name: guardian.name,
+        kana: guardian.kana,
+        phone: guardian.phone,
+        email: guardian.email,
+        postal_code: guardian.postal_code,
+        address: guardian.address,
+      } : null,
+      emergency: guardian ? {
+        name: guardian.emergency_contact_name ?? '',
+        phone: guardian.emergency_contact_phone ?? '',
+        relation: guardian.emergency_contact_relation ?? '',
+      } : null,
+    };
+  }
+}
+const prefillJson = JSON.stringify(prefillData);
 ---
 <Base title="代理予約入力 — 管理">
   <main>
@@ -193,8 +256,11 @@ const slotsJson = JSON.stringify(slots.reduce((acc, s) => {
   </main>
 </Base>
 
-<script is:inline define:vars={{ slotsJson }}>
+<script is:inline define:vars={{ slotsJson, prefillJson }}>
   window.__ASMS_SLOTS = JSON.parse(slotsJson);
+  // カルテからの「リピート予約を追加」経由 (?customer_id=xxx) で来た場合、
+  // 参加者1名目 と 保護者情報 を初期値として埋める。
+  window.__ASMS_PREFILL = JSON.parse(prefillJson);
 </script>
 
 <script>
@@ -364,6 +430,57 @@ const slotsJson = JSON.stringify(slots.reduce((acc, s) => {
     renderParticipants();
     updateTotal();
     syncSame();
+    applyPrefill();
+
+    function applyPrefill() {
+      const data = (window as any).__ASMS_PREFILL;
+      if (!data) return;
+      const setVal = (name: string, value: any, el?: HTMLElement) => {
+        if (value == null || value === '') return;
+        const root = el ?? form;
+        const f = root.querySelector(`[name="${name}"]`) as HTMLInputElement | HTMLSelectElement | null;
+        if (f) f.value = String(value);
+      };
+      // 参加者1名目
+      const p = data.participant;
+      if (p) {
+        const first = partHost.querySelector<HTMLElement>('.participant');
+        if (first) {
+          setVal('p_name', p.name, first);
+          setVal('p_kana', p.kana, first);
+          setVal('p_birth', p.birth_date, first);
+          setVal('p_gender', p.gender, first);
+          setVal('p_height', p.height_cm, first);
+          setVal('p_experience', p.kart_experience_note, first);
+        }
+      }
+      // 保護者
+      const g = data.guardian;
+      if (g) {
+        setVal('g_name', g.name);
+        setVal('g_kana', g.kana);
+        setVal('g_phone', g.phone);
+        setVal('g_email', g.email);
+        setVal('g_postal', g.postal_code);
+        setVal('g_address', g.address);
+      }
+      // 緊急連絡先 (保護者と違う人が登録されていた場合のみチェック外す)
+      const e = data.emergency;
+      if (e && e.name && g && (e.name !== g.name || e.phone !== g.phone)) {
+        sameChk.checked = false;
+        syncSame();
+        setVal('e_name', e.name);
+        setVal('e_phone', e.phone);
+        setVal('e_relation', e.relation);
+      }
+      // 入力元を「リピート (カルテ)」寄せに
+      const otherRadio = form.querySelector<HTMLInputElement>('input[name="src"][value="OTHER"]');
+      if (otherRadio) {
+        otherRadio.checked = true;
+        srcOtherWrap.hidden = false;
+        if (srcOtherInput && !srcOtherInput.value) srcOtherInput.value = 'REPEAT_KARTE';
+      }
+    }
   }
 </script>
 
