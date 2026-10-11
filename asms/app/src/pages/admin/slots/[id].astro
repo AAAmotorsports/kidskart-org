@@ -85,9 +85,11 @@ if (Astro.request.method === 'POST') {
 
     // 2) total_amount を 原子的に 再計算 (TOCTOU 回避の RPC)。
     //    同時に 2 人分キャンセルが来ても SELECT FOR UPDATE で serialize される。
-    const { error: rtErr } = await supabase
+    //    戻り値 (新 total_amount) をメール本文・UI 文言に流用する。
+    const { data: newTotalRpc, error: rtErr } = await supabase
       .rpc('recalculate_reservation_total', { p_reservation_id: res.id });
     if (rtErr) return back(`参加者はキャンセル済ですが料金再計算でエラー: ${fmt(rtErr)}`, '');
+    const newTotal: number = Number(newTotalRpc ?? 0);
 
     // 3) active 参加者を数え直し、残り 0 なら reservation.status も cancelled に
     const { data: siblings } = await supabase
