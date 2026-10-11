@@ -1263,6 +1263,84 @@ begin
     assert (v_res->>'ok')::boolean, '30-6 先の日の 17:00 が受けられない: ' || (v_res->>'message');
   end;
 
+  -- =========================================================================
+  raise notice '--- 31. 自動メールからの予約を数える (2026-10)';
+  -- =========================================================================
+  -- 「リマインドメールで予約入ってないかな？」に答えられるようにした。
+  -- ★ referrer は URL のパラメータが元なので、知らない値は捨てること
+  -- ★ ほかの群もメール記録を入れるので、絶対値では比べない。
+  --   先に数えておいて、増えたぶんで確かめる
+  declare
+    v_eff   jsonb;
+    v_res   jsonb;
+    v_ref   text;
+    v_sent0 int;
+    v_fail0 int;
+    v_book0 int;
+    f_sent  int;  -- メールの kind から送信数を取る
+    f_fail  int;
+    f_book  int;
+  begin
+    v_eff := aone_mail_effect(90);
+    v_sent0 := coalesce((select (x->>'sent')::int from jsonb_array_elements(v_eff->'mails') x
+                          where x->>'kind' = 'followup'), 0);
+    v_fail0 := coalesce((select (x->>'failed')::int from jsonb_array_elements(v_eff->'mails') x
+                          where x->>'kind' = 'followup'), 0);
+    v_book0 := coalesce((select (x->>'count')::int from jsonb_array_elements(v_eff->'booked') x
+                          where x->>'referrer' = 'followup'), 0);
+
+    insert into aone_mail_log (kind, to_email, subject, ok) values
+      ('followup', 't1@example.test', 'またのご利用を', true),
+      ('followup', 't2@example.test', 'またのご利用を', true),
+      ('followup', 't3@example.test', 'またのご利用を', false),
+      ('admin',    't4@example.test', '管理者向け',     true);
+
+    v_res := aone_create_reservation(jsonb_build_object(
+      'kind', 'rp', 'date', to_char(aone_today() + 200, 'YYYY-MM-DD'),
+      'start_time', '10:00', 'party_size', 3,
+      'contact', jsonb_build_object('name', 'フォロー太郎',
+                                    'phone', '090-0000-3101', 'email', 't1@example.test'),
+      'source', 'web', 'terms_agreed', true, 'referrer', 'followup'));
+    assert (v_res->>'ok')::boolean, '31-1 referrer 付きの予約が作れない: ' || v_res::text;
+
+    select referrer into v_ref from aone_reservations where id = (v_res->>'id')::uuid;
+    assert v_ref = 'followup', '31-2 referrer が保存されていない: ' || coalesce(v_ref, 'null');
+
+    -- 知らない値は捨てる。ここで予約ごと失敗させてはいけない
+    v_res := aone_create_reservation(jsonb_build_object(
+      'kind', 'rp', 'date', to_char(aone_today() + 201, 'YYYY-MM-DD'),
+      'start_time', '10:00', 'party_size', 3,
+      'contact', jsonb_build_object('name', '不明',
+                                    'phone', '090-0000-3102', 'email', 't9@example.test'),
+      'source', 'web', 'terms_agreed', true, 'referrer', 'でたらめ'));
+    assert (v_res->>'ok')::boolean, '31-3 知らない referrer で予約が落ちた: ' || v_res::text;
+    select referrer into v_ref from aone_reservations where id = (v_res->>'id')::uuid;
+    assert v_ref is null, '31-4 知らない referrer が保存された: ' || coalesce(v_ref, 'null');
+
+    v_eff := aone_mail_effect(90);
+    f_sent := coalesce((select (x->>'sent')::int from jsonb_array_elements(v_eff->'mails') x
+                         where x->>'kind' = 'followup'), 0);
+    f_fail := coalesce((select (x->>'failed')::int from jsonb_array_elements(v_eff->'mails') x
+                         where x->>'kind' = 'followup'), 0);
+    f_book := coalesce((select (x->>'count')::int from jsonb_array_elements(v_eff->'booked') x
+                         where x->>'referrer' = 'followup'), 0);
+    assert f_sent - v_sent0 = 2, '31-5 送信数が合わない: ' || (f_sent - v_sent0);
+    assert f_fail - v_fail0 = 1, '31-6 失敗数が合わない: ' || (f_fail - v_fail0);
+    -- 管理者向けのメールは数に入れない
+    assert not exists (select 1 from jsonb_array_elements(v_eff->'mails') x
+                        where x->>'kind' = 'admin'),
+      '31-7 管理者向けメールを数えている';
+    assert f_book - v_book0 = 1, '31-8 そこから入った予約数が合わない: ' || (f_book - v_book0);
+
+    -- 取り消した予約は成果に数えない
+    update aone_reservations set status = 'cancelled'
+      where contact_name = 'フォロー太郎';
+    v_eff := aone_mail_effect(90);
+    f_book := coalesce((select (x->>'count')::int from jsonb_array_elements(v_eff->'booked') x
+                         where x->>'referrer' = 'followup'), 0);
+    assert f_book = v_book0, '31-9 キャンセルした予約を成果に数えている: ' || (f_book - v_book0);
+  end;
+
   raise notice 'ALL TESTS PASSED';
 end;
 $$;

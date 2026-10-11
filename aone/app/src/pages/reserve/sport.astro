@@ -252,6 +252,8 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
       email: $('email').value,
       request_note: $('note').value,
       terms_agreed: true,
+      // 自動メールのリンク (?from=) から来た場合の目印
+      referrer: window.aoneFrom && window.aoneFrom(),
     };
 
     try {

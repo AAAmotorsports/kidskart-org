@@ -1,5 +1,6 @@
 ---
 import { envFrom } from '@lib/supabase';
+import { REFERRERS } from '@lib/domain';
 
 interface Props {
   title: string;
@@ -268,6 +269,29 @@ const gaId = (env.PUBLIC_GA4_MEASUREMENT_ID ?? '').trim();
       </div>
     </footer>
   )}
+
+  {/* 自動メールのリンクに付けた ?from= を覚えておく。
+      予約フォームはこれを referrer として一緒に送り、「フォローメールから
+      何件入ったか」を数えられるようにする (0034 / aone_mail_effect)。
+      ★ 覚えるのは sessionStorage。/reserve → /reserve/rp と画面が変わっても
+        残り、タブを閉じれば消える (クッキーにして長く残すほどの話ではない)
+      ★ 知らない値は捨てる。URL のパラメータは誰でも書き換えられる */}
+  <script is:inline define:vars={{ allowFrom: REFERRERS }}>
+    (function () {
+      var KEY = 'aone_from';
+      function clean(v) {
+        v = String(v == null ? '' : v).trim().toLowerCase();
+        return allowFrom.indexOf(v) >= 0 ? v : null;
+      }
+      try {
+        var q = clean(new URL(location.href).searchParams.get('from'));
+        if (q) sessionStorage.setItem(KEY, q);
+      } catch (e) { /* プライベートモード等で使えないことがある */ }
+      window.aoneFrom = function () {
+        try { return clean(sessionStorage.getItem(KEY)); } catch (e) { return null; }
+      };
+    })();
+  </script>
 
   {/* 画面の移動は必ずここを通す。枠の中に貼られているときは、枠の中で移動すると
       予約完了ページの URL がお客様に見えず、控えをブックマークできない。

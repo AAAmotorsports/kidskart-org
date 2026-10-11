@@ -595,6 +595,37 @@ export async function cronHealth(env: Env): Promise<CronHealth | null> {
   }
 }
 
+export interface MailEffect {
+  /** 集計した日数 (既定 90 日) */
+  days: number;
+  /** いつから数えたか (YYYY-MM-DD) */
+  since: string;
+  mails: Array<{ kind: string; sent: number; failed: number }>;
+  booked: Array<{ referrer: string; count: number; people: number; amount: number }>;
+}
+
+/**
+ * 自動メールの効き目 (管理トップの「自動メールから入った予約」欄)。
+ *
+ * 「リマインドメールで予約入ってないかな？」(2026-10 オーナー) に答えるための欄。
+ * 送信数は aone_mail_log、そこから入った予約は aone_reservations.referrer から
+ * 数え直す (0034)。
+ */
+export async function mailEffect(env: Env, days = 90): Promise<MailEffect | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin(env).rpc('aone_mail_effect', { p_days: days });
+    if (error) {
+      // 0034 を当てる前でも管理画面は開けるようにする (欄が出ないだけ)
+      console.warn('[queries] aone_mail_effect 失敗', error.message);
+      return null;
+    }
+    return (data ?? null) as MailEffect | null;
+  } catch (e) {
+    console.warn('[queries] Supabase 未設定?', e);
+    return null;
+  }
+}
+
 export const ENTRY_COLUMNS =
   'id,entry_number,block_id,date,event_title,entry_type,status,customer_id,' +
   'team_name,contact_name,contact_kana,contact_email,contact_phone,' +

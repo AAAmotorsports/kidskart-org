@@ -2,13 +2,13 @@
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
 import {
-  dayState, reservationsOfDay, pendingReservations, pendingCallbacks, cronHealth,
+  dayState, reservationsOfDay, pendingReservations, pendingCallbacks, cronHealth, mailEffect,
 } from '@lib/queries';
 import {
   jaDate, jaDateShort, todayJst, addDays, timeRangeLabel,
   KIND_SHORT, STATUS_LABELS, STATUS_MARK,
   BUSINESS_LABELS, BUSINESS_EMOJI, BUSINESS_ORDER, SURFACE_LABELS, SURFACE_EMOJI, SURFACE_ORDER,
-  nameWithHonorific,
+  nameWithHonorific, yen, MAIL_REFERRERS, REFERRER_LABELS, REFERRERS,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -18,7 +18,7 @@ export const prerender = false;
 const env = envFrom(Astro.locals);
 const today = todayJst();
 
-const [state, rows, pending, stale, cron] = await Promise.all([
+const [state, rows, pending, stale, cron, effect] = await Promise.all([
   dayState(env, today),
   reservationsOfDay(env, today),
   pendingReservations(env, today),
@@ -26,6 +26,8 @@ const [state, rows, pending, stale, cron] = await Promise.all([
   pendingCallbacks(env, 24),
   // 自動メールの cron が動いているか。止まったことにここで気づけるようにする
   cronHealth(env),
+  // 自動メールから予約が入っているか (2026-10 オーナーの疑問)
+  mailEffect(env, 90),
 ]);
 
 const live = rows.filter((r) => !['cancelled', 'no_show'].includes(r.status));
@@ -51,6 +53,26 @@ function sinceLabel(iso: string | null): string {
 const currentBusiness = state?.business.status ?? 'open';
 const currentSurface = state?.surface.status ?? '';
 const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).length;
+
+// ---- 自動メールから入った予約 (直近 90 日) ----
+// メールの種別 (reminder / thanks / followup) と、そのリンクから入った予約を
+// 突き合わせる。送った数は aone_mail_log、予約は referrer から数えている。
+const sentOf = (k: string) => effect?.mails.find((m) => m.kind === k) ?? null;
+const bookedOf = (k: string) => effect?.booked.find((b) => b.referrer === k) ?? null;
+const mailRows = (effect ? MAIL_REFERRERS : []).map((k) => ({
+  key: k,
+  label: REFERRER_LABELS[k],
+  sent: sentOf(k)?.sent ?? 0,
+  failed: sentOf(k)?.failed ?? 0,
+  booked: bookedOf(k),
+}));
+// メール以外の入口 (ホームページの枠など)。目印が付いた予約があるときだけ出す
+const otherRows = (effect?.booked ?? []).filter(
+  (b) => !(MAIL_REFERRERS as readonly string[]).includes(b.referrer),
+);
+const effectTotal = mailRows.reduce((a, r) => a + (r.booked?.count ?? 0), 0);
+const effectSent = mailRows.reduce((a, r) => a + r.sent, 0);
+const effectAmount = mailRows.reduce((a, r) => a + (r.booked?.amount ?? 0), 0);
 ---
 <Base title="A-ONE 管理" admin wide>
   <div class="spread" style="margin-bottom:.8rem">
@@ -257,6 +279,62 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
     </div>
   )}
 
+  {effect && (
+    <div class="card">
+      <h2><span class="ic">📈</span> 自動メールから入った予約</h2>
+      <p class="tiny muted" style="margin:-.3rem 0 .6rem">
+        {effect.since} から今日まで ({effect.days} 日)。
+        メールの中のリンクから入った予約を数えています。
+        お電話やふだんの Web 予約はここには出ません。
+      </p>
+
+      <div class="table-scroll">
+        <table class="effect">
+          <thead>
+            <tr>
+              <th>メール</th><th>送った</th><th>そこから予約</th><th>人数</th><th>金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mailRows.map((r) => (
+              <tr>
+                <td>{r.label}</td>
+                <td>
+                  {r.sent} 通
+                  {r.failed > 0 && <span class="tiny ng-text"> (失敗 {r.failed})</span>}
+                </td>
+                <td><strong>{r.booked?.count ?? 0}</strong> 件</td>
+                <td>{r.booked?.people ?? 0} 名</td>
+                <td>{yen(r.booked?.amount ?? 0)}</td>
+              </tr>
+            ))}
+            {otherRows.map((b) => (
+              <tr class="other">
+                <td>
+                  {REFERRER_LABELS[b.referrer as (typeof REFERRERS)[number]] ?? b.referrer}
+                  <span class="tiny muted"> (メール以外)</span>
+                </td>
+                <td class="muted">—</td>
+                <td><strong>{b.count}</strong> 件</td>
+                <td>{b.people} 名</td>
+                <td>{yen(b.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="tiny muted" style="margin:.6rem 0 0">
+        {effectSent === 0
+          ? 'この期間に送った自動メールがまだありません。'
+          : effectTotal === 0
+            ? `${effectSent} 通送って、そこから入った予約はまだ 0 件です。フォロー (3 か月後) は送ってから効いてくるまで間があります。`
+            : `${effectSent} 通送って ${effectTotal} 件 (${yen(effectAmount)}) のご予約につながっています。`}
+        {' '}数えられるのは 2026-10 以降にお送りしたメールからです。
+      </p>
+    </div>
+  )}
+
   <div class="card">
     <h2><span class="ic">📅</span> 今週</h2>
     <div class="week">
@@ -372,6 +450,12 @@ const mailTargets = live.filter((r) => (r.contact_email ?? '').includes('@')).le
   .cron-row{display:flex;gap:2rem;flex-wrap:wrap}
   .cron-big{font-size:1.15rem;font-weight:800}
   .ng-text{color:var(--red-deep)}
+  /* メール以外の入口 (ホームページの枠など) は少し弱く見せる */
+  tr.other td{background:var(--bg-2)}
+  /* 幅の狭い画面で「リマイ / ンド (前 / 日)」と 1 文字ずつ折り返されるのを防ぐ。
+     詰め込まずに、表ごと横にスクロールさせる */
+  .effect th,.effect td{white-space:nowrap}
+  .effect td:first-child{font-weight:700}
   .wx-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem}
   .wx-btn{display:flex;align-items:center;justify-content:center;gap:.35rem;
     padding:.7rem .5rem;border:1px solid var(--line-2);border-radius:10px;background:#fff;

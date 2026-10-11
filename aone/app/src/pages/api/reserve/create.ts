@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, isEmail, notConfigured } from '@lib/api';
 import { sendMail, confirmMail, adminNoticeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
+import { safeReferrer } from '@lib/domain';
 
 export const prerender = false;
 
@@ -17,7 +18,7 @@ export const prerender = false;
 //   date, session?, category_code?, start_time?, end_time?,
 //   party_size, vehicle_count?,
 //   name, kana?, phone, email,
-//   preferred_contact?, request_note?, terms_agreed?
+//   preferred_contact?, request_note?, terms_agreed?, referrer?
 // }
 export const POST: APIRoute = async ({ request, locals }) => {
   const env = envFrom(locals);
@@ -68,6 +69,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     source: 'web',
     request_note: str(body?.request_note),
     terms_agreed: body?.terms_agreed === true,
+    // 自動メールのリンク (?from=) から来たかどうか。知らない値はここで捨てる
+    // (DB 側の check 制約にも同じ並びがある。0034)
+    referrer: safeReferrer(str(body?.referrer)),
   });
   if (response) return response;
 
