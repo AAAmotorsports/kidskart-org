@@ -193,6 +193,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   const emailPromise = sendConfirmationEmail(env, {
     to: guardianEmail,
     guardianName: guardian.name,
+    guardianAddress: guardian.address ?? '',
     reservationNumber: result.reservation_number,
     status: result.status,
     dateIso: result.slot_date,
@@ -246,6 +247,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
 async function sendConfirmationEmail(env: Env, args: {
   to: string;
   guardianName: string;
+  guardianAddress: string;
   reservationNumber: string;
   status: string;
   dateIso: string;
@@ -298,6 +300,18 @@ async function sendConfirmationEmail(env: Env, args: {
     : (isPending
         ? `【承認待ち】ご予約を受付けました — ${args.reservationNumber}`
         : `【予約確定】${dateLabel} ${args.startTime.slice(0, 5)} ${args.courseName} — ${args.reservationNumber}`);
+
+  // ---- 料金に関する追加案内 (日本語メールのみ) ---------------------------
+  // (a) 一般料金で予約 かつ 日本国内在住 → トヨピー会員登録で割引になる案内
+  //     「よくわからず 6,500 円で予約してしまう → 現場で 4,500 円に変更」の
+  //     パターンを事前に減らすため。
+  // (b) 会員料金で予約 → 当日受付でトヨピー会員画面の提示をお願いする
+  //
+  // 外国人向け英語メールにはこの案内は出さない (トヨピー = 日本国内限定の会員)。
+  const JP_PREFECTURE_RE = /(北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)/;
+  const isJapanResident = JP_PREFECTURE_RE.test(args.guardianAddress || '');
+  const showMemberRecommendation = !isEn && isPending === false && args.priceTier === 'regular' && isJapanResident;
+  const showMemberCardReminder = !isEn && args.priceTier === 'member';
 
   const detailUrl = `${args.origin}/reserve/complete/${args.reservationId}`;
   const cancelUrl = args.cancelToken ? `${args.origin}/reserve/cancel/${args.cancelToken}` : '';
@@ -358,6 +372,17 @@ async function sendConfirmationEmail(env: Env, args: {
       ? '当社確認のうえ、あらためて確定通知をお送りします。'
       : '当日は運動靴でお越しください。つなぎ・ヘルメットは当社で無料貸出します（長袖長ズボン不要）。軍手は初回のみプレゼント、2 回目以降はご持参をお願いします。',
     '',
+    ...(showMemberRecommendation ? [
+      '▼ 💡 トヨピー会員料金のご案内',
+      'ご予約時にご存知なかった場合: 「トヨピー会員」(入会無料) にご登録いただくと、1 名 ¥4,500 (一般より ¥2,000 お得) で参加できます。',
+      '当日受付でもその場でご登録・適用可能です。詳しくは当日スタッフまでお気軽にお尋ねください。',
+      '',
+    ] : []),
+    ...(showMemberCardReminder ? [
+      '▼ 📱 当日のお願い',
+      'トヨピー会員料金でご予約いただきましたので、当日の受付時に「トヨピー会員画面」をスタッフにご提示ください (スマホ画面で可)。',
+      '',
+    ] : []),
     '▼ 🔔 開催のお知らせを受け取る',
     '新しいスケジュールが公開されたら通知を受け取れます:',
     '  💬 LINE 友達追加: https://line.me/R/ti/p/@kidskart',
@@ -400,6 +425,16 @@ async function sendConfirmationEmail(env: Env, args: {
       <a href="${detailUrl}" style="display:inline-block;padding:.7rem 1.4rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:8px;font-weight:800">${tr('予約詳細を開く', 'Open booking details')}</a>
     </p>
     ${cancelUrl ? `<p style="text-align:center;margin:.5rem 0 1rem;font-size:.78rem"><a href="${cancelUrl}" style="color:#c73854;text-decoration:none;font-weight:700">${tr('🚫 予約をキャンセルする', '🚫 Cancel this booking')}</a></p>` : ''}
+    ${showMemberRecommendation ? `<div style="background:#fff8e5;border:1px solid #ffd98a;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;font-size:.84rem;color:#8a5a00;line-height:1.6">
+      <div style="font-weight:800;color:#a66b00;font-size:.95rem;margin-bottom:.3rem">💡 トヨピー会員料金のご案内</div>
+      ご予約時にご存知なかった場合: <strong>「トヨピー会員」(入会無料)</strong> にご登録いただくと、1 名 <strong>¥4,500</strong> (一般より ¥2,000 お得) で参加できます。<br>
+      当日受付でもその場でご登録・適用可能です。詳しくは当日スタッフまでお気軽にお尋ねください。
+    </div>` : ''}
+    ${showMemberCardReminder ? `<div style="background:#eef7ff;border:1px solid #cde8f8;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;font-size:.84rem;color:#1a5a8a;line-height:1.6">
+      <div style="font-weight:800;color:#1a7fb8;font-size:.95rem;margin-bottom:.3rem">📱 当日のお願い</div>
+      トヨピー会員料金でご予約いただきました。<br>
+      当日の受付時に、<strong>「トヨピー会員画面」をスタッフにご提示</strong>ください (スマホ画面で OK)。
+    </div>` : ''}
     ${isPending
       ? `<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">${tr('当社にて内容を確認のうえ、あらためて確定通知をお送りします。', "We'll review your booking and send a confirmation shortly.")}</p>`
       : (isEn
