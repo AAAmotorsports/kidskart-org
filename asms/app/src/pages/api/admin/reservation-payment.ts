@@ -59,8 +59,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
-  if ((res as any).status === 'cancelled') {
-    return json({ error: 'cannot record payment on cancelled reservation' }, 409);
+  // reservation-attendance.ts と同じ protected set で揃える。
+  // draft / pending_approval は「まだ確定していない予約」なので会計は打てない。
+  // cancelled は言わずもがな。
+  const RES_PROTECTED = new Set(['cancelled', 'pending_approval', 'draft']);
+  const curStatus = (res as any).status as string;
+  if (RES_PROTECTED.has(curStatus)) {
+    return json({
+      error: `この予約は "${curStatus}" 状態なので会計を記録できません。先に予約を確定してください。`,
+      current_status: curStatus,
+    }, 409);
   }
 
   const paidAt = new Date().toISOString();

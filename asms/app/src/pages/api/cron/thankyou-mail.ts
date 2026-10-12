@@ -237,7 +237,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // walk-in フォームでは email 任意なので dummy (walkin-<uuid>@noemail.local) を
     // 入れている。実在しない TLD で Resend が 400 を返し続けて cron が毎日
     // 赤くなるのを防ぐため、ここで明示的に skip する。
-    if (/^walkin-[0-9a-f-]+@noemail\.local$/i.test(guardian.email)) {
+    // walk-in placeholder (walkin-<uuid>@noemail.local) に加え、
+    // 旧 placeholder (admin-test@noemail.local 等) も全て skip 対象。
+    // ホスト部が正確に 'noemail.local' のみマッチ (sub.noemail.local は含まない)。
+    if (/@noemail\.local$/i.test(guardian.email)
+        && !/@[^@]+\.noemail\.local$/i.test(guardian.email)) {
       for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'placeholder email (walk-in no-email)' });

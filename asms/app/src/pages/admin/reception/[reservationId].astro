@@ -37,7 +37,7 @@ if (!reservationId) return new Response('missing reservationId', { status: 400 }
 const { data: res, error } = await supabase
   .from('reservations')
   .select(`
-    id, reservation_number, status, price_tier, total_amount, payment_method, paid_at,
+    id, reservation_number, status, price_tier, total_amount, payment_method, paid_at, paid_amount, payment_note,
     slots(id, date, start_time, end_time, courses(code, name)),
     guardians(id, name, kana, email, phone, address),
     reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status),

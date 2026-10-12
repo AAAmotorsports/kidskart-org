@@ -17,8 +17,10 @@ export const prerender = false;
 //   { ok: true, reservation_status, participants_restored }
 //
 // 注意:
-//   - 既にキャンセル取消済み (status='confirmed') の予約も冪等に通す
-//     (エラーにはしない)。
+//   - cancelled 以外のステータス (confirmed / attended / no_show / pending_approval
+//     / draft) に対しては 409 で弾く (replay / 誤操作防止)。
+//     既に復活済みの予約を叩いたら 409 が返るので、UI 側で冪等扱いしたい場合は
+//     409 + current_status を見て判断する。
 //   - キャンセル時に送信した顧客向け「キャンセル通知」メールは取り消せない。
 //     復活したことを顧客に伝える必要があるなら、admin が別途連絡する。
 //   - スロットが満席でも復活できる (スタッフ判断で元の予約を優先する運用)。
@@ -135,7 +137,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
   return json({
     ok: true,
     reservation_status: 'confirmed',
-    was_cancelled: res.status === 'cancelled',
     participants_restored: toRestore.length,
     participants_kept_cancelled: preCancelled.length,
     new_total_amount: newTotal,

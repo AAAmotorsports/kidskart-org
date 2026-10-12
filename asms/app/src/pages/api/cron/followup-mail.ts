@@ -173,7 +173,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
       continue;
     }
     // walk-in の placeholder email (@noemail.local) は skip
-    if (/^walkin-[0-9a-f-]+@noemail\.local$/i.test(guardian.email)) {
+    // walk-in placeholder + 旧 placeholder を全て skip。
+    // ホスト部が正確に 'noemail.local' のみ (sub.noemail.local は含まない)。
+    if (/@noemail\.local$/i.test(guardian.email)
+        && !/@[^@]+\.noemail\.local$/i.test(guardian.email)) {
       for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'placeholder email (walk-in no-email)' });
