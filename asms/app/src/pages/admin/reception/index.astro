@@ -117,9 +117,11 @@ type SlotRow = {
           return (
             <section class="slot-block">
               <header class="slot-head">
-                <div class="s-time">⏰ {s.start_time?.slice(0,5)}{s.end_time ? '〜' + s.end_time.slice(0,5) : ''}</div>
-                <div class="s-course">{course.name ?? '—'}</div>
-                <a class="s-slot-link" href={`/admin/slots/${s.id}`}>{tr('スロット詳細 →', 'Slot details →')}</a>
+                <div class="s-row-1">
+                  <div class="s-time">⏰ {s.start_time?.slice(0,5)}{s.end_time ? '〜' + s.end_time.slice(0,5) : ''}</div>
+                  <a class="s-slot-link" href={`/admin/slots/${s.id}`}>{tr('スロット詳細 →', 'Slot details →')}</a>
+                </div>
+                <div class="s-course">🏁 {course.name ?? '—'}</div>
               </header>
 
               {activeRes.length === 0 && cancelledRes.length === 0 && (
@@ -222,13 +224,24 @@ type SlotRow = {
     padding: 1rem 1.1rem;
   }
   .slot-head {
-    display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;
     margin-bottom: .6rem; padding-bottom: .5rem;
     border-bottom: 1px dashed var(--line);
   }
+  .s-row-1 {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+  }
   .s-time { font-size: 1.2rem; font-weight: 800; font-family: var(--mono); }
-  .s-course { font-size: 1rem; font-weight: 700; color: var(--ink-2); flex: 1; }
-  .s-slot-link { font-size: .78rem; color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+  .s-course {
+    font-size: 1.05rem; font-weight: 700; color: var(--ink-2);
+    margin-top: .25rem;
+    /* 細い画面でも 1 行に収めたい。CJK は keep-all で文節 (= 単語) で改行、
+       長すぎる場合は overflow-wrap: break-word で最終手段で折る。 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    line-height: 1.35;
+  }
+  .s-slot-link { font-size: .78rem; color: var(--sky-deep); text-decoration: none; font-weight: 700; white-space: nowrap; }
 
   .res-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
   .res-list.cancelled { margin-top: .5rem; }
