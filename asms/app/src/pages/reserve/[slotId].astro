@@ -1199,7 +1199,9 @@ const termsHtml = terms
       // DB は address 単一カラムなので、UI 分割 → 保存結合 で back-compat 維持。
       const addr = gd('g_address').trim();
       const banchi = gd('g_banchi').trim();
-      const combinedAddress = banchi ? `${addr} ${banchi}` : addr;
+      // addr と banchi をスペース結合、両端 trim で先頭スペース付きの住所を防ぐ
+      // (addr 空のまま banchi 入力されたケース: " 1-2-3" → "1-2-3")
+      const combinedAddress = (addr && banchi) ? `${addr} ${banchi}` : (addr || banchi);
       const guardian = {
         name: gd('g_name'), kana: gd('g_kana'), phone: gd('g_phone'),
         email: gd('g_email'), postal_code: gd('g_postal'), address: combinedAddress,

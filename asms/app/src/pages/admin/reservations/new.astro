@@ -68,11 +68,15 @@ if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prefi
     .maybeSingle();
   if (cust) {
     // 直近予約から身長・写真同意を復元 (snapshot カラム経由)
+    // 旧 .order('reservation(created_at)', ...) は PostgREST の embedded resource
+    // 構文を参照していなかったので、順序が未定義で「古い予約の値」が引かれる
+    // 可能性があった (= 古い height_cm / 無効 photo_consent プリフィル事故)。
+    // created_at の降順を使うには foreignTable オプションを明示する必要がある。
     const { data: lastRp } = await supabase
       .from('reservation_participants')
-      .select('height_cm, photo_consent, kart_experience_note, reservation:reservations(created_at)')
+      .select('height_cm, photo_consent, kart_experience_note, created_at, reservations(created_at)')
       .eq('customer_id', cust.id)
-      .order('reservation(created_at)', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 

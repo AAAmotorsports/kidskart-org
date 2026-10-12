@@ -40,11 +40,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 対象予約が存在するか確認 (invalid UUID だと UPDATE が無声エラーで落ちる)
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id')
+    .select('id, status')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
+
+  // ステータスガード: draft / pending_approval / cancelled の予約は attendance 操作対象外。
+  // participants だけ attended に書き変わると「参加者は attended なのに
+  // reservations.status は pending_approval のまま」のドリフトを生むため、
+  // 入口で 409 を返して participants も触らない。
+  const RES_PROTECTED = new Set(['cancelled', 'pending_approval', 'draft']);
+  const curResStatus = (res as any).status as string;
+  if (RES_PROTECTED.has(curResStatus)) {
+    return json({
+      error: `この予約は "${curResStatus}" 状態なので出欠操作ができません。先に予約を確定してください。`,
+      current_status: curResStatus,
+    }, 409);
+  }
 
   // cancelled 参加者は触らない (既にキャンセル済みのを「出席」に戻すのは意図しない操作)。
   // 「全員出席」なら残りの参加者 (expected/attended/no_show) を attended に。

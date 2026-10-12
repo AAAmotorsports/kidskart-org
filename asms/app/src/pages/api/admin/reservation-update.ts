@@ -94,16 +94,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
       if ('birth_date_snapshot' in p) {
         const v = typeof p.birth_date_snapshot === 'string' ? p.birth_date_snapshot.trim() : '';
-        const validation = validateBirthDate(v, slotDate);
-        if (validation.ok) {
-          update.birth_date_snapshot = v;
-          // 誕生日が変わったら age_at_booking も再計算 (スロット開催日基準)
-          if (slotDate) {
-            update.age_at_booking = computeAge(v, slotDate);
+        // 空文字 (= 未変更フィールドの再送) は silently skip して他フィールドの更新を続行。
+        // バリデーションは「非空かつ形式/範囲が不正」のときだけ 400 で止める。
+        if (v !== '') {
+          const validation = validateBirthDate(v, slotDate);
+          if (validation.ok) {
+            update.birth_date_snapshot = v;
+            // 誕生日が変わったら age_at_booking も再計算 (スロット開催日基準)
+            if (slotDate) {
+              update.age_at_booking = computeAge(v, slotDate);
+            }
+          } else if (validation.reason) {
+            // 明示的な 400 で原因を伝える (DB の 22P02 を素通りさせない)
+            return json({ error: `生年月日が不正です (participant ${p.id}): ${validation.reason}` }, 400);
           }
-        } else if (validation.reason) {
-          // 明示的な 400 で原因を伝える (DB の 22P02 を素通りさせない)
-          return json({ error: `生年月日が不正です (participant ${p.id}): ${validation.reason}` }, 400);
         }
       }
       if (Object.keys(update).length === 0) continue;
