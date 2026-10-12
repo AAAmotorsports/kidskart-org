@@ -40,7 +40,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // --- 対象予約の確認 ----------------------------------------------------
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id, status, cancelled_at, total_amount')
+    .select('id, status, cancelled_at')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
@@ -70,8 +70,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 判定: 参加者の cancelled_at >= 予約の cancelled_at
   // (= 予約キャンセル時 or その後に cancelled になった = 予約全体キャンセル由来)
   //
-  // 補足: 0037 migration 前の既存 cancelled 行は cancelled_at = NULL なので、
-  //       安全側で復活対象外とする (管理者が SQL で手動対応)。
+  // レガシー互換: 0037 migration 前のキャンセル or 一部の slot-wide cancel path
+  // は reservations.cancelled_at / participants.cancelled_at に NULL が残っている
+  // 可能性がある。この場合は「部分キャンセル情報が無い」ので、cancelled 参加者を
+  // 全員復活する (= 全体キャンセルと見なす) 方が実用的。
+  // 「status=confirmed なのに参加者 0 名」の壊れ状態を防ぐ。
   const resCancelledAt: string | null = (res as any).cancelled_at ?? null;
 
   const { data: allCancelled, error: fetchErr } = await supabase
@@ -83,11 +86,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const toRestore: string[] = [];
   const preCancelled: string[] = [];
-  for (const p of (allCancelled ?? []) as Array<{ id: string; cancelled_at: string | null }>) {
-    if (resCancelledAt && p.cancelled_at && p.cancelled_at >= resCancelledAt) {
-      toRestore.push(p.id);
-    } else {
-      preCancelled.push(p.id);
+  const cancelledRows = (allCancelled ?? []) as Array<{ id: string; cancelled_at: string | null }>;
+
+  if (!resCancelledAt) {
+    // レガシー: 予約側に cancelled_at が無いので「どれが部分キャンセルか」判別不能
+    // → 全員復活 (全体キャンセル扱い)
+    for (const p of cancelledRows) toRestore.push(p.id);
+  } else {
+    for (const p of cancelledRows) {
+      // participant 側の cancelled_at が NULL = レガシー行は「全体キャンセル」側に倒す
+      // (個別キャンセルは 0037 以降必ず cancelled_at が入る前提)
+      if (!p.cancelled_at || p.cancelled_at >= resCancelledAt) {
+        toRestore.push(p.id);
+      } else {
+        preCancelled.push(p.id);
+      }
     }
   }
 

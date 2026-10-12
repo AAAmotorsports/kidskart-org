@@ -59,7 +59,7 @@ const slotsJson = JSON.stringify(slots.reduce((acc, s) => {
 const url = new URL(Astro.request.url);
 const prefillCustomerId = url.searchParams.get('customer_id') || '';
 let prefillData: any = null;
-if (/^[0-9a-f-]{36}$/i.test(prefillCustomerId)) {
+if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prefillCustomerId)) {
   const { data: cust } = await supabase
     .from('customers')
     .select('id, name, kana, birth_date, gender')

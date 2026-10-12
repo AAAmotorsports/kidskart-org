@@ -359,6 +359,7 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
           class="btn-primary"
           data-action="attend_and_pay"
           data-reservation-id={res.id}
+          data-already-paid={isPaid && paidAmount > 0 ? '1' : '0'}
           disabled={anyAttended && isPaid && paidAmount > 0}
         >
           {anyAttended && isPaid && paidAmount > 0
@@ -555,17 +556,28 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
       const action = btn.dataset.action!;
       const reservationId = btn.dataset.reservationId!;
 
-      // 「受付+会計 完了」の合体ボタン: 出欠を attended にし、会計も同時に記録する
+      // 「受付+会計 完了」の合体ボタン: 出欠を attended にし、必要なら会計も同時に記録する。
+      // 既に正しく会計済み (paid_amount > 0) の場合は会計 update を skip して、
+      // paid_at / paid_amount を silent 上書きしないようにする。
       if (action === 'attend_and_pay') {
-        const methodEl = document.querySelector<HTMLInputElement>('input[name="pay_method"]:checked');
-        if (!methodEl) {
-          showToast(tr('支払い方法を選んでください', 'Select payment method'), false);
-          return;
+        const alreadyPaid = btn.dataset.alreadyPaid === '1';
+        if (!alreadyPaid) {
+          // 会計を打つ必要があるケース: 支払い方法を選んでいないと先に進まない
+          const methodEl = document.querySelector<HTMLInputElement>('input[name="pay_method"]:checked');
+          if (!methodEl) {
+            showToast(tr('支払い方法を選んでください', 'Select payment method'), false);
+            return;
+          }
         }
-        const confirmMsg = tr(
-          '全員を「出席」として記録し、会計も同時に確定します。よろしいですか?',
-          'Mark all attended and record payment. Continue?'
-        );
+        const confirmMsg = alreadyPaid
+          ? tr(
+              '全員を「出席」として記録します。(会計は既に記録済みなので触りません)\nよろしいですか?',
+              'Mark all attended. (Payment already recorded; leaving it as-is)\nContinue?'
+            )
+          : tr(
+              '全員を「出席」として記録し、会計も同時に確定します。よろしいですか?',
+              'Mark all attended and record payment. Continue?'
+            );
         if (!confirm(confirmMsg)) return;
 
         btn.disabled = true;
@@ -585,15 +597,19 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
             btn.textContent = original;
             return;
           }
-          // 2) 会計を記録
-          const payRes = await recordPayment(reservationId);
-          if (!payRes.ok) {
-            showToast(tr('会計エラー: ', 'Payment error: ') + (payRes.error ?? ''), false);
-            btn.disabled = false;
-            btn.textContent = original;
-            return;
+          // 2) 会計を記録 (既に正しく記録済みなら skip)
+          if (!alreadyPaid) {
+            const payRes = await recordPayment(reservationId);
+            if (!payRes.ok) {
+              showToast(tr('会計エラー: ', 'Payment error: ') + (payRes.error ?? ''), false);
+              btn.disabled = false;
+              btn.textContent = original;
+              return;
+            }
+            showToast(tr('受付・会計を記録しました', 'Check-in & payment recorded'), true);
+          } else {
+            showToast(tr('受付を記録しました (会計はそのまま)', 'Check-in recorded (payment untouched)'), true);
           }
-          showToast(tr('受付・会計を記録しました', 'Check-in & payment recorded'), true);
           setTimeout(() => { location.reload(); }, 1200);
         } catch (e) {
           showToast(tr('通信エラー: ', 'Network error: ') + (e as Error).message, false);

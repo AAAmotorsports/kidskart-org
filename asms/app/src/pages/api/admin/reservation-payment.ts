@@ -34,6 +34,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const reservationId: string | undefined = body?.reservation_id;
   const method: string | undefined = body?.payment_method;
   const amountRaw = body?.paid_amount;
+  // 'payment_note' が body に含まれているときだけ更新。
+  // キー自体が無いときは既存 note を上書きしない (受付画面などの軽量 UI は
+  // note を送らないため、/admin/slots/[id] で手書きした note が消えないように)。
+  const noteFieldPresent = Object.prototype.hasOwnProperty.call(body ?? {}, 'payment_note');
   const noteRaw = body?.payment_note;
 
   if (!reservationId) return json({ error: 'reservation_id is required' }, 400);
@@ -46,7 +50,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!Number.isFinite(amount) || amount < 0) {
     return json({ error: 'paid_amount must be a non-negative integer' }, 400);
   }
-  const note = typeof noteRaw === 'string' ? noteRaw.trim().slice(0, 500) || null : null;
 
   // 対象予約が存在するか確認
   const { data: res, error: resErr } = await supabase
@@ -61,14 +64,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const paidAt = new Date().toISOString();
+  const update: Record<string, unknown> = {
+    payment_method: method,
+    paid_amount: amount,
+    paid_at: paidAt,
+  };
+  if (noteFieldPresent) {
+    // 明示的に空文字 or null を送った場合は note クリア、文字列あれば 500 字で truncate
+    update.payment_note = typeof noteRaw === 'string'
+      ? (noteRaw.trim().slice(0, 500) || null)
+      : null;
+  }
+
   const { error: updErr } = await supabase
     .from('reservations')
-    .update({
-      payment_method: method,
-      paid_amount: amount,
-      payment_note: note,
-      paid_at: paidAt,
-    })
+    .update(update)
     .eq('id', reservationId);
 
   if (updErr) return json({ error: `update failed: ${updErr.message}` }, 500);
