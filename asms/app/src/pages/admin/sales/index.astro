@@ -135,7 +135,7 @@ async function fetchParticipations(fromDate: string, toDateExcl: string) {
   const { data } = await supabase
     .from('reservations')
     .select(`
-      id, status, total_amount, price_tier,
+      id, status, total_amount, price_tier, paid_at, paid_amount,
       slots!inner(date, weather_condition, temperature_c, courses(code, name)),
       reservation_participants(id, gender_snapshot, age_at_booking, customer_id, attendance_status)
     `)
@@ -233,7 +233,7 @@ function aggregatePaid(rows: any[]) {
 }
 
 function aggregateParticipations(rows: any[]) {
-  const byCourse = new Map<string, { code: string; name: string; resCount: number; partCount: number; revenue: number }>();
+  const byCourse = new Map<string, { code: string; name: string; resCount: number; partCount: number; revenue: number; expectedRevenue: number }>();
   const dates = new Set<string>();
   const genderCount = { male: 0, female: 0, other: 0 };
   const ageIndividual = new Map<number, number>();
@@ -248,13 +248,19 @@ function aggregateParticipations(rows: any[]) {
     const date = s.date as string;
     const activeParts = ((r.reservation_participants as any[]) ?? []).filter((p) => p.attendance_status !== 'cancelled');
     const partCount = activeParts.length;
-    const perPerson = partCount > 0 ? Math.floor(Number(r.total_amount ?? 0) / partCount) : 0;
+    // 売上 = 実収優先 (paid_at 済なら paid_amount、未会計は total_amount の予定額)。
+    //   当日割引 (¥6,500 で予約 → ¥4,500 で会計) を正しく反映するため。
+    // 「予定売上」は参考値として別途集計 → 未会計分の見込みを把握できる。
+    const paid = !!r.paid_at && r.paid_amount != null;
+    const amount = paid ? Number(r.paid_amount ?? 0) : Number(r.total_amount ?? 0);
+    const expected = Number(r.total_amount ?? 0);
     if (code) {
-      if (!byCourse.has(code)) byCourse.set(code, { code, name, resCount: 0, partCount: 0, revenue: 0 });
+      if (!byCourse.has(code)) byCourse.set(code, { code, name, resCount: 0, partCount: 0, revenue: 0, expectedRevenue: 0 });
       const b = byCourse.get(code)!;
       b.resCount++;
       b.partCount += partCount;
-      b.revenue += perPerson * partCount;
+      b.revenue += amount;
+      b.expectedRevenue += expected;
     }
     if (date) dates.add(date);
     for (const p of activeParts) {
@@ -883,12 +889,20 @@ function buildUrl(next: Record<string, string>) {
           {partCur.coursesSorted.map((c) => {
             const yoy = partYoy.coursesSorted.find((y) => y.code === c.code);
             const d = diffLabel(c.partCount, yoy?.partCount ?? 0, ' 名');
+            const diffFromExpected = c.expectedRevenue - c.revenue;
             return (
               <div class="ct-row">
                 <div class="ct-name">{c.name}</div>
                 <div class="ct-num mono">{c.resCount} 件</div>
                 <div class="ct-num mono">{c.partCount} 名</div>
-                <div class="ct-num mono">{yen(c.revenue)}</div>
+                <div class="ct-num mono">
+                  {yen(c.revenue)}
+                  {diffFromExpected !== 0 && (
+                    <div class="ct-expected" title={`予定売上 ${yen(c.expectedRevenue)} - 実収 ${yen(c.revenue)} = ${yen(diffFromExpected)}`}>
+                      予定 {yen(c.expectedRevenue)}
+                    </div>
+                  )}
+                </div>
                 <div class={`ct-yoy yoy-${d.klass}`}>{d.text}</div>
               </div>
             );
@@ -897,13 +911,29 @@ function buildUrl(next: Record<string, string>) {
             <div>合計</div>
             <div class="mono">{partCur.coursesSorted.reduce((a, c) => a + c.resCount, 0)} 件</div>
             <div class="mono">{partCur.totalParticipants} 名</div>
-            <div class="mono">{yen(partCur.coursesSorted.reduce((a, c) => a + c.revenue, 0))}</div>
+            <div class="mono">
+              {yen(partCur.coursesSorted.reduce((a, c) => a + c.revenue, 0))}
+              {(() => {
+                const totalExpected = partCur.coursesSorted.reduce((a, c) => a + c.expectedRevenue, 0);
+                const totalRevenue = partCur.coursesSorted.reduce((a, c) => a + c.revenue, 0);
+                const diff = totalExpected - totalRevenue;
+                return diff !== 0 ? (
+                  <div class="ct-expected" title={`予定売上 ${yen(totalExpected)} - 実収 ${yen(totalRevenue)} = ${yen(diff)}`}>
+                    予定 {yen(totalExpected)}
+                  </div>
+                ) : null;
+              })()}
+            </div>
             <div class={`ct-yoy yoy-${diffLabel(partCur.totalParticipants, partYoy.totalParticipants).klass}`}>
               {diffLabel(partCur.totalParticipants, partYoy.totalParticipants, ' 名').text}
             </div>
           </div>
         </div>
       )}
+      <p class="section-hint">
+        💡 <strong>売上</strong>は会計済み予約は <strong>実収額</strong> (当日割引を反映)、
+        未会計予約は <strong>予定額</strong> で算出。差額があるコースは「予定」行を表示。
+      </p>
     </section>
 
     <!-- ===== 開催日数 ===== -->
@@ -1294,7 +1324,16 @@ function buildUrl(next: Record<string, string>) {
   .ct-row:last-child { border-bottom: none; }
   .ct-name { font-weight: 700; }
   .ct-num { text-align: right; font-weight: 700; }
+  .ct-expected {
+    font-size: .68rem; font-weight: 400; color: var(--ink-3);
+    margin-top: .1rem; cursor: help;
+  }
   .ct-yoy { text-align: right; font-size: .72rem; }
+  .section-hint {
+    margin: .8rem 0 0; padding: .6rem .8rem;
+    background: var(--bg-2); border-radius: 8px;
+    font-size: .78rem; color: var(--ink-2); line-height: 1.6;
+  }
   .ct-total { background: var(--sky-mist); font-weight: 800; border-top: 2px solid var(--sky); }
 
   .mini-stats { display: flex; gap: .6rem; flex-wrap: wrap; }
