@@ -121,7 +121,10 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
 >
   <main class="rc">
     <nav class="back">
-      <a href={`/admin/slots/${slot.id ?? ''}` }>← {tr('スロット画面に戻る', 'Back to slot')}</a>
+      <div class="back-links">
+        <a href="/admin/reception">← {tr('本日の受付一覧', "Today's reception")}</a>
+        <a class="back-alt" href={`/admin/slots/${slot.id ?? ''}` }>{tr('スロット画面', 'Slot')} →</a>
+      </div>
       <span class="rsv-num">#{res.reservation_number}</span>
     </nav>
 
@@ -302,9 +305,17 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
       <section class="payment" data-reservation-id={res.id}>
         <div class="sect-head">
           <h2>💰 {tr('会計', 'Payment')}</h2>
-          {isPaid && (
+          {isPaid && paidAmount > 0 && (
             <span class="pay-done">
               ✅ {paymentLabel(paymentMethodCode)} ¥{paidAmount.toLocaleString('ja-JP')}
+            </span>
+          )}
+          {isPaid && paidAmount === 0 && (
+            <span class="pay-zero-warn" title={tr(
+              '支払い方法は記録されていますが入金額が ¥0 です。実際に受け取った金額を下で修正してください。',
+              'Method recorded but amount is ¥0. Enter the actual amount below.'
+            )}>
+              ⚠️ {tr('¥0 で記録 / 要修正', '¥0 recorded / fix below')}
             </span>
           )}
         </div>
@@ -330,7 +341,7 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
           <label>
             {tr('入金額', 'Received')}
             <input type="number" id="payAmount" min="0" step="1"
-                   value={isPaid ? paidAmount : totalAmount} />
+                   value={isPaid && paidAmount > 0 ? paidAmount : totalAmount} />
             <span class="pay-unit">円</span>
           </label>
           <button type="button" class="btn-record-pay" data-reservation-id={res.id}>
@@ -348,13 +359,15 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
           class="btn-primary"
           data-action="attend_and_pay"
           data-reservation-id={res.id}
-          disabled={anyAttended && isPaid}
+          disabled={anyAttended && isPaid && paidAmount > 0}
         >
-          {anyAttended && isPaid
+          {anyAttended && isPaid && paidAmount > 0
             ? tr('✅ 受付・会計 済み', '✅ Checked in & paid')
             : anyAttended
-            ? tr('💰 会計を記録して完了', '💰 Record payment & finish')
-            : isPaid
+            ? (isPaid && paidAmount === 0
+                ? tr('💰 ¥0 を正しい金額に修正', '💰 Fix the ¥0 amount')
+                : tr('💰 会計を記録して完了', '💰 Record payment & finish'))
+            : isPaid && paidAmount > 0
             ? tr('✅ 受付完了 (全員出席)', '✅ Check in all')
             : tr('✅ 受付+会計 完了', '✅ Check in & pay')}
         </button>
@@ -501,6 +514,14 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
     if (!Number.isFinite(amount) || amount < 0) {
       return { ok: false, error: tr('入金額が不正です', 'Invalid amount') };
     }
+    // ¥0 は誤操作である可能性が高いので確認を取る (無料券/割引 100% なら OK を押させる)
+    if (amount === 0) {
+      const ok = confirm(tr(
+        '入金額が ¥0 です。本当に ¥0 で記録しますか?\n(通常は体験料金を入力してください)',
+        'Amount is ¥0. Really record as ¥0?\n(Usually enter the experience fee)'
+      ));
+      if (!ok) return { ok: false, error: tr('キャンセルしました', 'Cancelled') };
+    }
     const r = await fetch('/api/admin/reservation-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -625,9 +646,11 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
   }
   .back {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: .8rem; font-size: .85rem;
+    margin-bottom: .8rem; font-size: .85rem; gap: .8rem; flex-wrap: wrap;
   }
-  .back a { color: var(--ink-3); text-decoration: none; }
+  .back-links { display: flex; gap: .9rem; align-items: baseline; }
+  .back a { color: var(--sky-deep); text-decoration: none; font-weight: 700; }
+  .back a.back-alt { color: var(--ink-3); font-weight: 400; }
   .back a:hover { text-decoration: underline; }
   .rsv-num { font-family: var(--mono); color: var(--ink-3); font-size: .8rem; }
 
@@ -827,6 +850,13 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
     display: inline-block; padding: .3rem .7rem;
     background: #e6f6d7; color: #3f7a1b; border-radius: 100px;
     font-size: .85rem; font-weight: 700;
+  }
+  .pay-zero-warn {
+    display: inline-block; padding: .3rem .7rem;
+    background: #fff0d6; color: #a66b00; border-radius: 100px;
+    font-size: .82rem; font-weight: 700;
+    border: 1.5px dashed #e8a833;
+    cursor: help;
   }
   .pay-total-row {
     display: flex; justify-content: space-between; align-items: baseline;
