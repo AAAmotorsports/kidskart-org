@@ -88,7 +88,9 @@
     "PUBLIC_SUPABASE_URL": "https://qwwrhesgbytefxufeiwj.supabase.co",
     "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_AOF1nIQsQ0gnufgX-nRnlA_tPpfOsoq",
     "ADMIN_USERNAME": "masaaki0820",
-    "ADMIN_PASSWORD_HASH": "9b9ec86a6ab45c37ab17b86a2fa8b054b330db8f29d10d2f714a607732466a88",
+    // ADMIN_PASSWORD_HASH は Dashboard Secret のみに移動 (2026-10-23)
+    // 旧 SHA-256 hex 値は公開 git にあるため実質 crack 済み扱い。
+    // asms/CLAUDE.md「管理者パスワード / Cookie 署名鍵 ローテーション手順」参照。
     "MAIL_FROM_ADDRESS": "noreply@kidskart.org",
     "MAIL_FROM_NAME": "福岡キッズカートアカデミー",
     "MAIL_REPLY_TO": "info@kidskart.org",
