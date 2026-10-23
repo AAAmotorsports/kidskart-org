@@ -1,18 +1,33 @@
 // 管理画面のログイン。
 //
-// もとは HTTP Basic 認証だった。ブラウザが出すダイアログは**パスワード
-// マネージャーの保存対象にならない** (Chrome、とくに iOS は一切覚えない) ので、
-// スタッフが毎回パスワードを打つことになっていた (2026-09 オーナー指摘)。
-// ふつうの HTML ログインフォームに変え、合言葉は署名付き Cookie で持つ。
+// 2026-10-23 セキュリティ修正 (security-review C1 + C3):
+//   旧実装は ADMIN_PASSWORD_HASH (= SHA-256 hex) を そのまま HMAC 鍵として
+//   使って Cookie を署名していた。この値は wrangler.jsonc 経由で公開 GitHub
+//   repo に commit されていたため、誰でも Cookie を偽造して /admin に入れる
+//   致命的な欠陥があった。
 //
-// * パスワードは今までどおり SHA-256 ダイジェスト (ADMIN_PASSWORD_HASH) だけを
-//   置く。平文はリポジトリにも Worker にも置かない
-// * Cookie の署名鍵はそのダイジェストから作る。**新しいシークレットを増やさない**
-//   ためと、パスワードを変えたら古い Cookie が自動で無効になるため
-// * スタッフごとのログインが必要になったら Supabase Auth に置き換える
+// 修正後:
+//   * Cookie 署名鍵は ADMIN_COOKIE_SECRET (Cloudflare Dashboard Secret) を使う
+//     → ADMIN_PASSWORD_HASH とは独立、git には出ない
+//   * パスワードハッシュは scrypt (salt + stretching) に移行
+//     → "scrypt:<salt_hex>:<hash_hex>" を Dashboard Secret で管理
+//     → 旧 SHA-256 hex もフォールバックで受け付けるが警告ログを出す
+//   * 失敗ログインは 1 秒の遅延を入れて brute force を抑制
 //
-// aone/app/src/lib/adminAuth.ts (PR #184 / a9e9fd6) の実装をそのまま流用。
-// Cookie 名のみ asms_admin に変更して、A-ONE 側 Cookie と干渉しないようにする。
+// 旧コメント (そのまま有効):
+//   HTTP Basic 認証はパスワードマネージャーの保存対象にならないので、
+//   普通の HTML フォーム + 署名付き Cookie に変更。
+//   スタッフ 1 人運用で成り立っているので user は 1 つ。
+//   必要になったら Supabase Auth に置き換える。
+
+import { scrypt as scryptCb } from 'node:crypto';
+import { promisify } from 'node:util';
+
+const scryptAsync = promisify(scryptCb) as unknown as (
+  password: string | Uint8Array,
+  salt: string | Uint8Array,
+  keylen: number,
+) => Promise<Buffer>;
 
 export const ADMIN_COOKIE = 'asms_admin';
 
@@ -26,6 +41,15 @@ export async function sha256Hex(input: string): Promise<string> {
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(h: string): Uint8Array {
+  const clean = h.toLowerCase();
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }
 
 /** 長さが違っても早く抜けない比較 (総当たりの手掛かりを残さない) */
@@ -47,27 +71,64 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 
 /**
  * Cookie の中身を作る。`<期限(ミリ秒)>.<署名>` だけ。
+ * cookieSecret は env.ADMIN_COOKIE_SECRET (Dashboard Secret) から渡す。
  * 誰がログインしたかは持たない (今はアカウントが 1 つしかない)。
  */
-export async function signSession(passHash: string, expiresAt: number): Promise<string> {
+export async function signSession(cookieSecret: string, expiresAt: number): Promise<string> {
   const body = String(expiresAt);
-  return `${body}.${await hmacHex(passHash, body)}`;
+  return `${body}.${await hmacHex(cookieSecret, body)}`;
 }
 
 /** Cookie が本物で、期限内かどうか */
-export async function verifySession(value: string, passHash: string): Promise<boolean> {
+export async function verifySession(value: string, cookieSecret: string): Promise<boolean> {
   const dot = value.lastIndexOf('.');
   if (dot <= 0) return false;
   const body = value.slice(0, dot);
   const sig = value.slice(dot + 1);
-  if (!safeEqual(sig, await hmacHex(passHash, body))) return false;
+  if (!safeEqual(sig, await hmacHex(cookieSecret, body))) return false;
   const exp = Number(body);
   return Number.isFinite(exp) && exp > Date.now();
 }
 
-/** パスワードが合っているか (ハッシュ同士で比べる) */
+/**
+ * scrypt でパスワードをハッシュ化。保存形式: "scrypt:<salt_hex>:<hash_hex>"
+ * N=16384, r=8, p=1, dkLen=32 (OWASP 推奨下限)。
+ * Workers CPU time ~100ms なので login 時だけ呼ぶ。
+ */
+export async function hashPasswordScrypt(password: string): Promise<string> {
+  const salt = new Uint8Array(16);
+  crypto.getRandomValues(salt);
+  const buf = await scryptAsync(password, salt, 32);
+  return `scrypt:${hex(salt)}:${buf.toString('hex')}`;
+}
+
+/** パスワードが合っているか (hash 形式を自動判定) */
 export async function passwordOk(password: string, passHash: string): Promise<boolean> {
+  if (!passHash) return false;
+  if (passHash.startsWith('scrypt:')) {
+    const [, saltHex, expectedHex] = passHash.split(':');
+    if (!saltHex || !expectedHex) return false;
+    try {
+      const actual = await scryptAsync(password, hexToBytes(saltHex), expectedHex.length / 2);
+      return safeEqual(actual.toString('hex'), expectedHex.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+  // Legacy SHA-256 (非推奨): 旧 wrangler.jsonc の値をそのまま受理。
+  // CloudflareLogs に警告を出して運用担当者に scrypt 移行を促す。
+  console.warn('[adminAuth] legacy SHA-256 password hash in use — rotate to scrypt (see CLAUDE.md).');
   return safeEqual(await sha256Hex(password), passHash.toLowerCase());
+}
+
+/**
+ * 認証失敗時の時間稼ぎ。brute force を 1 req / sec に押さえる (scrypt の
+ * 計算コストと合わせて実用上 1 req / 2 sec 程度になる)。
+ * 成功時も僅かに走らせて成否で timing が割れないようにしたいが、
+ * ユーザー体験優先で失敗時のみとする。
+ */
+export async function failedLoginDelay(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
 /** リクエストの Cookie から 1 つ取り出す */

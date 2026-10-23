@@ -163,13 +163,30 @@ DROP しなかったため PostgREST が overload を解決できず、**顧客�
 2 層構造。3 回の wipe 事故（2026-08-11）を経ての最終形:
 
 **wrangler.jsonc の `vars`** — 非機微な設定の source of truth
-- 7 変数: PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY / ADMIN_USERNAME / ADMIN_PASSWORD_HASH / MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO
+- 非機微変数: PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY / ADMIN_USERNAME /
+  MAIL_FROM_ADDRESS / MAIL_FROM_NAME / MAIL_REPLY_TO / MAIL_ADMIN_TO /
+  PUBLIC_TURNSTILE_SITE_KEY / PUBLIC_SURVEY_URL / PUBLIC_GA4_MEASUREMENT_ID /
+  PUBLIC_GOOGLE_REVIEW_URL / PUBLIC_RESERVE_PATH / PUBLIC_APP_URL
 - 変更は git 経由（PR + deploy）で
-- ANON key・SHA-256 hash 等、漏洩しても致命傷にならないもの
+- ANON key は意図的に公開可 (RLS で守る)
 
 **Cloudflare Dashboard「変数とシークレット」（シークレット型のみ）** — 真の機密
 - SUPABASE_SERVICE_ROLE_KEY
 - RESEND_API_KEY
+- **ADMIN_PASSWORD_HASH** (2026-10-23 Secret 化)
+  - 形式: `scrypt:<salt_hex>:<hash_hex>` (旧 SHA-256 hex も互換で受け付けるが
+    deploy 時に警告ログ)
+  - 生成: `node asms/app/scripts/gen-admin-hash.mjs` で対話的に作成
+- **ADMIN_COOKIE_SECRET** (2026-10-23 新設)
+  - 管理セッション Cookie の HMAC 署名鍵。32 bytes 以上の random hex を推奨
+  - 生成: `node asms/app/scripts/gen-admin-hash.mjs --cookie-secret`
+  - 旧実装は ADMIN_PASSWORD_HASH を Cookie 署名鍵として流用していたが、
+    `wrangler.jsonc` 経由で公開 git に commit されていたため偽造可能だった
+    (security-review C1)。独立 Secret に分離してこの経路を塞いだ
+- TURNSTILE_SECRET_KEY (使う場合)
+- FREEE_CLIENT_SECRET / FREEE_REFRESH_TOKEN (freee 同期を使う場合)
+- CRON_SECRET (cron endpoint 保護)
+- R2_* (R2 バックアップ用、使う場合)
 - Dashboard 追加後は「デプロイ タブ → 現バージョン再展開」で bind し直す
 
 ### 絶対に踏んではいけない地雷
@@ -177,7 +194,36 @@ DROP しなかったため PostgREST が overload を解決できず、**顧客�
 - **`vars` キーごと省略**: 同上、全削除する（Cloudflare docs と挙動が違う、実測でそう）
 - **Dashboard で「変数」タイプの vars を追加してもダメ**: wrangler.jsonc に無ければ deploy で消える。Dashboard の「シークレット」タイプだけが deploy を生き延びる。
 
-したがって、**wrangler.jsonc の `vars` は必ず 7 変数入りで維持する**。空にも消しにもしない。
+したがって、**wrangler.jsonc の `vars` は必ず複数変数入りで維持する**。空にも消しにもしない。(2026-10-23 現在、ADMIN_PASSWORD_HASH が Secret 化されたため従前の「7 変数」ではなく「複数変数」表現に変更。実態は上記リストの非機微変数のみ)
+
+### 🔐 管理者パスワード / Cookie 署名鍵 ローテーション手順 (2026-10-23 確定)
+
+**なぜ必要か**: 旧実装は ADMIN_PASSWORD_HASH (SHA-256) を公開リポジトリに commit し、
+さらにその値を管理セッション Cookie の HMAC 署名鍵にも使っていた。これにより
+GitHub を見れば誰でも admin Cookie を偽造できる致命的脆弱性 (security-review
+2026-10-23 C1 & C3)。
+
+**ローテーション手順**:
+1. ローカルで新パスワードを決定 (12 文字以上、記号含む)
+2. 以下を実行して scrypt ハッシュを生成:
+   ```
+   cd asms/app
+   node scripts/gen-admin-hash.mjs
+   ```
+   出力例: `scrypt:a1b2c3...:7890ab...`
+3. 別途 ADMIN_COOKIE_SECRET も生成:
+   ```
+   node scripts/gen-admin-hash.mjs --cookie-secret
+   ```
+   出力例: `d4e5f6...` (64 文字 hex)
+4. Cloudflare Dashboard → kidskart-asms Worker → Settings → Variables and Secrets
+   - `ADMIN_PASSWORD_HASH` を **Secret** 型で追加 (scrypt 値)
+   - `ADMIN_COOKIE_SECRET` を **Secret** 型で追加
+5. Deployments タブ → 「現バージョン再展開」で bind
+6. `/admin/login` で新パスワードを試してログインできることを確認
+7. 旧 ADMIN_PASSWORD_HASH を wrangler.jsonc の vars から削除 (次 PR で)
+   - Secret 側が優先される前提、まず削除せずに新 Secret で動作確認してから
+   - 削除 PR 単独で deploy して影響を確認する
 
 ### Astro での読み方
 - `envFrom(locals)` で `locals.runtime.env` から読む
