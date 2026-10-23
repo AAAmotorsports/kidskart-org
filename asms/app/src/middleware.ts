@@ -23,20 +23,21 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const rt = (context.locals as any)?.runtime?.env;
   const user = rt?.ADMIN_USERNAME || import.meta.env.ADMIN_USERNAME || '';
   const passHash = rt?.ADMIN_PASSWORD_HASH || import.meta.env.ADMIN_PASSWORD_HASH || '';
+  const cookieSecret = rt?.ADMIN_COOKIE_SECRET || import.meta.env.ADMIN_COOKIE_SECRET || '';
 
-  if (!user || !passHash) {
+  if (!user || !passHash || !cookieSecret) {
     // 認証前のレスポンスには設定キー名を一切含めない (情報漏洩防止)。
     // 診断情報はサーバーログ (Cloudflare Logs) にだけ出す。
     // この分岐に入るのは wrangler vars が wipe される既知事故 (CLAUDE.md
-    // 参照) 時のみ。復旧手順を知っているオーナーが
-    // 「Workers Logs」で検索すれば原因が特定できる。
+    // 参照) 時か、ADMIN_COOKIE_SECRET の Dashboard 設定忘れ。
     const rtKeys = rt ? Object.keys(rt).slice(0, 30).sort() : [];
     console.error('[middleware] admin credentials missing', {
       runtime_env_present: !!rt,
       runtime_env_key_count: rtKeys.length,
       runtime_env_keys: rtKeys,
-      admin_username_length: user.length,
-      admin_password_hash_length: passHash.length,
+      admin_username_present: !!user,
+      admin_password_hash_present: !!passHash,
+      admin_cookie_secret_present: !!cookieSecret,
     });
     return new Response(
       '一時的にサービスを利用できません。しばらく経ってから再度お試しください。',
@@ -46,7 +47,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   // ふだんの経路: ログイン済みの Cookie
   const cookie = readCookie(context.request, ADMIN_COOKIE);
-  if (cookie && await verifySession(cookie, passHash)) return next();
+  if (cookie && await verifySession(cookie, cookieSecret)) return next();
 
   // 手元のスクリプト用。ダイアログを出させないため、こちらからは要求しない
   const header = context.request.headers.get('authorization') ?? '';

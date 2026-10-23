@@ -43,10 +43,21 @@ interface Env {
   PUBLIC_GOOGLE_REVIEW_URL?: string;
 
   // Simple admin gate for MVP — will be replaced by Supabase Auth later.
-  // Password is stored as a SHA-256 hex digest so the plain value never
-  // leaves the operator's machine.
+  //
+  // ADMIN_PASSWORD_HASH 形式 (2026-10-23 変更):
+  //   新: "scrypt:<salt_hex>:<hash_hex>" — Cloudflare Dashboard Secret のみ、
+  //       git には絶対置かない。生成は `node scripts/gen-admin-hash.mjs`
+  //   旧: "<sha256_hex>" — 互換のため受理するが、警告ログを出す。
+  //       公開 git に commit された状態で使い続けると GPU で短時間で割れる。
+  //
+  // ADMIN_COOKIE_SECRET (必須):
+  //   管理セッション Cookie の HMAC 署名鍵。32 bytes 以上のランダム hex を
+  //   Cloudflare Dashboard Secret に設定する。これが無いと middleware は
+  //   503 を返す (従前の ADMIN_PASSWORD_HASH 流用が公開リポジトリ経由で
+  //   偽造可能だった脆弱性対応)。
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD_HASH?: string;
+  ADMIN_COOKIE_SECRET?: string;
 
   // freee API 連携 (ASMS → freee 月次売上同期用、/api/cron/freee-sync-monthly)。
   // Cloudflare Dashboard の Secret として設定する。

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import {
-  ADMIN_COOKIE, SESSION_DAYS, cookieHeader, passwordOk, safeEqual, safeNext, signSession,
+  ADMIN_COOKIE, SESSION_DAYS, cookieHeader, failedLoginDelay,
+  passwordOk, safeEqual, safeNext, signSession,
 } from '@lib/adminAuth';
 
 export const prerender = false;
@@ -22,6 +23,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const rt = (locals as any)?.runtime?.env;
   const user = rt?.ADMIN_USERNAME || import.meta.env.ADMIN_USERNAME || '';
   const passHash = rt?.ADMIN_PASSWORD_HASH || import.meta.env.ADMIN_PASSWORD_HASH || '';
+  const cookieSecret = rt?.ADMIN_COOKIE_SECRET || import.meta.env.ADMIN_COOKIE_SECRET || '';
 
   const form = await request.formData().catch(() => null);
   const secure = new URL(request.url).protocol === 'https:';
@@ -34,7 +36,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
   }
 
-  if (!user || !passHash) {
+  if (!user || !passHash || !cookieSecret) {
+    // 設定不足 (ADMIN_COOKIE_SECRET 未設定を含む)。詳細はログに出さない
+    // (cookieSecret 未設定を外部から見えると偽造の助けになる)。
+    console.error('[login] configuration missing', {
+      user: !!user, passHash: !!passHash, cookieSecret: !!cookieSecret,
+    });
     return redirectBack(form, 'unconfigured');
   }
 
@@ -42,11 +49,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const p = String(form?.get('password') ?? '');
   if (!safeEqual(u, user) || !await passwordOk(p, passHash)) {
     // どちらが違うかは言わない (ユーザー名の総当たりの手掛かりになる)
+    // 失敗時は 1 秒待たせて brute force を抑制
+    await failedLoginDelay();
     return redirectBack(form, 'ng');
   }
 
   const expiresAt = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  const value = await signSession(passHash, expiresAt);
+  const value = await signSession(cookieSecret, expiresAt);
   return new Response(null, {
     status: 303,
     headers: {
