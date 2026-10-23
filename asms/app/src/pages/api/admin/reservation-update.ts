@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { verifySameOrigin } from '@lib/adminAuth';
 
 export const prerender = false;
 
@@ -29,6 +30,9 @@ export const prerender = false;
 //   - 失敗時は 500 でエラーメッセージを返す
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const originErr = verifySameOrigin(request);
+  if (originErr) return json({ error: `cross-origin blocked: ${originErr}` }, 403);
+
   const env = envFrom(locals);
   const supabase = getSupabaseAdmin(env);
 
