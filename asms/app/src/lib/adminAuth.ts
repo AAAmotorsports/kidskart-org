@@ -170,3 +170,48 @@ export function safeNext(next: string | null): string {
   if (!next.startsWith('/admin') || next.startsWith('//') || next.includes('\\')) return '/admin';
   return next;
 }
+
+/**
+ * CSRF 防御 (security-review H3):
+ * SameSite=Lax Cookie は外部サイトからの cross-site POST を基本防ぐが、
+ * `kidskart.org` サブドメインを乗っ取られた場合や同一 origin 内の XSS
+ * から守るため、admin POST エンドポイントは Origin / Referer ヘッダが
+ * Worker 自身の host と一致することを追加検証する。
+ *
+ * `null` を返したら OK (リクエスト許可)、文字列を返したらエラーメッセージ
+ * (呼び出し側で 403 を返す)。
+ */
+export function verifySameOrigin(request: Request): string | null {
+  const url = new URL(request.url);
+  const expectedHost = url.host;
+  const originHdr = request.headers.get('origin');
+  const refererHdr = request.headers.get('referer');
+
+  // Origin がある場合は厳格に一致を要求 (ブラウザは cross-site POST では必ず付ける)
+  if (originHdr) {
+    try {
+      const originHost = new URL(originHdr).host;
+      if (originHost !== expectedHost) {
+        return `Origin "${originHost}" does not match "${expectedHost}"`;
+      }
+      return null;
+    } catch {
+      return `Invalid Origin header`;
+    }
+  }
+  // Origin が無い場合 (古いブラウザ / 一部の fetch) は Referer にフォールバック
+  if (refererHdr) {
+    try {
+      const refererHost = new URL(refererHdr).host;
+      if (refererHost !== expectedHost) {
+        return `Referer "${refererHost}" does not match "${expectedHost}"`;
+      }
+      return null;
+    } catch {
+      return `Invalid Referer header`;
+    }
+  }
+  // 両方欠落している (= 普通のブラウザからの POST ではない) → 蹴る。
+  // 手元のスクリプト / curl は Origin を手動で付けること。
+  return 'Missing Origin and Referer headers';
+}

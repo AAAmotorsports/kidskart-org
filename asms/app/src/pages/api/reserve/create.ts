@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { getLocaleFromRequest, type Locale } from '@lib/i18n';
+import { maskEmailForLog } from '@lib/piiMask';
 
 export const prerender = false;
 
@@ -274,7 +275,9 @@ async function sendConfirmationEmail(env: Env, args: {
     console.warn('[reserve/create] SKIP email: no recipient address');
     return;
   }
-  console.log('[reserve/create] sending email to', args.to, 'via Resend (key ends with', apiKey.slice(-4), ')');
+  // PII 保護: Cloudflare Logs は保持期間が長いので、ログには email のドメインしか出さない。
+  // 送信先追跡 (gmail/icloud 等の内訳) にはこれで十分。
+  console.log('[reserve/create] sending email to', maskEmailForLog(args.to), 'via Resend (key ends with', apiKey.slice(-4), ')');
   const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
   const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
   const replyTo = env.MAIL_REPLY_TO || undefined;

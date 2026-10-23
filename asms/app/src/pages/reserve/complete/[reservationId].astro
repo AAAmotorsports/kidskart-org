@@ -2,6 +2,7 @@
 import Base from '@layouts/Base.astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { getLocaleFromRequest, type Locale } from '@lib/i18n';
+import { maskName, maskEmail, maskPhone } from '@lib/piiMask';
 
 const env = envFrom(Astro.locals);
 const supabase = getSupabaseAdmin(env);
@@ -39,6 +40,18 @@ const slot: any = res.slots ?? {};
 const course: any = slot.courses ?? {};
 const guardian: any = res.guardians ?? {};
 const participants: any[] = (res.reservation_participants as any[]) ?? [];
+
+// PII マスキング (security-review C2):
+// このページは reservation.id (UUID) だけで開けるため、確認メールが転送されると
+// 誰でも保護者 氏名/メール/電話 を参照できる状態だった。本人確認用に軽めの
+// マスクで表示し、第三者には身元特定できないようにする。
+// 完全な情報は Magic Link でサインインした /me 画面で見られる前提。
+// マスク関数は @lib/piiMask で共通化 (admin / 他 UI でも流用)。
+const guardianMasked = {
+  name:  maskName(guardian.name),
+  email: maskEmail(guardian.email),
+  phone: maskPhone(guardian.phone),
+};
 
 const weekdayJa = ['日', '月', '火', '水', '木', '金', '土'];
 const weekdayEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -136,8 +149,7 @@ const isTaiken = course.code === 'taiken';
         {participants.map((p, i) => (
           <li>
             <span class="p-idx">{i + 1}.</span>
-            <span class="p-name">{p.name_snapshot}</span>
-            {!isEn && <span class="p-kana">（{p.kana_snapshot}）</span>}
+            <span class="p-name">{maskName(p.name_snapshot)}</span>
             <span class="p-age">{isEn ? `Age ${p.age_at_booking}` : `${p.age_at_booking}歳`}</span>
           </li>
         ))}
@@ -145,10 +157,20 @@ const isTaiken = course.code === 'taiken';
     </section>
 
     <section class="card">
-      <h2>{isEn ? 'Guardian contact' : '保護者連絡先'}</h2>
-      <div class="row"><span class="k">{isEn ? 'Name' : 'お名前'}</span><span class="v">{guardian.name}</span></div>
-      <div class="row"><span class="k">{isEn ? 'Email' : 'メール'}</span><span class="v mono">{guardian.email}</span></div>
-      <div class="row"><span class="k">{isEn ? 'Phone' : '電話'}</span><span class="v mono">{guardian.phone}</span></div>
+      <h2>
+        {isEn ? 'Guardian contact' : '保護者連絡先'}
+        <span class="mask-note">
+          {isEn ? '(masked — for your reference only)' : '（マスク表示・ご本人確認用）'}
+        </span>
+      </h2>
+      <div class="row"><span class="k">{isEn ? 'Name' : 'お名前'}</span><span class="v">{guardianMasked.name}</span></div>
+      <div class="row"><span class="k">{isEn ? 'Email' : 'メール'}</span><span class="v mono">{guardianMasked.email}</span></div>
+      <div class="row"><span class="k">{isEn ? 'Phone' : '電話'}</span><span class="v mono">{guardianMasked.phone}</span></div>
+      <p class="mask-hint">
+        {isEn
+          ? 'For privacy, personal details are masked on this shareable page. Full info is sent to your email.'
+          : 'このページは URL だけで開けるため、プライバシー保護のためマスク表示にしています。完全な情報は確認メールをご確認ください。'}
+      </p>
     </section>
 
     <div class="notice">
@@ -312,6 +334,8 @@ const isTaiken = course.code === 'taiken';
   .p-idx { font-family: var(--mono); color: var(--ink-3); }
   .p-name { font-weight: 700; }
   .p-kana { color: var(--ink-3); font-size: .74rem; }
+  .mask-note { font-size: .68rem; color: var(--ink-3); margin-left: .5rem; font-weight: 400; }
+  .mask-hint { margin: .6rem 0 0; font-size: .72rem; color: var(--ink-3); line-height: 1.5; }
   .p-age { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--ink-2); }
 
   .notice {

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { syncMonthlyFreeeDeals } from '@lib/freee-monthly-sync';
+import { verifySameOrigin } from '@lib/adminAuth';
 
 export const prerender = false;
 
@@ -16,6 +17,9 @@ export const prerender = false;
 // を組み立てて x-cron-secret を再発行する必要が無い)。
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const originErr = verifySameOrigin(request);
+  if (originErr) return json({ error: `cross-origin blocked: ${originErr}` }, 403);
+
   const env = envFrom(locals);
   const supabase = getSupabaseAdmin(env);
 

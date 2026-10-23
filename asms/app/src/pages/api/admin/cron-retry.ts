@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom } from '@lib/supabase';
+import { verifySameOrigin } from '@lib/adminAuth';
 import { POST as thankyouPOST } from '../cron/thankyou-mail';
 import { POST as reminderPOST } from '../cron/reminder-mail';
 import { POST as followupPOST } from '../cron/followup-mail';
@@ -33,6 +34,9 @@ const CRON_HANDLERS: Record<string, APIRoute> = {
 };
 
 export const POST: APIRoute = async (ctx) => {
+  const originErr = verifySameOrigin(ctx.request);
+  if (originErr) return json({ error: `cross-origin blocked: ${originErr}` }, 403);
+
   const env = envFrom(ctx.locals);
   const secret = env.CRON_SECRET;
   if (!secret) return json({ error: 'CRON_SECRET not configured' }, 500);

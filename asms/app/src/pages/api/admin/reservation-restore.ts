@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { verifySameOrigin } from '@lib/adminAuth';
 
 export const prerender = false;
 
@@ -26,6 +27,9 @@ export const prerender = false;
 //   - スロットが満席でも復活できる (スタッフ判断で元の予約を優先する運用)。
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const originErr = verifySameOrigin(request);
+  if (originErr) return json({ error: `cross-origin blocked: ${originErr}` }, 403);
+
   const env = envFrom(locals);
   const supabase = getSupabaseAdmin(env);
 
