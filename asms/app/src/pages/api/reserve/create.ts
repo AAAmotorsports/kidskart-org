@@ -71,6 +71,11 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!guardian?.name || !guardian?.phone || !guardian?.email) {
     return json({ error: '保護者情報が不足しています' }, 400);
   }
+  // 住所 (都道府県・市区町村 + 番地) は必須。ウィザードで結合して送られてくるので
+  // ここでは guardian.address の空判定だけ。郵便番号は任意。
+  if (!(guardian?.address ?? '').trim()) {
+    return json({ error: '保護者の住所が未入力です' }, 400);
+  }
   if (!emergency?.name || !emergency?.phone) {
     return json({ error: '緊急連絡先が不足しています' }, 400);
   }

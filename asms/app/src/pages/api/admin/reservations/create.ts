@@ -58,6 +58,9 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!guardian?.name || !guardian?.phone || !guardian?.email) {
     return json({ error: '保護者情報が不足しています (氏名・電話・メール)' }, 400);
   }
+  if (!(guardian?.address ?? '').trim()) {
+    return json({ error: '保護者の住所が未入力です' }, 400);
+  }
   for (const p of participants) {
     if (!p.name || !p.kana || !p.birth_date || !p.gender || !p.height_cm) {
       return json({ error: '参加者情報に不足があります' }, 400);

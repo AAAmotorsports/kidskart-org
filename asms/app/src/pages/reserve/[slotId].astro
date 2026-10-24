@@ -462,19 +462,19 @@ const termsHtml = terms
                 </p>
               </div>
               <div class="field field-wide">
-                <label>{isEn ? 'Address (prefecture / city / district)' : '住所 (都道府県・市区町村)'}</label>
-                <input type="text" id="g_address" name="g_address" maxlength="200"
+                <label>{isEn ? 'Address (prefecture / city / district) *' : '住所 (都道府県・市区町村) *'}</label>
+                <input type="text" id="g_address" name="g_address" required maxlength="200"
                   placeholder={isEn ? 'e.g. Fukuoka, Fukuoka-shi, Chuo-ku Tenjin' : '福岡県福岡市中央区天神'}
                   autocomplete="street-address" />
               </div>
               <div class="field field-wide">
                 <label>
-                  {isEn ? 'Building number / room (please do not forget)' : '番地・建物名・部屋番号'}
+                  {isEn ? 'Building number / room *' : '番地・建物名・部屋番号 *'}
                   <span class="hint-inline">
                     {isEn ? '(easy to forget — please fill in!)' : '(入れ忘れが多いのでご記入ください)'}
                   </span>
                 </label>
-                <input type="text" id="g_banchi" name="g_banchi" maxlength="100"
+                <input type="text" id="g_banchi" name="g_banchi" required maxlength="100"
                   placeholder={isEn ? 'e.g. 1-2-3 Sunshine Bldg #501' : '例: 1-2-3 サンシャインビル 501号室'}
                   autocomplete="address-line2" />
               </div>
