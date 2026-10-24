@@ -466,6 +466,13 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
         </div>
 
         <div class="cal-wrap">
+          {hasNext && (
+            <div class="cal-nextmonth-hint">
+              {isEn
+                ? (<>👉 For <strong>{new Date(nextM.y, nextM.m - 1, 1).toLocaleString('en-US', { month: 'long' })}</strong> bookings, tap the <strong>“{nextM.m} →”</strong> button on the right.</>)
+                : (<>👉 <strong>{nextM.m}月のご予約</strong>は右の <strong>「{nextM.m}月 →」</strong> ボタンをタップしてください</>)}
+            </div>
+          )}
           <div class="cal-hd">
             {hasPrev ? (
               <a class="cal-nav" href={makeUrl({ month: monthKey(prevM.y, prevM.m) })}>
@@ -480,8 +487,8 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                 : `${visYear}年 ${visMonth}月`}
             </div>
             {hasNext ? (
-              <a class="cal-nav" href={makeUrl({ month: monthKey(nextM.y, nextM.m) })}>
-                {isEn ? 'Next →' : `${nextM.m}月 →`}
+              <a class="cal-nav cal-nav-next" href={makeUrl({ month: monthKey(nextM.y, nextM.m) })}>
+                {isEn ? `${new Date(nextM.y, nextM.m - 1, 1).toLocaleString('en-US', { month: 'short' })} →` : `${nextM.m}月 →`}
               </a>
             ) : (
               <span class="cal-nav disabled">{isEn ? 'Next →' : `${nextM.m}月 →`}</span>
@@ -1006,14 +1013,42 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     margin-bottom: .8rem; gap: .5rem;
   }
   .cal-nav {
-    font-size: .82rem; font-weight: 700; color: var(--sky-deep);
+    font-size: .9rem; font-weight: 800; color: var(--sky-deep);
     text-decoration: none;
-    padding: .3rem .6rem; border-radius: 6px;
-    transition: background .1s;
+    padding: .55rem .9rem; border-radius: 10px;
+    border: 2px solid var(--sky-mist);
+    background: var(--bg);
+    transition: background .1s, transform .05s, box-shadow .1s;
+    white-space: nowrap;
+    min-width: 68px; text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
   }
-  .cal-nav:hover { background: var(--sky-mist); }
-  .cal-nav.disabled { color: var(--ink-3); cursor: default; opacity: .4; }
-  .cal-nav.disabled:hover { background: transparent; }
+  .cal-nav:hover { background: var(--sky-mist); transform: translateY(-1px); }
+  .cal-nav:active { transform: translateY(0); }
+  /* 「翌月 →」は視線誘導のため少し強調 (ボタンだと認識させる) */
+  .cal-nav-next {
+    background: var(--sky-mist);
+    border-color: var(--sky);
+    color: var(--sky-deep);
+    box-shadow: 0 2px 6px rgba(58,169,232,.18);
+  }
+  .cal-nav-next:hover { background: var(--sky); color: #fff; }
+  .cal-nav.disabled {
+    color: var(--ink-3); cursor: default; opacity: .35;
+    border-color: var(--line); background: transparent; box-shadow: none;
+  }
+  .cal-nav.disabled:hover { background: transparent; transform: none; }
+  .cal-nextmonth-hint {
+    background: linear-gradient(90deg, rgba(58,169,232,.08), rgba(58,169,232,.14));
+    border: 1px solid rgba(58,169,232,.3);
+    border-radius: 10px;
+    padding: .6rem .9rem;
+    font-size: .88rem;
+    color: var(--sky-deep);
+    margin-bottom: .8rem;
+    line-height: 1.5;
+  }
+  .cal-nextmonth-hint strong { color: var(--sky-deep); }
   .cal-title {
     font-weight: 800; font-size: 1rem; color: var(--ink);
     font-family: var(--mono);
