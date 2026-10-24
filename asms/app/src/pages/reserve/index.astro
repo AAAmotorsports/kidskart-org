@@ -206,12 +206,18 @@ const visMonthNotice: UpcomingNotice | null =
     : null;
 
 // Build URLs preserving the current course filter.
-function makeUrl(params: Record<string, string | number>): string {
+// opts.hash: 省略時は '#dates' を付ける。月切替・コース切替で URL が変わると
+//   ページ全体が再読み込みされスクロール位置が先頭 (ヒーロー・説明文) に戻るため、
+//   ユーザーが「前の画面に戻った」と誤解する事故 (2026-10-24 LINE 報告)。
+//   必ずカレンダーセクションに戻るよう #dates アンカーを既定で付加する。
+function makeUrl(params: Record<string, string | number>, opts: { hash?: string } = {}): string {
   const p = new URLSearchParams();
   if (activeCourse) p.set('course', activeCourse.code);
   for (const [k, v] of Object.entries(params)) p.set(k, String(v));
   const q = p.toString();
-  return q ? `/reserve/?${q}` : '/reserve/';
+  const base = q ? `/reserve/?${q}` : '/reserve/';
+  const hash = opts.hash === undefined ? '#dates' : opts.hash;
+  return hash ? `${base}${hash}` : base;
 }
 function courseHref(code: string): string {
   return activeCourse?.code === code ? '/reserve/#dates' : `/reserve/?course=${code}#dates`;
