@@ -390,12 +390,18 @@ if (Astro.request.method === 'POST') {
       .eq('id', reservationId);
     if (uErr) return back('', `予約更新に失敗: ${fmt(uErr)}`);
 
-    // Cascade participant attendance → cancelled (only those still expected)
+    // Cascade participant attendance → cancelled.
+    // 既に cancelled の参加者は触らない (元のキャンセル日時/文脈を温存)。
+    // expected 以外 (attended/no_show) も cancel 対象に含める: カルテやレポート
+    // での「予約自体はキャンセル済」整合性を取るため (個別の attended 記録を
+    // 残したい場合は participant 単体 cancel を使うという別運用になる)。
+    // cancelled_at を記録することで、復活時に「全体キャンセル由来」と判別できる。
+    const nowTs = new Date().toISOString();
     const { error: pErr } = await supabase
       .from('reservation_participants')
-      .update({ attendance_status: 'cancelled' })
+      .update({ attendance_status: 'cancelled', cancelled_at: nowTs })
       .eq('reservation_id', reservationId)
-      .eq('attendance_status', 'expected');
+      .neq('attendance_status', 'cancelled');
     if (pErr) return back(`予約をキャンセルしましたが、参加者ステータス更新でエラー: ${fmt(pErr)}`, '');
 
     // メール通知: 保護者 (notify=true 時) + 管理者 (常時)
