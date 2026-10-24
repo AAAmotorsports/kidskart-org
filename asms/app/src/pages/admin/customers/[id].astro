@@ -629,6 +629,12 @@ if (searchQ.length >= 1) {
             const r = p.reservations ?? {};
             const s = r.slots ?? {};
             const c = s.courses ?? {};
+            // 予約自体がキャンセル済なら participants.attendance_status に
+            // かかわらずカルテ上は「キャンセル」として表示する。
+            // (admin の cancel_reservation 経路は expected 参加者だけ attendance
+            // を更新するため、attended → cancel された予約の参加者は attended
+            // のまま残ってしまい、カルテ側で「出席」に見えてしまう問題を回避。)
+            const effectiveStatus = r.status === 'cancelled' ? 'cancelled' : p.attendance_status;
             return (
               <li>
                 {s.id ? (
@@ -640,8 +646,8 @@ if (searchQ.length >= 1) {
                       <div class="part-course">{c.name ?? ''}</div>
                     </div>
                     <div class="part-r">
-                      <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
-                        {attendanceLabel(p.attendance_status)}
+                      <span class={`badge badge-${attendanceClass(effectiveStatus)}`}>
+                        {attendanceLabel(effectiveStatus)}
                       </span>
                       <span class="part-meta mono">
                         {p.height_cm}cm · {p.age_at_booking}歳
@@ -657,8 +663,8 @@ if (searchQ.length >= 1) {
                       <div class="part-course">{c.name ?? ''}</div>
                     </div>
                     <div class="part-r">
-                      <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
-                        {attendanceLabel(p.attendance_status)}
+                      <span class={`badge badge-${attendanceClass(effectiveStatus)}`}>
+                        {attendanceLabel(effectiveStatus)}
                       </span>
                       <span class="part-meta mono">
                         {p.height_cm}cm · {p.age_at_booking}歳
