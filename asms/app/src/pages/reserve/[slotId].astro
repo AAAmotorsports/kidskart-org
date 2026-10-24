@@ -645,7 +645,34 @@ const termsHtml = terms
         </form>
 
         {turnstileEnabled && (
-          <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+          <>
+            {/*
+              Turnstile のコールバックは **Turnstile API ロードより先に** window
+              に登録しておく必要がある。module <script> 内で登録すると defer
+              で後になり、Turnstile が success → callback 未定義 → 失敗 → ボタン
+              永久 disable の race が起きる (2026-10-24 現場で確認)。
+              ここで同期スクリプトとして window プロパティ 3 本を事前登録する。
+            */}
+            <script is:inline>
+              window.__asmsTurnstileToken = null;
+              window.onTurnstileSuccess = function (token) {
+                window.__asmsTurnstileToken = token;
+                var btn = document.getElementById('submitBtn');
+                if (btn) btn.disabled = false;
+              };
+              window.onTurnstileError = function () {
+                window.__asmsTurnstileToken = null;
+                var btn = document.getElementById('submitBtn');
+                if (btn) btn.disabled = true;
+              };
+              window.onTurnstileExpired = function () {
+                window.__asmsTurnstileToken = null;
+                var btn = document.getElementById('submitBtn');
+                if (btn) btn.disabled = true;
+              };
+            </script>
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+          </>
         )}
 
         <div id="submitOverlay" hidden>
@@ -1274,23 +1301,16 @@ const termsHtml = terms
     const submitOverlay = document.getElementById('submitOverlay')!;
     const submitError = document.getElementById('submitError')!;
 
-    // Turnstile: store the token from the widget callback so we can send
-    // it in the payload. The widget is only rendered when a site key is
-    // configured; if absent, `turnstileToken` stays null and the button
-    // is enabled from the server render.
-    let turnstileToken: string | null = null;
-    (window as any).onTurnstileSuccess = (token: string) => {
-      turnstileToken = token;
+    // Turnstile token は <script is:inline> で先に登録された onTurnstileSuccess
+    // が window.__asmsTurnstileToken にセットする (race 回避、上の is:inline
+    // コメント参照)。ここでは送信時に読み出すだけ。
+    // widget が無い dev / preview では null のまま → submit に乗らない。
+    //
+    // 後方互換: 既に module スクリプト前に success が来てボタンが有効化済み
+    // の場合、window.__asmsTurnstileToken には既にトークンが入っている。
+    if ((window as any).__asmsTurnstileToken) {
       submitBtn.disabled = false;
-    };
-    (window as any).onTurnstileError = () => {
-      turnstileToken = null;
-      submitBtn.disabled = true;
-    };
-    (window as any).onTurnstileExpired = () => {
-      turnstileToken = null;
-      submitBtn.disabled = true;
-    };
+    }
 
     submitBtn.addEventListener('click', async () => {
       submitError.hidden = true;
@@ -1304,6 +1324,7 @@ const termsHtml = terms
       });
       try {
         const payload = collect();
+        const turnstileToken = (window as any).__asmsTurnstileToken as string | null;
         if (turnstileToken) (payload as any).turnstile_token = turnstileToken;
         // Referral code: 入力欄の値 (localStorage から自動 prefill 済み or 手入力)。
         // 空なら送らない。サーバー側で sanitize + 検証する。
