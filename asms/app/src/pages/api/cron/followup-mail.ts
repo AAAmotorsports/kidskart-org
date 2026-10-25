@@ -102,6 +102,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   // 30 日以内の任意日以降に予約がある保護者を先に洗い出す (N+1 回避)
+  // ★ 2026-10-25: no_show も「アクティブな後続予約」から除外する。
+  //   例: 10/18 attended → 10/25 no_show の顧客は本来 follow-up の
+  //   対象 (10/18 に来てくれたのに最近来てない層) だが、no_show を
+  //   「次の予約あり」と誤認識すると skip されてしまう。
+  //   cancelled と no_show は「実質ノーアクション」の予約として扱う。
   const laterActiveGuardians = new Set<string>();
   if (guardianIds.size > 0) {
     // 対象日より新しい日付の slots
@@ -117,7 +122,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .select('guardian_id')
         .in('slot_id', newerSlotIds)
         .in('guardian_id', [...guardianIds])
-        .neq('status', 'cancelled');
+        .not('status', 'in', '(cancelled,no_show)');
       for (const row of (newerReservs ?? []) as any[]) {
         if (row.guardian_id) laterActiveGuardians.add(row.guardian_id);
       }
