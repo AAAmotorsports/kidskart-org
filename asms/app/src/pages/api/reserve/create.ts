@@ -392,6 +392,8 @@ async function sendConfirmationEmail(env: Env, args: {
     ...(showMemberRecommendation ? [
       '▼ 💡 トヨピー会員料金のご案内',
       'ご予約時にご存知なかった場合: 「トヨピー会員」(入会無料) にご登録いただくと、1 名 ¥4,500 (一般より ¥2,000 お得) で参加できます。',
+      '  🚗 事前登録はこちら: https://family-fukuoka-toyopet.com/pre-regist.html',
+      '  ℹ️ トヨピー会員について: https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html',
       '当日受付でもその場でご登録・適用可能です。詳しくは当日スタッフまでお気軽にお尋ねください。',
       '',
     ] : []),
@@ -445,7 +447,11 @@ async function sendConfirmationEmail(env: Env, args: {
     ${showMemberRecommendation ? `<div style="background:#fff8e5;border:1px solid #ffd98a;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;font-size:.84rem;color:#8a5a00;line-height:1.6">
       <div style="font-weight:800;color:#a66b00;font-size:.95rem;margin-bottom:.3rem">💡 トヨピー会員料金のご案内</div>
       ご予約時にご存知なかった場合: <strong>「トヨピー会員」(入会無料)</strong> にご登録いただくと、1 名 <strong>¥4,500</strong> (一般より ¥2,000 お得) で参加できます。<br>
-      当日受付でもその場でご登録・適用可能です。詳しくは当日スタッフまでお気軽にお尋ねください。
+      <div style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.4rem">
+        <a href="https://family-fukuoka-toyopet.com/pre-regist.html" style="display:inline-block;padding:.4rem .8rem;background:#fff;border:1px solid #e8a833;border-radius:6px;color:#a66b00;text-decoration:none;font-weight:700;font-size:.8rem">🚗 事前登録はこちら</a>
+        <a href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" style="display:inline-block;padding:.4rem .8rem;background:#fff;border:1px solid #ddd;border-radius:6px;color:#555;text-decoration:none;font-weight:700;font-size:.8rem">ℹ️ 会員について</a>
+      </div>
+      <div style="margin-top:.6rem;font-size:.78rem;color:#8a5a00">当日受付でもその場でご登録・適用可能です。</div>
     </div>` : ''}
     ${showMemberCardReminder ? `<div style="background:#eef7ff;border:1px solid #cde8f8;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;font-size:.84rem;color:#1a5a8a;line-height:1.6">
       <div style="font-weight:800;color:#1a7fb8;font-size:.95rem;margin-bottom:.3rem">📱 当日のお願い</div>
