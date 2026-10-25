@@ -71,6 +71,12 @@ export const POST: APIRoute = async (ctx) => {
   if (testGuardianId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(testGuardianId)) {
     return json({ error: 'invalid test_guardian_id (UUID format)' }, 400);
   }
+  if (testGuardianId && !preview && !testTo) {
+    return json({
+      error: 'test_guardian_id はテスト専用です。preview: true もしくは test_to を併せて指定してください。',
+      hint: 'add_preview_or_test_to',
+    }, 400);
+  }
 
   // cron ハンドラ側は request.url から origin と各種クエリパラメータを、
   // request のヘッダから x-cron-secret を読む。
