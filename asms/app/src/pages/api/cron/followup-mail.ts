@@ -55,6 +55,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const origin = env.PUBLIC_APP_URL || `${urlObj.protocol}//${urlObj.host}`;
   const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
 
+  // -------------------------------------------------------------------------
+  // テスト・プレビュー オプション (admin のメール文面動作確認用):
+  //   ?preview=1          → メール本文を生成するだけで実送信・DB flag 更新を
+  //                        一切行わない。レスポンスに生成した HTML/text を同梱。
+  //                        他顧客にも誤送信されない安全モード。
+  //   ?test_to=user@...   → 送信先を上書き (本来の guardian.email 無視)。
+  //                        自分宛てだけに届くように絞って動作確認できる。
+  //                        preview=1 と併用可。
+  //                        注意: DB の followup_email_sent_at は本来の予約に
+  //                        対して set されるので、本番 flag を汚染したくない
+  //                        場合は preview=1 も必ず付ける。
+  // どちらも admin cookie (cron-retry 経由) か CRON_SECRET が必要。
+  // -------------------------------------------------------------------------
+  const previewOnly = urlObj.searchParams.get('preview') === '1';
+  const testTo = (urlObj.searchParams.get('test_to') ?? '').trim() || null;
+
   // 対象日 = 30 日前 (JST)
   const todayJst = todayInJst();
   const targetDate = dateOverride || addDaysJst(todayJst, -30);
@@ -81,6 +97,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   // --- Reservations on target date, not yet followed-up ------------------
+  // ★ 2026-10-25: status を 'attended' のみに限定 (従前は 'confirmed' も含めていた)。
+  //   confirmed のまま 30 日経過した予約は「出席マークが忘れられた」可能性もあるが、
+  //   「予約だけして来なかった (スタッフが no_show 記録を忘れた)」可能性もある。
+  //   メール本文「前回は一人で走れるようになりましたね！」が未出席者に届くと
+  //   不自然なので、確実に出席記録のある attended のみを対象にする。
+  //   (サイレント欠席者には届かなくなるが、安全側に倒す。)
   const { data: candidates, error: rErr } = await supabase
     .from('reservations')
     .select(`
@@ -89,7 +111,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       reservation_participants(id, name_snapshot, attendance_status, customers(current_skill_level))
     `)
     .in('slot_id', slotIds)
-    .in('status', ['confirmed', 'attended'])
+    .eq('status', 'attended')
     .is('followup_email_sent_at', null);
   if (rErr) {
     throw new Error(`failed to fetch reservations: ${rErr.message}`);
@@ -134,6 +156,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  const previews: Array<{ guardianId: string; to: string; subject: string; text: string; html: string }> = [];
   // flag UPDATE 失敗を貯める配列 (メール送信は成功したが DB flag update
   // が失敗したケース)。ループ完了後に配列が空でなければ throw して cron
   // 全体を error 扱いにする → admin パネルで赤バッジ → 気付ける。
@@ -237,8 +260,38 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const idempotencyKey = `followup:${targetDate}:${guardianId}`;
 
     try {
+      // preview mode: 送信せず、生成した本文を details に積むだけ。
+      // test_to: 送信先を上書き (本来の guardian.email は無視)。
+      const effectiveTo = testTo || guardian.email;
+      if (previewOnly) {
+        const previewBody = buildFollowupBodyForPreview({
+          to: effectiveTo,
+          guardianName: guardian.name,
+          participantNames: allParticipantNames,
+          nextStep,
+          googleReviewUrl: askReview ? googleReviewUrl : '',
+        });
+        for (const r of groupReservations) {
+          details.push({
+            id: r.id,
+            result: 'preview',
+            note: `would send to ${effectiveTo}${testTo ? ' (test_to)' : ''}`,
+          });
+        }
+        // preview では skipped カウント相当として扱う (sent にはしない)
+        skipped += groupReservations.length;
+        previews.push({
+          guardianId,
+          to: effectiveTo,
+          subject: previewBody.subject,
+          text: previewBody.text,
+          html: previewBody.html,
+        });
+        continue;
+      }
+
       await sendFollowupEmail(env, {
-        to: guardian.email,
+        to: effectiveTo,
         guardianName: guardian.name,
         participantNames: allParticipantNames,
         courseName: courseNames.join(' / '), // 複数コース混在時は "/" 連結
@@ -246,6 +299,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
         googleReviewUrl: askReview ? googleReviewUrl : '',
         idempotencyKey,
       });
+
+      // test_to 指定時は DB flag を触らない。本来の予約の
+      // followup_email_sent_at を汚染しないため (本物の cron で後日
+      // ちゃんと本人宛に送るように残しておく)。
+      if (testTo) {
+        for (const r of groupReservations) {
+          details.push({ id: r.id, result: 'test-sent', note: `sent to ${testTo} (DB flag not touched)` });
+        }
+        sent++;
+        continue;
+      }
 
       // group 内全予約の flag を 1 UPDATE で同時セット (Postgres 単一
       // UPDATE 文は atomic なので部分更新にならない)。
@@ -325,7 +389,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
           `First DB error: ${flagUpdateErrors[0].error}`
         );
       }
-      return { target_date: targetDate, total, sent, skipped, failed, details };
+      return {
+        target_date: targetDate, total, sent, skipped, failed, details,
+        ...(previewOnly ? { preview: true, previews } : {}),
+        ...(testTo ? { test_to: testTo } : {}),
+      };
     });
     return json({ ok: true, ...result });
   } catch (e: any) {
@@ -400,7 +468,7 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
   if (kind === 'repeat') {
     if (rank >= 2) {
       return {
-        label: 'チャレンジクラスをお待ちしております',
+        label: 'チャレンジクラスへのご参加をお待ちしております',
         detail: 'とても上達されていました。次回は本格的なチャレンジクラス (トヨピー) で、レースの雰囲気も味わえます。',
         primaryUrl: challengeTsUrl,
         secondaryUrl: repeatUrl,
@@ -423,6 +491,104 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
     };
   }
   return { label: '次回のご予約はこちら', detail: '', primaryUrl: reserveBase };
+}
+
+// メール本文を組み立てる (preview でも実送信でも同じ結果にするため共通化)。
+function buildFollowupBodyForPreview(args: {
+  to: string;
+  guardianName: string;
+  participantNames: string[];
+  nextStep: NextStep;
+  googleReviewUrl: string;
+}): { subject: string; text: string; html: string } {
+  const subject = `また一緒にカートを楽しみませんか？🏁 — 福岡キッズカートアカデミー`;
+  const text = [
+    `${args.guardianName} 様`,
+    '',
+    'こんにちは。福岡キッズカートアカデミーです。',
+    `先月 ${args.participantNames.join(' / ')} さんにご参加いただき`,
+    'ありがとうございました。',
+    '',
+    'カート体験は楽しんでいただけましたか？🏁',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    `▼ ${args.nextStep.label}`,
+    '━━━━━━━━━━━━━━━━━━━━',
+    ...(args.nextStep.detail ? [args.nextStep.detail, ''] : []),
+    `▶ ご予約: ${args.nextStep.primaryUrl}`,
+    ...(args.nextStep.secondaryUrl && args.nextStep.secondaryLabel
+      ? [`▶ ${args.nextStep.secondaryLabel}: ${args.nextStep.secondaryUrl}`]
+      : []),
+    '',
+    ...(args.googleReviewUrl ? [
+      '━━━━━━━━━━━━━━━━━━━━',
+      'ご感想をお聞かせください',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '今後の教室づくりの参考に、率直なご感想を',
+      'お聞かせください。',
+      '',
+      `▶ ${args.googleReviewUrl}`,
+      '',
+    ] : []),
+    '━━━━━━━━━━━━━━━━━━━━',
+    '福岡キッズカートアカデミー / エーワンサーキット',
+    '✉️ info@kidskart.org',
+    '📞 092-927-1177',
+    '━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const nextHtml = `
+    <div style="background:#fff;border:1px solid #d8e6f0;border-radius:10px;padding:1rem 1.15rem;margin:1rem 0">
+      <div style="font-weight:800;color:#e5631a;font-size:.95rem;margin-bottom:.4rem">${escapeHtml(args.nextStep.label)}</div>
+      ${args.nextStep.detail ? `<p style="font-size:.83rem;color:#3d556f;margin:.3rem 0 .8rem;line-height:1.7">${escapeHtml(args.nextStep.detail)}</p>` : ''}
+      <p style="margin:.4rem 0">
+        <a href="${escapeAttr(args.nextStep.primaryUrl)}" style="display:inline-block;padding:.6rem 1.2rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.85rem">ご予約はこちら</a>
+      </p>
+      ${args.nextStep.secondaryUrl && args.nextStep.secondaryLabel ? `
+        <p style="margin:.4rem 0 0"><a href="${escapeAttr(args.nextStep.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(args.nextStep.secondaryLabel)}</a></p>
+      ` : ''}
+    </div>
+  `;
+
+  const reviewHtml = args.googleReviewUrl ? `
+    <div style="background:#fcfdfe;border:1px solid #d8e6f0;border-radius:12px;padding:1.1rem 1rem;margin:1.2rem 0 .3rem;text-align:center">
+      <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.4rem">ご感想をお聞かせください</div>
+      <p style="font-size:.78rem;color:#3d556f;margin:0 0 .8rem;line-height:1.6">
+        今後の教室づくりの参考に、<br>
+        率直なご感想をお聞かせください。
+      </p>
+      <p style="margin:0">
+        <a href="${escapeAttr(args.googleReviewUrl)}" style="display:inline-block;padding:.6rem 1.2rem;background:#fff;color:#1a73e8;text-decoration:none;border:1px solid #4285f4;border-radius:8px;font-weight:700;font-size:.85rem">Google でご感想を書く</a>
+      </p>
+    </div>
+  ` : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
+<body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
+    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">🏁</div>
+    <h2 style="text-align:center;margin:0 0 .5rem;font-size:1.15rem">また一緒にカートを楽しみませんか？</h2>
+    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${escapeHtml(args.guardianName)} 様</p>
+
+    <p style="font-size:.88rem;color:#163048;line-height:1.75;margin:0 0 1rem">
+      こんにちは。福岡キッズカートアカデミーです。<br>
+      先月 <strong>${escapeHtml(args.participantNames.join(' / '))}</strong> さんにご参加いただき、ありがとうございました。<br><br>
+      カート体験は楽しんでいただけましたか？🏁
+    </p>
+
+    ${nextHtml}
+
+    ${reviewHtml}
+
+    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
+      福岡キッズカートアカデミー / エーワンサーキット<br>
+      ✉️ <a href="mailto:info@kidskart.org" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> / 📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a>
+    </p>
+  </div>
+</body></html>`;
+
+  return { subject, text, html };
 }
 
 async function sendFollowupEmail(env: Env, args: {
@@ -449,96 +615,14 @@ async function sendFollowupEmail(env: Env, args: {
   const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
   const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
   const replyTo = env.MAIL_REPLY_TO || undefined;
-  const subject = `また一緒にカートを楽しみませんか？🏁 — 福岡キッズカートアカデミー`;
 
-  const text = [
-    `${args.guardianName} 様`,
-    '',
-    'こんにちは。福岡キッズカートアカデミーです。',
-    `先月 ${args.participantNames.join(' / ')} さんにご参加いただき`,
-    'ありがとうございました。',
-    '',
-    'カート体験は楽しんでいただけましたか？🏁',
-    'ぜひまた、一緒にカートを楽しみましょう！',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━',
-    `▼ ${args.nextStep.label}`,
-    '━━━━━━━━━━━━━━━━━━━━',
-    ...(args.nextStep.detail ? [args.nextStep.detail, ''] : []),
-    `▶ ご予約: ${args.nextStep.primaryUrl}`,
-    ...(args.nextStep.secondaryUrl && args.nextStep.secondaryLabel
-      ? [`▶ ${args.nextStep.secondaryLabel}: ${args.nextStep.secondaryUrl}`]
-      : []),
-    '',
-    ...(args.googleReviewUrl ? [
-      '━━━━━━━━━━━━━━━━━━━━',
-      '⭐ Google でご感想をお聞かせください',
-      '━━━━━━━━━━━━━━━━━━━━',
-      'お子さまに楽しんでいただけましたら、Google 上でご感想を',
-      'お聞かせいただけると嬉しいです。',
-      '',
-      `▶ ${args.googleReviewUrl}`,
-      '',
-    ] : []),
-    '━━━━━━━━━━━━━━━━━━━━',
-    '福岡キッズカートアカデミー / エーワンサーキット',
-    '✉️ info@kidskart.org',
-    '📞 092-927-1177',
-    '━━━━━━━━━━━━━━━━━━━━',
-  ].join('\n');
-
-  const nextHtml = `
-    <div style="background:#fff;border:1px solid #d8e6f0;border-radius:10px;padding:1rem 1.15rem;margin:1rem 0">
-      <div style="font-weight:800;color:#e5631a;font-size:.95rem;margin-bottom:.4rem">${escapeHtml(args.nextStep.label)}</div>
-      ${args.nextStep.detail ? `<p style="font-size:.83rem;color:#3d556f;margin:.3rem 0 .8rem;line-height:1.7">${escapeHtml(args.nextStep.detail)}</p>` : ''}
-      <p style="margin:.4rem 0">
-        <a href="${escapeAttr(args.nextStep.primaryUrl)}" style="display:inline-block;padding:.6rem 1.2rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.85rem">ご予約はこちら</a>
-      </p>
-      ${args.nextStep.secondaryUrl && args.nextStep.secondaryLabel ? `
-        <p style="margin:.4rem 0 0"><a href="${escapeAttr(args.nextStep.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(args.nextStep.secondaryLabel)}</a></p>
-      ` : ''}
-    </div>
-  `;
-
-  const reviewHtml = args.googleReviewUrl ? `
-    <div style="background:linear-gradient(135deg,rgba(255,201,67,.15),rgba(255,138,61,.08));border:2px solid #ffc943;border-radius:12px;padding:1.1rem 1rem;margin:1.2rem 0 .3rem;text-align:center">
-      <div style="font-size:1.3rem;margin-bottom:.2rem">⭐️⭐️⭐️⭐️⭐️</div>
-      <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.4rem">Google でご感想をお聞かせください</div>
-      <p style="font-size:.78rem;color:#3d556f;margin:0 0 .8rem;line-height:1.6">
-        お子さまに楽しんでいただけましたら、<br>
-        Google 上でひとことご感想をお願いします。
-      </p>
-      <p style="margin:0">
-        <a href="${escapeAttr(args.googleReviewUrl)}" style="display:inline-block;padding:.65rem 1.3rem;background:linear-gradient(135deg,#4285f4,#1a73e8);color:#fff;text-decoration:none;border-radius:8px;font-weight:800;font-size:.85rem;box-shadow:0 3px 10px rgba(66,133,244,.35)">Google に口コミを書く</a>
-      </p>
-    </div>
-  ` : '';
-
-  const html = `<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8"><title>${escapeHtml(subject)}</title></head>
-<body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
-    <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">🏁</div>
-    <h2 style="text-align:center;margin:0 0 .5rem;font-size:1.15rem">また一緒にカートを楽しみませんか？</h2>
-    <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${escapeHtml(args.guardianName)} 様</p>
-
-    <p style="font-size:.88rem;color:#163048;line-height:1.75;margin:0 0 1rem">
-      こんにちは。福岡キッズカートアカデミーです。<br>
-      先月 <strong>${escapeHtml(args.participantNames.join(' / '))}</strong> さんにご参加いただき、ありがとうございました。<br><br>
-      カート体験は楽しんでいただけましたか？🏁<br>
-      ぜひまた、一緒にカートを楽しみましょう！
-    </p>
-
-    ${nextHtml}
-
-    ${reviewHtml}
-
-    <p style="text-align:center;font-size:.72rem;color:#7d8fa0;margin:1.5rem 0 0;border-top:1px solid #d8e6f0;padding-top:1rem">
-      福岡キッズカートアカデミー / エーワンサーキット<br>
-      ✉️ <a href="mailto:info@kidskart.org" style="color:#1a7fb8;text-decoration:none">info@kidskart.org</a> / 📞 <a href="tel:0929271177" style="color:#1a7fb8;text-decoration:none">092-927-1177</a>
-    </p>
-  </div>
-</body></html>`;
+  const { subject, text, html } = buildFollowupBodyForPreview({
+    to: args.to,
+    guardianName: args.guardianName,
+    participantNames: args.participantNames,
+    nextStep: args.nextStep,
+    googleReviewUrl: args.googleReviewUrl,
+  });
 
   const body: any = {
     from: `${fromName} <${from}>`,
