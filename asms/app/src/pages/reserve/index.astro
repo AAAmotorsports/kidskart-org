@@ -517,7 +517,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           {hasNext && (
             <div class="cal-nextmonth-hint">
               {isEn
-                ? (<>👉 For <strong>{new Date(nextM.y, nextM.m - 1, 1).toLocaleString('en-US', { month: 'long' })}</strong> bookings, tap the <strong>“{nextM.m} →”</strong> button on the right.</>)
+                ? (<>👉 For <strong>{new Date(nextM.y, nextM.m - 1, 1).toLocaleString('en-US', { month: 'long' })}</strong> bookings, tap the <strong>“{new Date(nextM.y, nextM.m - 1, 1).toLocaleString('en-US', { month: 'short' })} →”</strong> button on the right.</>)
                 : (<>👉 <strong>{nextM.m}月のご予約</strong>は右の <strong>「{nextM.m}月 →」</strong> ボタンをタップしてください</>)}
             </div>
           )}
