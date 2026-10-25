@@ -26,8 +26,9 @@ export const prerender = false;
 //
 // Body: { cron: 'thankyou-mail'|'reminder-mail'|'followup-mail',
 //         date?: 'YYYY-MM-DD',
-//         preview?: boolean,       // true → 送信せず本文を preview レスポンスに同梱
-//         test_to?: string }       // 送信先を上書き (DB flag は set せず)
+//         preview?: boolean,              // true → 送信せず本文を preview レスポンスに同梱
+//         test_to?: string,               // 送信先を上書き (DB flag は set せず)
+//         test_guardian_id?: string }     // 候補を 1 保護者 (UUID) に絞る
 // Response: cron ハンドラの生レスポンスをそのまま返す。
 
 const CRON_HANDLERS: Record<string, APIRoute> = {
@@ -55,6 +56,7 @@ export const POST: APIRoute = async (ctx) => {
   const date = body?.date ? String(body.date).trim() : '';
   const preview = body?.preview === true || body?.preview === '1';
   const testTo = typeof body?.test_to === 'string' ? body.test_to.trim() : '';
+  const testGuardianId = typeof body?.test_guardian_id === 'string' ? body.test_guardian_id.trim() : '';
 
   const handler = CRON_HANDLERS[cron];
   if (!handler) {
@@ -66,6 +68,9 @@ export const POST: APIRoute = async (ctx) => {
   if (testTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testTo)) {
     return json({ error: 'invalid test_to (email format)' }, 400);
   }
+  if (testGuardianId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(testGuardianId)) {
+    return json({ error: 'invalid test_guardian_id (UUID format)' }, 400);
+  }
 
   // cron ハンドラ側は request.url から origin と各種クエリパラメータを、
   // request のヘッダから x-cron-secret を読む。
@@ -74,6 +79,7 @@ export const POST: APIRoute = async (ctx) => {
   if (date) qs.set('date', date);
   if (preview) qs.set('preview', '1');
   if (testTo) qs.set('test_to', testTo);
+  if (testGuardianId) qs.set('test_guardian_id', testGuardianId);
   const target = new URL(`/api/cron/${cron}${qs.toString() ? `?${qs}` : ''}`, `${url.protocol}//${url.host}`);
   const syntheticRequest = new Request(target.toString(), {
     method: 'POST',

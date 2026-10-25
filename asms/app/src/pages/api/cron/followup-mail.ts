@@ -57,19 +57,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   // -------------------------------------------------------------------------
   // テスト・プレビュー オプション (admin のメール文面動作確認用):
-  //   ?preview=1          → メール本文を生成するだけで実送信・DB flag 更新を
-  //                        一切行わない。レスポンスに生成した HTML/text を同梱。
-  //                        他顧客にも誤送信されない安全モード。
-  //   ?test_to=user@...   → 送信先を上書き (本来の guardian.email 無視)。
-  //                        自分宛てだけに届くように絞って動作確認できる。
-  //                        preview=1 と併用可。
-  //                        注意: DB の followup_email_sent_at は本来の予約に
-  //                        対して set されるので、本番 flag を汚染したくない
-  //                        場合は preview=1 も必ず付ける。
+  //   ?preview=1              → メール本文を生成するだけで実送信・DB flag 更新を
+  //                            一切行わない。レスポンスに生成した HTML/text を同梱。
+  //                            他顧客にも誤送信されない安全モード。
+  //   ?test_to=user@...       → 送信先を上書き (本来の guardian.email 無視)。
+  //                            自分宛てだけに届くように絞って動作確認できる。
+  //                            preview=1 と併用可。
+  //   ?test_guardian_id=uuid  → 候補を 1 保護者に絞る (他の顧客の分は候補から除外)。
+  //                            「候補が多い日に自分宛てに大量に飛ぶ」のを防ぐ。
+  //                            preview / test_to と併用可。
+  //                            注意: DB の followup_email_sent_at は本来の予約に
+  //                            対して set されるので、本番 flag を汚染したくない
+  //                            場合は preview=1 も必ず付ける。
   // どちらも admin cookie (cron-retry 経由) か CRON_SECRET が必要。
   // -------------------------------------------------------------------------
   const previewOnly = urlObj.searchParams.get('preview') === '1';
   const testTo = (urlObj.searchParams.get('test_to') ?? '').trim() || null;
+  const testGuardianId = (urlObj.searchParams.get('test_guardian_id') ?? '').trim() || null;
 
   // 対象日 = 30 日前 (JST)
   const todayJst = todayInJst();
@@ -117,9 +121,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
 
+  // test_guardian_id 指定時は候補を 1 保護者分に絞る (preview / test_to と併用)
+  const candidateList = testGuardianId
+    ? ((candidates ?? []) as any[]).filter((r) => r.guardian_id === testGuardianId)
+    : ((candidates ?? []) as any[]);
+
   // --- For each candidate, verify no newer reservation for same guardian -
   const guardianIds = new Set<string>();
-  for (const r of (candidates ?? []) as any[]) {
+  for (const r of candidateList) {
     if (r.guardian_id) guardianIds.add(r.guardian_id);
   }
 
@@ -151,7 +160,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
   }
 
-  const total = (candidates ?? []).length;
+  const total = candidateList.length;
   let sent = 0;
   let skipped = 0;
   let failed = 0;
@@ -170,7 +179,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 送信処理だけ guardian でまとめる。
   const groupsByGuardian = new Map<string, any[]>();
   const orphaned: any[] = [];
-  for (const r of (candidates ?? []) as any[]) {
+  for (const r of candidateList) {
     if (!r.guardian_id) { orphaned.push(r); continue; }
     const arr = groupsByGuardian.get(r.guardian_id) ?? [];
     arr.push(r);
@@ -393,6 +402,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         target_date: targetDate, total, sent, skipped, failed, details,
         ...(previewOnly ? { preview: true, previews } : {}),
         ...(testTo ? { test_to: testTo } : {}),
+        ...(testGuardianId ? { test_guardian_id: testGuardianId } : {}),
       };
     });
     return json({ ok: true, ...result });
