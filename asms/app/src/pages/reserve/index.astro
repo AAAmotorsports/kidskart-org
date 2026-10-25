@@ -90,6 +90,24 @@ const url = new URL(Astro.request.url);
 const courseFilter = url.searchParams.get('course') ?? '';
 const activeCourse = courses?.find((c) => c.code === courseFilter) ?? null;
 
+// --- Audience filter (2026-10-25): カート初めての親御さん向けに
+// コース選択の第一歩を絞り込む。「初めて」= 体験教室のみ、
+// 「2回目以降」= リピート + チャレンジ。all = 全部表示。
+// ユーザー要望: 「5コース並んでると初めての方には選びにくい」
+type Audience = 'first' | 'returning' | 'all';
+const audienceParam = (url.searchParams.get('audience') ?? '') as Audience;
+const audience: Audience = (audienceParam === 'first' || audienceParam === 'returning') ? audienceParam : 'all';
+
+// 「初めて」向け: 体験教室のみ
+// 「2回目以降」向け: リピート + チャレンジ (= 体験以外全て)
+// 'all' は未指定時の表示 (全コース)
+const isAudienceCourse = (code: string): boolean => {
+  if (audience === 'first') return code === 'taiken';
+  if (audience === 'returning') return code !== 'taiken';
+  return true;
+};
+const visibleCourses = (courses ?? []).filter((c: any) => isAudienceCourse(c.code));
+
 const filteredSlots = activeCourse
   ? (slots ?? []).filter((s) => (s.courses as any)?.code === activeCourse.code)
   : (slots ?? []);
@@ -406,8 +424,32 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
           ? 'Tap "Book this course" to filter the calendar to just this course.'
           : '「このコースで予約する」で開催カレンダーが絞り込まれます'}</p>
       </div>
-      <div class="course-grid">
-        {courses?.map((c) => (
+
+      {!isEn && (
+        <div class="audience-filter">
+          <p class="aud-head">👉 まずはお子様の状況を選んでください</p>
+          <div class="aud-grid">
+            <a class={`aud-btn aud-first ${audience === 'first' ? 'active' : ''}`}
+               href={`/reserve/${audience === 'first' ? '' : '?audience=first'}#courses`}>
+              <span class="aud-emoji">🆕</span>
+              <span class="aud-label">初めてカートに乗るお子様</span>
+              <span class="aud-sub">体験教室がおすすめ</span>
+            </a>
+            <a class={`aud-btn aud-returning ${audience === 'returning' ? 'active' : ''}`}
+               href={`/reserve/${audience === 'returning' ? '' : '?audience=returning'}#courses`}>
+              <span class="aud-emoji">🏁</span>
+              <span class="aud-label">2回目以降のお子様</span>
+              <span class="aud-sub">一人で運転できる方</span>
+            </a>
+          </div>
+          {audience !== 'all' && (
+            <a class="aud-reset" href="/reserve/#courses">↺ 全てのコースを表示</a>
+          )}
+        </div>
+      )}
+
+      <div class="course-grid" id="courses">
+        {visibleCourses.map((c) => (
           <div class={`course c-${c.code} ${activeCourse?.code === c.code ? 'active' : ''}`}>
             <div class="course-head">
               <div class="course-name">
@@ -860,6 +902,63 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
     white-space: nowrap;
   }
   .clear-filter:hover { background: rgba(229,85,111,.2); }
+
+  /* Audience filter (first-time vs returning) */
+  .audience-filter {
+    background: linear-gradient(135deg, rgba(255,201,67,.08), rgba(58,169,232,.08));
+    border: 1px solid rgba(255,201,67,.3);
+    border-radius: 12px;
+    padding: .9rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .aud-head {
+    margin: 0 0 .7rem;
+    font-size: .95rem; font-weight: 800;
+    color: var(--ink);
+  }
+  .aud-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .6rem;
+  }
+  @media (max-width: 480px) {
+    .aud-grid { grid-template-columns: 1fr; }
+  }
+  .aud-btn {
+    display: flex; flex-direction: column; align-items: center; gap: .25rem;
+    padding: 1rem .8rem;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: transform .08s, box-shadow .12s, border-color .12s, background .12s;
+  }
+  .aud-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  .aud-btn.active {
+    background: var(--sky-mist);
+    border-color: var(--sky);
+    box-shadow: 0 2px 8px rgba(58,169,232,.2);
+  }
+  .aud-first.active {
+    background: #fff8e5;
+    border-color: var(--orange);
+    box-shadow: 0 2px 8px rgba(229,99,26,.25);
+  }
+  .aud-emoji { font-size: 1.8rem; }
+  .aud-label { font-weight: 800; font-size: .95rem; text-align: center; }
+  .aud-sub { font-size: .72rem; color: var(--ink-3); text-align: center; }
+  .aud-reset {
+    display: inline-block;
+    margin-top: .7rem;
+    font-size: .78rem;
+    color: var(--ink-3);
+    text-decoration: none;
+    padding: .3rem .7rem;
+    border-radius: 6px;
+  }
+  .aud-reset:hover { background: var(--bg-2); color: var(--ink-2); }
 
   /* Courses */
   .course-grid {
