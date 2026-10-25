@@ -391,17 +391,19 @@ if (Astro.request.method === 'POST') {
     if (uErr) return back('', `予約更新に失敗: ${fmt(uErr)}`);
 
     // Cascade participant attendance → cancelled.
-    // 既に cancelled の参加者は触らない (元のキャンセル日時/文脈を温存)。
-    // expected 以外 (attended/no_show) も cancel 対象に含める: カルテやレポート
-    // での「予約自体はキャンセル済」整合性を取るため (個別の attended 記録を
-    // 残したい場合は participant 単体 cancel を使うという別運用になる)。
-    // cancelled_at を記録することで、復活時に「全体キャンセル由来」と判別できる。
-    const nowTs = new Date().toISOString();
+    // ★ expected 参加者だけ cancel 対象。attended/no_show はキャンセル後も
+    //   履歴として保存する (復活時に元の状態に戻せる方が重要)。
+    // ★ カルテ表示では reservations.status === 'cancelled' を優先して
+    //   「キャンセル」badge を出すので、attended participant が残っても
+    //   見た目は「キャンセル予約」として扱われる (customers/[id].astro の
+    //   effectiveStatus override)。
+    // ★ cancelled_at を記録することで、復活時に「全体キャンセル由来」と
+    //   判別できる (reservation-restore.ts の cancelled_at >= 比較)。
     const { error: pErr } = await supabase
       .from('reservation_participants')
-      .update({ attendance_status: 'cancelled', cancelled_at: nowTs })
+      .update({ attendance_status: 'cancelled', cancelled_at: nowIso })
       .eq('reservation_id', reservationId)
-      .neq('attendance_status', 'cancelled');
+      .eq('attendance_status', 'expected');
     if (pErr) return back(`予約をキャンセルしましたが、参加者ステータス更新でエラー: ${fmt(pErr)}`, '');
 
     // メール通知: 保護者 (notify=true 時) + 管理者 (常時)

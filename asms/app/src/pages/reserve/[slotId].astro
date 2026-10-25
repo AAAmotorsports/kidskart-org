@@ -1029,7 +1029,20 @@ const termsHtml = terms
       setFieldValue('g_phone', g.phone);
       setFieldValue('g_email', g.email);
       setFieldValue('g_postal', g.postal_code);
-      setFieldValue('g_address', g.address);
+      // 住所は "都道府県・市区町村" と "番地・建物" が半角スペース 1 個で結合
+      // されて保存されている (2026-10-11 以降)。prefill では分割して各欄に戻す。
+      // split 位置 = 先頭スペース (日本語住所は都道府県・市区町村に空白を
+      // 含まない前提)。スペースが無い legacy データは全部 g_address に。
+      {
+        const full = (g.address || '').trim();
+        const firstSp = full.indexOf(' ');
+        if (firstSp > 0) {
+          setFieldValue('g_address', full.slice(0, firstSp));
+          setFieldValue('g_banchi', full.slice(firstSp + 1).trim());
+        } else {
+          setFieldValue('g_address', full);
+        }
+      }
 
       // Emergency contact
       if (savedPrefill.sameAsGuardian || !savedPrefill.emergency) {

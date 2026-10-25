@@ -71,10 +71,19 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!guardian?.name || !guardian?.phone || !guardian?.email) {
     return json({ error: '保護者情報が不足しています' }, 400);
   }
-  // 住所 (都道府県・市区町村 + 番地) は必須。ウィザードで結合して送られてくるので
-  // ここでは guardian.address の空判定だけ。郵便番号は任意。
-  if (!(guardian?.address ?? '').trim()) {
-    return json({ error: '保護者の住所が未入力です' }, 400);
+  // 住所 (都道府県・市区町村 + 番地) は必須。ウィザードで結合して送られてくる
+  // ので、ここでは「空でない」「最低 5 文字」「数字を含む (= 番地部分の存在)」
+  // の 3 条件で defense in depth バリデーション。JS を無効にして POST を直叩き
+  // する bypass クライアントが都道府県だけ送って入力完了させるのを防ぐ。
+  // 郵便番号は任意のまま。
+  {
+    const addr = (guardian?.address ?? '').trim();
+    if (!addr) {
+      return json({ error: '保護者の住所が未入力です' }, 400);
+    }
+    if (addr.length < 5 || !/\d/.test(addr)) {
+      return json({ error: '保護者の住所が不完全です (都道府県・市区町村 + 番地が必要です)' }, 400);
+    }
   }
   if (!emergency?.name || !emergency?.phone) {
     return json({ error: '緊急連絡先が不足しています' }, 400);
