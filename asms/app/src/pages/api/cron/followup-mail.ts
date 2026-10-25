@@ -48,13 +48,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const supabase = getSupabaseAdmin(env);
 
-  try {
-    const result = await logCronRun(supabase, 'followup-mail', async () => {
-  const urlObj = new URL(request.url);
-  const dateOverride = urlObj.searchParams.get('date');
-  const origin = env.PUBLIC_APP_URL || `${urlObj.protocol}//${urlObj.host}`;
-  const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
-
   // -------------------------------------------------------------------------
   // テスト・プレビュー オプション (admin のメール文面動作確認用):
   //   ?preview=1              → メール本文を生成するだけで実送信・DB flag 更新を
@@ -65,15 +58,34 @@ export const POST: APIRoute = async ({ request, locals }) => {
   //                            preview=1 と併用可。
   //   ?test_guardian_id=uuid  → 候補を 1 保護者に絞る (他の顧客の分は候補から除外)。
   //                            「候補が多い日に自分宛てに大量に飛ぶ」のを防ぐ。
-  //                            preview / test_to と併用可。
+  //                            テスト専用で preview か test_to と必ずセット。
   //                            注意: DB の followup_email_sent_at は本来の予約に
   //                            対して set されるので、本番 flag を汚染したくない
   //                            場合は preview=1 も必ず付ける。
   // どちらも admin cookie (cron-retry 経由) か CRON_SECRET が必要。
   // -------------------------------------------------------------------------
+  const urlObj = new URL(request.url);
   const previewOnly = urlObj.searchParams.get('preview') === '1';
   const testTo = (urlObj.searchParams.get('test_to') ?? '').trim() || null;
   const testGuardianId = (urlObj.searchParams.get('test_guardian_id') ?? '').trim() || null;
+
+  // test_guardian_id はテスト専用: preview か test_to と必ずセットで。
+  // 単体指定だと「1 保護者だけ本物のメール送信 + 本物の DB flag 更新」が
+  // 発生して、紛らわしいうえ事故リスクが高い。
+  // ピンポイント再送したい場合は test_to に本人のメールを明示的に書いて
+  // ください (DB flag が触られないので cron が再抽出せず二重送信にはならない)。
+  if (testGuardianId && !previewOnly && !testTo) {
+    return json({
+      error: 'test_guardian_id はテスト専用です。preview=1 もしくは test_to=... と併用してください。',
+      hint: 'add_preview_or_test_to',
+    }, 400);
+  }
+
+  try {
+    const result = await logCronRun(supabase, 'followup-mail', async () => {
+  const dateOverride = urlObj.searchParams.get('date');
+  const origin = env.PUBLIC_APP_URL || `${urlObj.protocol}//${urlObj.host}`;
+  const googleReviewUrl = (env.PUBLIC_GOOGLE_REVIEW_URL ?? '').trim();
 
   // 対象日 = 30 日前 (JST)
   const todayJst = todayInJst();
