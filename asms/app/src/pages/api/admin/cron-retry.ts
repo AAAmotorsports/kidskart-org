@@ -24,7 +24,10 @@ export const prerender = false;
 //   - 遅延事故等で送信が漏れた予約の手動再送 (今回の 08/29 事故対応)
 //   - 開催日直後の即時テスト送信 (?date=YYYY-MM-DD 指定)
 //
-// Body: { cron: 'thankyou-mail'|'reminder-mail'|'followup-mail', date?: 'YYYY-MM-DD' }
+// Body: { cron: 'thankyou-mail'|'reminder-mail'|'followup-mail',
+//         date?: 'YYYY-MM-DD',
+//         preview?: boolean,       // true → 送信せず本文を preview レスポンスに同梱
+//         test_to?: string }       // 送信先を上書き (DB flag は set せず)
 // Response: cron ハンドラの生レスポンスをそのまま返す。
 
 const CRON_HANDLERS: Record<string, APIRoute> = {
@@ -50,6 +53,8 @@ export const POST: APIRoute = async (ctx) => {
 
   const cron = String(body?.cron ?? '').trim();
   const date = body?.date ? String(body.date).trim() : '';
+  const preview = body?.preview === true || body?.preview === '1';
+  const testTo = typeof body?.test_to === 'string' ? body.test_to.trim() : '';
 
   const handler = CRON_HANDLERS[cron];
   if (!handler) {
@@ -58,13 +63,18 @@ export const POST: APIRoute = async (ctx) => {
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
   }
+  if (testTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testTo)) {
+    return json({ error: 'invalid test_to (email format)' }, 400);
+  }
 
-  // cron ハンドラ側は request.url から origin と ?date=... を、request の
-  // ヘッダから x-cron-secret を読む。実 URL 由来の origin (メール本文の
-  // 予約リンクに使う) を維持したいので、admin リクエストの origin を
-  // そのまま流用する。
+  // cron ハンドラ側は request.url から origin と各種クエリパラメータを、
+  // request のヘッダから x-cron-secret を読む。
   const url = new URL(ctx.request.url);
-  const target = new URL(`/api/cron/${cron}${date ? `?date=${encodeURIComponent(date)}` : ''}`, `${url.protocol}//${url.host}`);
+  const qs = new URLSearchParams();
+  if (date) qs.set('date', date);
+  if (preview) qs.set('preview', '1');
+  if (testTo) qs.set('test_to', testTo);
+  const target = new URL(`/api/cron/${cron}${qs.toString() ? `?${qs}` : ''}`, `${url.protocol}//${url.host}`);
   const syntheticRequest = new Request(target.toString(), {
     method: 'POST',
     headers: { 'x-cron-secret': secret },
