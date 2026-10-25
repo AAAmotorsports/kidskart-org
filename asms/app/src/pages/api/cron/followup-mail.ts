@@ -390,11 +390,11 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
       };
     }
     return {
-      label: '🎉 リピート練習で次のステップへ',
-      detail: '前回で単独走行 OK！次はリピート練習で走行時間を伸ばして、コース攻略に挑戦しませんか？',
+      label: '🏁 リピート練習で、もっと楽しく！',
+      detail: '前回は一人で走れるようになりましたね！次はリピート練習で、走る楽しさをもっと味わってみませんか？お子さまのペースに合わせて、ブレーキやコーナーの曲がり方を練習していきます。',
       primaryUrl: repeatUrl,
       secondaryUrl: repeat25Url,
-      secondaryLabel: '短めの 25 分コース',
+      secondaryLabel: '短時間で参加できる 25 分コース',
     };
   }
   if (kind === 'repeat') {
@@ -417,8 +417,8 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
   }
   if (kind === 'challenge') {
     return {
-      label: '次のチャレンジクラスへ',
-      detail: '本気の走行はチャレンジクラスから。次回もお待ちしております。',
+      label: '🏁 次のチャレンジクラスへ',
+      detail: '前回の経験を活かして、少しずつステップアップ。お子さまのペースに合わせて練習できます。またお会いできるのを楽しみにしております。',
       primaryUrl: challengeTsUrl,
     };
   }
@@ -449,17 +449,17 @@ async function sendFollowupEmail(env: Env, args: {
   const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
   const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
   const replyTo = env.MAIL_REPLY_TO || undefined;
-  const subject = `お子さまはお元気ですか？ 次回のご案内 — 福岡キッズカートアカデミー`;
+  const subject = `また一緒にカートを楽しみませんか？🏁 — 福岡キッズカートアカデミー`;
 
   const text = [
     `${args.guardianName} 様`,
     '',
-    'ご無沙汰しております、福岡キッズカートアカデミーです。',
+    'こんにちは。福岡キッズカートアカデミーです。',
     `先月 ${args.participantNames.join(' / ')} さんにご参加いただき`,
     'ありがとうございました。',
     '',
-    'お子さまのカート、その後いかがでしょうか？',
-    'そろそろまた走らせてあげませんか？',
+    'カート体験は楽しんでいただけましたか？🏁',
+    'ぜひまた、一緒にカートを楽しみましょう！',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     `▼ ${args.nextStep.label}`,
@@ -519,13 +519,14 @@ async function sendFollowupEmail(env: Env, args: {
 <body style="font-family:'Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;color:#163048;line-height:1.7;margin:0;padding:1.5rem;background:#f4f9fc">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem 1.3rem;border:1px solid #d8e6f0">
     <div style="text-align:center;font-size:2rem;margin-bottom:.4rem">🏁</div>
-    <h2 style="text-align:center;margin:0 0 .5rem;font-size:1.15rem">お子さまはお元気ですか？</h2>
+    <h2 style="text-align:center;margin:0 0 .5rem;font-size:1.15rem">また一緒にカートを楽しみませんか？</h2>
     <p style="text-align:center;margin:0 0 1rem;color:#3d556f;font-size:.88rem">${escapeHtml(args.guardianName)} 様</p>
 
     <p style="font-size:.88rem;color:#163048;line-height:1.75;margin:0 0 1rem">
-      ご無沙汰しております、福岡キッズカートアカデミーです。<br>
-      先月 <strong>${escapeHtml(args.participantNames.join(' / '))}</strong> さんにご参加いただきありがとうございました。<br><br>
-      お子さまのカート、その後いかがでしょうか？そろそろまた走らせてあげませんか？
+      こんにちは。福岡キッズカートアカデミーです。<br>
+      先月 <strong>${escapeHtml(args.participantNames.join(' / '))}</strong> さんにご参加いただき、ありがとうございました。<br><br>
+      カート体験は楽しんでいただけましたか？🏁<br>
+      ぜひまた、一緒にカートを楽しみましょう！
     </p>
 
     ${nextHtml}
