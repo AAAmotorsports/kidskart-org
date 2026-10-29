@@ -105,6 +105,11 @@
     // (Google Form)。空文字ならメール本文からアンケートセクションを
     // 省略する。差し替え時はここを編集 → PR → deploy。
     "PUBLIC_SURVEY_URL": "https://forms.gle/xvV4x1XrjQ3mrp6VA",
+    // 公開 URL (reserve.kidskart.org)。全てのメール本文中のリンクが
+    // この値を基準に組み立てられる。旧 workers.dev ドメイン経由で
+    // 予約が入った場合でも、メールのリンクは必ずこの正式ドメインに
+    // 固定される (2026-10-29 LINE 報告対応)。
+    "PUBLIC_APP_URL": "https://reserve.kidskart.org",
     // GA4 測定 ID。kidskart.org (静的サイト) と同一のデータストリームで
     // 計測し、集客 → 予約完了までの単一ファネルとして測る。空文字なら
     // タグを一切吐かない (dev / preview 用)。

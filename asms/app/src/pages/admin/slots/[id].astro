@@ -13,6 +13,7 @@ import {
   paymentLabel,
   skillLabel,
 } from '@lib/admin';
+import { canonicalOrigin } from '@lib/appOrigin';
 
 // 入力バリデーション用 enum セット (form POST で来た値を事前に弾く)
 const ATTENDANCE_CODE_SET = new Set(ATTENDANCE_STATUSES.map((a) => a.code));
@@ -128,8 +129,7 @@ if (Astro.request.method === 'POST') {
     // 操作なので許容)。
     const guardian = res.guardians ?? {};
     const slot = res.slots ?? {};
-    const apiUrl = new URL(Astro.request.url);
-    const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+    const origin = canonicalOrigin(env, Astro.request);
     const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
     type MailTag = { label: string; p: Promise<any> };
     const mails: MailTag[] = [];
@@ -259,8 +259,7 @@ if (Astro.request.method === 'POST') {
       // 保護者向け + 管理者向けメールを await Promise.allSettled でまとめて送る。
       // fire-and-forget + waitUntil に頼っていた版では Cloudflare Worker 側で
       // 無音キャンセルが起きて 1 通も届かない事故 (2026-09) があった。
-      const apiUrl = new URL(Astro.request.url);
-      const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+      const origin = canonicalOrigin(env, Astro.request);
       const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
       type MailTag = { label: string; p: Promise<any> };
       const mails: MailTag[] = [];
@@ -412,8 +411,7 @@ if (Astro.request.method === 'POST') {
     const guardian = (r as any).guardians ?? {};
     const slot = (r as any).slots ?? {};
     const parts = ((r as any).reservation_participants ?? []).map((p: any) => p.name_snapshot);
-    const apiUrl = new URL(Astro.request.url);
-    const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+    const origin = canonicalOrigin(env, Astro.request);
     const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
     type MailTag = { label: string; p: Promise<any> };
     const mails: MailTag[] = [];

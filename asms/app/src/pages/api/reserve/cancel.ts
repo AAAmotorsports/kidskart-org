@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+import { canonicalOrigin } from '@lib/appOrigin';
 
 export const prerender = false;
 
@@ -112,8 +113,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const remaining = currentlyActive.filter((p) => !requestedActive.includes(p.id));
 
     // 3) Emails
-    const apiUrl = new URL(request.url);
-    const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+    const origin = canonicalOrigin(env, request);
     const slot: any = res.slots ?? {};
     const course: any = slot.courses ?? {};
     const guardian: any = res.guardians ?? {};
@@ -208,8 +208,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   //    admin 側 (/admin/slots/[id].astro) は 2026-09 の silent-fail 事故で
   //    await に移行済み。顧客側もそれに追従する。
   //    allSettled で片方失敗しても全体を落とさない。
-  const apiUrl = new URL(request.url);
-  const origin = `${apiUrl.protocol}//${apiUrl.host}`;
+  const origin = canonicalOrigin(env, request);
   const slot: any = res.slots ?? {};
   const course: any = slot.courses ?? {};
   const guardian: any = res.guardians ?? {};
