@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 import { maskEmailForLog } from '@lib/piiMask';
+import { canonicalOrigin } from '@lib/appOrigin';
 
 export const prerender = false;
 
@@ -201,7 +202,9 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   // --- Fire-and-forget notification emails -------------------------------
   // Wrapped in ctx.waitUntil so Cloudflare Workers keeps the async fetch
   // alive after we return the response.
-  const apiUrl = new URL(request.url);
+  // メール本文に埋め込む origin は PUBLIC_APP_URL を優先 (本番は常に
+  // reserve.kidskart.org に固定、旧 workers.dev 経由アクセスでも影響なし)。
+  const origin = canonicalOrigin(env, request);
   // 顧客側メールはリクエスト時のロケールで送信 (英語で予約した外国人には英語メール)。
   // 管理者宛て通知は常に日本語 (スタッフ向け)。
   const locale: Locale = getLocaleFromRequest(request);
@@ -218,7 +221,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     participants: participants.map((p: any) => p.name),
     totalAmount: result.total_amount,
     priceTier: price_tier,
-    origin: `${apiUrl.protocol}//${apiUrl.host}`,
+    origin,
     reservationId: result.reservation_id,
     cancelToken: result.cancel_token,
     locale,
@@ -238,7 +241,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     participants: participants.map((p: any) => ({ name: p.name, birth_date: p.birth_date, height_cm: p.height_cm })),
     totalAmount: result.total_amount,
     priceTier: price_tier,
-    origin: `${apiUrl.protocol}//${apiUrl.host}`,
+    origin,
     reservationId: result.reservation_id,
     slotId: slot_id,
   }).catch((e) => console.warn('[reserve/create] admin email send failed:', e));
