@@ -249,35 +249,66 @@ export const POST: APIRoute = async ({ request, locals }) => {
       continue;
     }
 
-    // group 内全予約 × active 参加者を bookings 配列に集約
-    // 各 booking = 1 予約 (= 1 コース)、各 booking の participants = 参加者と
-    // その skill_level に基づいた個別 next_step
-    const bookings: Array<{ courseName: string; participants: Participant[] }> = [];
+    // group 内全予約 × active 参加者を 2 層に集約 (2026-11-01):
+    //   attendedCourses = コース → 参加した子の名前[] (「本日の参加実績」用)
+    //   childSummary    = 子ごとに最高 skill + 最高 courseKind → next_step 1 つ
+    //
+    // 同一児童が複数枠参加 (例: 体験 + 走行) のとき、以前は枠ごとに別案内が
+    // 並び「リピート or チャレンジ」が両方並んで迷う問題があった。
+    // 子ごとに 1 案に集約し、最終判定の高い方 (challenge) を主役、
+    // 下位 (repeat) は secondary ボタンとして補足される設計に。
+    const courseKindRank: Record<CourseKind, number> = {
+      other: -1, taiken: 0, repeat: 1, challenge: 2,
+    };
+    const attendedCoursesMap = new Map<string, Set<string>>(); // courseName → child names
+    const childAgg = new Map<string, { skill: SkillLevel; maxKind: CourseKind; maxKindRank: number }>();
     for (const r of groupReservations) {
       const slotInfo = slotById.get(r.slot_id);
       if (!slotInfo) continue;
       const courseKind = classifyCourse(slotInfo.courseCode);
+      const kindRank = courseKindRank[courseKind];
       const activeParticipants = (r.reservation_participants as any[]).filter(
         (p: any) => p.attendance_status !== 'cancelled' && p.attendance_status !== 'no_show'
       );
       if (activeParticipants.length === 0) continue;
-      const participants: Participant[] = activeParticipants.map((p: any) => {
+      // 「参加実績」に蓄積
+      if (!attendedCoursesMap.has(slotInfo.courseName)) {
+        attendedCoursesMap.set(slotInfo.courseName, new Set());
+      }
+      for (const p of activeParticipants) {
+        attendedCoursesMap.get(slotInfo.courseName)!.add(p.name_snapshot);
+      }
+      // 子ごとの集約 (最高 skill + 最高 courseKind)
+      for (const p of activeParticipants) {
         const skill: SkillLevel = p.customers?.current_skill_level ?? 'first_time';
-        return {
-          name: p.name_snapshot,
-          skill_level: skill,
-          next_step: nextStepFor(courseKind, skill, origin),
-        };
-      });
-      bookings.push({ courseName: slotInfo.courseName, participants });
+        const existing = childAgg.get(p.name_snapshot);
+        if (!existing) {
+          childAgg.set(p.name_snapshot, { skill, maxKind: courseKind, maxKindRank: kindRank });
+        } else {
+          if (skillRank(skill) > skillRank(existing.skill)) existing.skill = skill;
+          if (kindRank > existing.maxKindRank) {
+            existing.maxKind = courseKind;
+            existing.maxKindRank = kindRank;
+          }
+        }
+      }
     }
-    if (bookings.length === 0) {
+    if (childAgg.size === 0) {
       for (const r of groupReservations) {
         skipped++;
         details.push({ id: r.id, result: 'skipped', note: 'no attended participants' });
       }
       continue;
     }
+    const attendedCourses = [...attendedCoursesMap.entries()].map(([courseName, names]) => ({
+      courseName,
+      childNames: [...names],
+    }));
+    const children: Participant[] = [...childAgg.entries()].map(([name, agg]) => ({
+      name,
+      skill_level: agg.skill,
+      next_step: nextStepFor(agg.maxKind, agg.skill, origin),
+    }));
 
     // 初回参加 CTA 判定 (guardian 単位、group 内で 1 度だけ)
     const isFirstVisit = (priorAttendCount.get(guardianId) ?? 0) === 0;
@@ -292,7 +323,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       await sendThankyouEmail(env, {
         to: guardian.email,
         guardianName: guardian.name,
-        bookings,
+        attendedCourses,
+        children,
         surveyUrl: showSurveyCta ? surveyUrl : '',
         googleReviewUrl: showReviewCta ? googleReviewUrl : '',
         origin,
@@ -537,11 +569,17 @@ async function sendThankyouEmail(env: Env, args: {
   to: string;
   guardianName: string;
   /**
-   * 同一 (guardian, slot.date) 内の全予約分。
-   * 各要素 = 1 予約 (= 1 コース) で、その中に参加者リスト。
-   * 参加者ごとの next_step はコース種別 × skill_level から算出済み。
+   * 本日の参加実績 (コース → 参加した子の名前[])。
+   * 例: [{courseName:'体験教室', childNames:['宗真']}, {courseName:'リピート 25分', childNames:['宗真']}]
    */
-  bookings: Array<{ courseName: string; participants: Participant[] }>;
+  attendedCourses: Array<{ courseName: string; childNames: string[] }>;
+  /**
+   * 子ごとに 1 件の next_step (= 本日の最高 skill × 最高 courseKind で決定)。
+   * 同一児童が複数枠参加 (体験+走行) した場合、以前は枠ごとに別案内が
+   * 並び迷いを招いた。1 子 1 案に集約し、下位案 (リピート継続等) は
+   * secondary ボタンとして補足する設計。
+   */
+  children: Participant[];
   surveyUrl: string;         // 空文字なら非表示 (初回参加者のみ)
   googleReviewUrl: string;   // 空文字なら非表示 (初回参加 & 未依頼者のみ)
   origin: string;
@@ -565,8 +603,10 @@ async function sendThankyouEmail(env: Env, args: {
 
   const subject = `本日はご参加ありがとうございました！ — 福岡キッズカートアカデミー`;
 
-  // 本日のコース一覧行 (複数受講時は " / " 連結)
-  const coursesLine = args.bookings.map((b) => b.courseName).join(' / ');
+  // 本日の参加実績 (コース名ごとに子を列挙)
+  const attendedLines = args.attendedCourses.map(
+    (c) => `  ・${c.courseName} (${c.childNames.join('、')})`
+  );
 
   const text = [
     `${args.guardianName} 様`,
@@ -574,23 +614,23 @@ async function sendThankyouEmail(env: Env, args: {
     '本日は福岡キッズカートアカデミーにお越しいただき、',
     '誠にありがとうございました。',
     '',
-    `▼ 本日のコース: ${coursesLine}`,
+    '━━━━━━━━━━━━━━━━━━━━',
+    '▼ 本日の参加実績',
+    '━━━━━━━━━━━━━━━━━━━━',
+    ...attendedLines,
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '▼ お子さまごとの次回のご案内',
     '━━━━━━━━━━━━━━━━━━━━',
-    ...args.bookings.flatMap((b) => [
-      ...(args.bookings.length > 1 ? ['', `【${b.courseName}】`] : []),
-      ...b.participants.flatMap((p) => [
-        '',
-        `● ${p.name} さん`,
-        `  → ${p.next_step.label}`,
-        ...(p.next_step.detail ? [`  ${p.next_step.detail}`] : []),
-        `  ▶ ご予約: ${p.next_step.primaryUrl}`,
-        ...(p.next_step.secondaryUrl && p.next_step.secondaryLabel
-          ? [`  ▶ ${p.next_step.secondaryLabel}: ${p.next_step.secondaryUrl}`]
-          : []),
-      ]),
+    ...args.children.flatMap((p) => [
+      '',
+      `● ${p.name} さん`,
+      `  → ${p.next_step.label}`,
+      ...(p.next_step.detail ? [`  ${p.next_step.detail}`] : []),
+      `  ▶ ご予約: ${p.next_step.primaryUrl}`,
+      ...(p.next_step.secondaryUrl && p.next_step.secondaryLabel
+        ? [`  ▶ ${p.next_step.secondaryLabel}: ${p.next_step.secondaryUrl}`]
+        : []),
     ]),
     '',
     ...(args.googleReviewUrl ? [
@@ -617,31 +657,34 @@ async function sendThankyouEmail(env: Env, args: {
     '━━━━━━━━━━━━━━━━━━━━',
   ].join('\n');
 
-  // 予約 (コース) ごとにセクション分けし、その中に参加者ごとの next_step を表示。
-  // 1 予約だけの場合は「本日のコース」の見出しがあるので追加ラベル不要。
-  // 複数予約の場合は各セクションに小見出し (【コース名】) を付ける。
-  const participantsHtml = args.bookings.map((b) => {
-    const partHtml = b.participants.map((p) => `
-      <div style="border:1px solid #d8e6f0;border-radius:10px;padding:.9rem;margin-bottom:.7rem;background:#fff">
-        <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.3rem">👦 ${escapeHtml(p.name)} さん</div>
-        <div style="font-weight:700;color:#e5631a;font-size:.85rem;margin-bottom:.3rem">${escapeHtml(p.next_step.label)}</div>
-        ${p.next_step.detail ? `<p style="font-size:.8rem;color:#3d556f;margin:.3rem 0 .7rem;line-height:1.65">${escapeHtml(p.next_step.detail)}</p>` : ''}
-        <p style="margin:.4rem 0">
-          <a href="${escapeAttr(p.next_step.primaryUrl)}" style="display:inline-block;padding:.55rem 1.1rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">ご予約はこちら</a>
-        </p>
-        ${p.next_step.secondaryUrl && p.next_step.secondaryLabel ? `
-          <p style="margin:.4rem 0 0"><a href="${escapeAttr(p.next_step.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(p.next_step.secondaryLabel)}</a></p>
-        ` : ''}
-      </div>
-    `).join('');
-    if (args.bookings.length <= 1) return partHtml;
-    return `
-      <div style="font-weight:800;color:#1a7fb8;font-size:.88rem;margin:.8rem 0 .4rem;padding:.35rem .7rem;background:rgba(58,169,232,.08);border-left:3px solid #3aa9e8;border-radius:4px">
-        【${escapeHtml(b.courseName)}】
-      </div>
-      ${partHtml}
-    `;
-  }).join('');
+  // 「本日の参加実績」= コースごとに「どの子が参加したか」を列挙
+  const attendedHtml = `
+    <div style="background:rgba(58,169,232,.06);border:1px solid rgba(58,169,232,.25);border-radius:10px;padding:.8rem 1rem;margin:1rem 0 1.3rem">
+      <div style="font-weight:800;color:#1a7fb8;font-size:.9rem;margin-bottom:.4rem">🏁 本日の参加実績</div>
+      <ul style="margin:0;padding-left:1.2rem;font-size:.85rem;color:#163048;line-height:1.8">
+        ${args.attendedCourses.map((c) =>
+          `<li><strong>${escapeHtml(c.courseName)}</strong> (${escapeHtml(c.childNames.join('、'))})</li>`
+        ).join('')}
+      </ul>
+    </div>
+  `;
+
+  // 子ごとに 1 ブロックの next_step。
+  // 複数枠参加した子でも、最高 skill × 最高 courseKind で決定した 1 案のみ。
+  // 下位の提案 (リピート継続等) は secondary ボタンに格納される設計。
+  const participantsHtml = args.children.map((p) => `
+    <div style="border:1px solid #d8e6f0;border-radius:10px;padding:.9rem;margin-bottom:.7rem;background:#fff">
+      <div style="font-weight:800;color:#163048;font-size:.95rem;margin-bottom:.3rem">👦 ${escapeHtml(p.name)} さん</div>
+      <div style="font-weight:700;color:#e5631a;font-size:.85rem;margin-bottom:.3rem">${escapeHtml(p.next_step.label)}</div>
+      ${p.next_step.detail ? `<p style="font-size:.8rem;color:#3d556f;margin:.3rem 0 .7rem;line-height:1.65">${escapeHtml(p.next_step.detail)}</p>` : ''}
+      <p style="margin:.4rem 0">
+        <a href="${escapeAttr(p.next_step.primaryUrl)}" style="display:inline-block;padding:.55rem 1.1rem;background:linear-gradient(135deg,#ff8a3d,#e5631a);color:#fff;text-decoration:none;border-radius:6px;font-weight:800;font-size:.82rem">ご予約はこちら</a>
+      </p>
+      ${p.next_step.secondaryUrl && p.next_step.secondaryLabel ? `
+        <p style="margin:.4rem 0 0"><a href="${escapeAttr(p.next_step.secondaryUrl)}" style="color:#1a7fb8;text-decoration:none;font-size:.78rem;font-weight:700">▶ ${escapeHtml(p.next_step.secondaryLabel)}</a></p>
+      ` : ''}
+    </div>
+  `).join('');
 
   // 初回参加者向け Google 口コミ CTA (メイン)。集客に直接効くので優先。
   // Google ポリシー準拠: 全員に同じ導線 (満足者だけ振り分けをしない)。
@@ -676,10 +719,11 @@ async function sendThankyouEmail(env: Env, args: {
     <h2 style="text-align:center;margin:0 0 .5rem;font-size:1.15rem">本日はご参加ありがとうございました！</h2>
     <p style="text-align:center;margin:0 0 1.2rem;color:#3d556f;font-size:.88rem">${escapeHtml(args.guardianName)} 様</p>
 
-    <p style="font-size:.88rem;color:#163048;line-height:1.7;margin:0 0 1rem">
-      本日は福岡キッズカートアカデミーにお越しいただき、誠にありがとうございました。<br>
-      本日のコース: <strong>${escapeHtml(coursesLine)}</strong>
+    <p style="font-size:.88rem;color:#163048;line-height:1.7;margin:0 0 .5rem">
+      本日は福岡キッズカートアカデミーにお越しいただき、誠にありがとうございました。
     </p>
+
+    ${attendedHtml}
 
     <div style="background:rgba(255,201,67,.08);border-top:2px solid #ffc943;border-bottom:2px solid #ffc943;padding:.7rem;margin:1.2rem 0 1rem;text-align:center">
       <div style="font-weight:800;color:#e5631a;font-size:.95rem">▼ お子さまごとの次回のご案内</div>
