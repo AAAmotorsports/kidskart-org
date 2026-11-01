@@ -92,11 +92,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const supabase = getSupabaseAdmin(env);
 
+  // -------------------------------------------------------------------------
+  // テスト・プレビュー オプション (followup-mail と同じ仕様):
+  //   ?preview=1               実送信・DB flag 更新せず、生成した HTML/text を
+  //                           レスポンス previews に同梱。
+  //   ?test_to=user@...        送信先を上書き (DB flag は set せず)。
+  //   ?test_guardian_id=uuid   候補を 1 保護者に絞る (preview/test_to と必須併用)。
+  //                           単体指定は 400。
+  // -------------------------------------------------------------------------
+  const urlObj = new URL(request.url);
+  const previewOnly = urlObj.searchParams.get('preview') === '1';
+  const testTo = (urlObj.searchParams.get('test_to') ?? '').trim() || null;
+  const testGuardianId = (urlObj.searchParams.get('test_guardian_id') ?? '').trim() || null;
+
+  if (testGuardianId && !previewOnly && !testTo) {
+    return json({
+      error: 'test_guardian_id はテスト専用です。preview=1 もしくは test_to=... と併用してください。',
+      hint: 'add_preview_or_test_to',
+    }, 400);
+  }
+
   try {
     const result = await logCronRun(supabase, 'thankyou-mail', async () => {
   // --- Today (JST) --------------------------------------------------------
   // Query param ?date=YYYY-MM-DD で日付上書き可 (手動再送・テスト用)
-  const urlObj = new URL(request.url);
   const dateOverride = urlObj.searchParams.get('date');
   const targetDate = dateOverride || todayInJst();
 
@@ -171,7 +190,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     throw new Error(`failed to fetch reservations: ${rErr.message}`);
   }
   const alreadySent = (allReservations ?? []).filter((r: any) => r.thankyou_email_sent_at != null).length;
-  const reservations = (allReservations ?? []).filter((r: any) => r.thankyou_email_sent_at == null);
+  let reservations = (allReservations ?? []).filter((r: any) => r.thankyou_email_sent_at == null);
+  // test_guardian_id 指定時は候補を 1 保護者に絞る (preview / test_to と併用)
+  if (testGuardianId) {
+    reservations = reservations.filter((r: any) => r.guardian_id === testGuardianId);
+  }
 
   // --- 「初回参加か」を判定するため、対象保護者たちの過去のサンキュー
   //     メール送信回数 (=過去に参加してメール送信済みだった件数) を先に
@@ -199,6 +222,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   let skipped = 0;
   let failed = 0;
   const details: Array<{ id: string; result: string; note?: string }> = [];
+  const previews: Array<{ guardianId: string; to: string; subject: string; text: string; html: string }> = [];
   // flag UPDATE 失敗を貯める配列 (メール送信は成功したが DB flag update
   // が失敗したケース)。ループ完了後に配列が空でなければ throw して cron
   // 全体を error 扱いにする → admin パネルで赤バッジ → 気付ける。
@@ -320,8 +344,39 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const idempotencyKey = `thankyou:${slotDate}:${guardianId}`;
 
     try {
+      // preview mode: 送信せず、生成した本文を previews に積むだけ。
+      // test_to: 送信先を上書き (本来の guardian.email は無視)。
+      const effectiveTo = testTo || guardian.email;
+      if (previewOnly) {
+        const previewBody = buildThankyouBodyForPreview({
+          to: effectiveTo,
+          guardianName: guardian.name,
+          attendedCourses,
+          children,
+          surveyUrl: showSurveyCta ? surveyUrl : '',
+          googleReviewUrl: showReviewCta ? googleReviewUrl : '',
+          origin,
+        });
+        for (const r of groupReservations) {
+          details.push({
+            id: r.id,
+            result: 'preview',
+            note: `would send to ${effectiveTo}${testTo ? ' (test_to)' : ''}`,
+          });
+        }
+        skipped += groupReservations.length;
+        previews.push({
+          guardianId,
+          to: effectiveTo,
+          subject: previewBody.subject,
+          text: previewBody.text,
+          html: previewBody.html,
+        });
+        continue;
+      }
+
       await sendThankyouEmail(env, {
-        to: guardian.email,
+        to: effectiveTo,
         guardianName: guardian.name,
         attendedCourses,
         children,
@@ -330,6 +385,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
         origin,
         idempotencyKey,
       });
+
+      // test_to 指定時は DB flag を触らない (本来の予約を保護して、
+      // 本物の cron で後日本人に送れる状態を維持)。
+      if (testTo) {
+        for (const r of groupReservations) {
+          details.push({ id: r.id, result: 'test-sent', note: `sent to ${testTo} (DB flag not touched)` });
+        }
+        sent++;
+        continue;
+      }
 
       // group 内全予約の flag を 1 UPDATE で同時セット (atomic)。
       // 一時的な Supabase 通信エラーには backoff 付きで 3 回リトライ。
@@ -416,7 +481,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
           `First DB error: ${flagUpdateErrors[0].error}`
         );
       }
-      return { date: targetDate, total, sent, skipped, failed, already_sent: alreadySent, note, details };
+      return {
+        date: targetDate, total, sent, skipped, failed, already_sent: alreadySent, note, details,
+        ...(previewOnly ? { preview: true, previews } : {}),
+        ...(testTo ? { test_to: testTo } : {}),
+        ...(testGuardianId ? { test_guardian_id: testGuardianId } : {}),
+      };
     });
     return json({ ok: true, ...result });
   } catch (e: any) {
@@ -565,42 +635,16 @@ function nextStepFor(kind: CourseKind, skill: SkillLevel, origin: string): NextS
   };
 }
 
-async function sendThankyouEmail(env: Env, args: {
+// メール本文を組み立てる (preview でも実送信でも同じ結果にするため共通化)。
+function buildThankyouBodyForPreview(args: {
   to: string;
   guardianName: string;
-  /**
-   * 本日の参加実績 (コース → 参加した子の名前[])。
-   * 例: [{courseName:'体験教室', childNames:['宗真']}, {courseName:'リピート 25分', childNames:['宗真']}]
-   */
   attendedCourses: Array<{ courseName: string; childNames: string[] }>;
-  /**
-   * 子ごとに 1 件の next_step (= 本日の最高 skill × 最高 courseKind で決定)。
-   * 同一児童が複数枠参加 (体験+走行) した場合、以前は枠ごとに別案内が
-   * 並び迷いを招いた。1 子 1 案に集約し、下位案 (リピート継続等) は
-   * secondary ボタンとして補足する設計。
-   */
   children: Participant[];
-  surveyUrl: string;         // 空文字なら非表示 (初回参加者のみ)
-  googleReviewUrl: string;   // 空文字なら非表示 (初回参加 & 未依頼者のみ)
+  surveyUrl: string;
+  googleReviewUrl: string;
   origin: string;
-  /**
-   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
-   * dedup され、実際にはメールが飛ばない (24h 保持)。
-   * 「メール送信成功 → DB flag UPDATE 失敗 → 次日 cron 再抽出」
-   * の二重送信を Resend レイヤで防ぐ safety net。
-   */
-  idempotencyKey?: string;
-}) {
-  const apiKey = env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.warn('[thankyou-mail] SKIP send: RESEND_API_KEY not set');
-    return;
-  }
-
-  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
-  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
-  const replyTo = env.MAIL_REPLY_TO || undefined;
-
+}): { subject: string; text: string; html: string } {
   const subject = `本日はご参加ありがとうございました！ — 福岡キッズカートアカデミー`;
 
   // 本日の参加実績 (コース名ごとに子を列挙)
@@ -749,6 +793,45 @@ async function sendThankyouEmail(env: Env, args: {
     </p>
   </div>
 </body></html>`;
+
+  return { subject, text, html };
+}
+
+async function sendThankyouEmail(env: Env, args: {
+  to: string;
+  guardianName: string;
+  attendedCourses: Array<{ courseName: string; childNames: string[] }>;
+  children: Participant[];
+  surveyUrl: string;
+  googleReviewUrl: string;
+  origin: string;
+  /**
+   * Resend Idempotency-Key。同一 key の再送信リクエストは Resend 側で
+   * dedup され、実際にはメールが飛ばない (24h 保持)。
+   * 「メール送信成功 → DB flag UPDATE 失敗 → 次日 cron 再抽出」
+   * の二重送信を Resend レイヤで防ぐ safety net。
+   */
+  idempotencyKey?: string;
+}) {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn('[thankyou-mail] SKIP send: RESEND_API_KEY not set');
+    return;
+  }
+
+  const from = env.MAIL_FROM_ADDRESS || 'noreply@kidskart.org';
+  const fromName = env.MAIL_FROM_NAME || '福岡キッズカートアカデミー';
+  const replyTo = env.MAIL_REPLY_TO || undefined;
+
+  const { subject, text, html } = buildThankyouBodyForPreview({
+    to: args.to,
+    guardianName: args.guardianName,
+    attendedCourses: args.attendedCourses,
+    children: args.children,
+    surveyUrl: args.surveyUrl,
+    googleReviewUrl: args.googleReviewUrl,
+    origin: args.origin,
+  });
 
   const body: any = {
     from: `${fromName} <${from}>`,
