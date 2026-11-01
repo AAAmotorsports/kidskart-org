@@ -252,6 +252,24 @@ const termsHtml = terms
               </p>
             </div>
 
+            {/* ?from=complete で来たときの自動入力確認バナー。
+                prefillApply が走ったあとに JS で hidden を外す。 */}
+            <div id="prefillAutoBanner" hidden class="prefill-auto-banner">
+              <div class="pab-h">
+                {isEn
+                  ? '✅ We filled in your previous info. Please review and update as needed.'
+                  : '✅ 前回の情報を入力しました。内容をご確認いただき、必要に応じて変更してください。'}
+              </div>
+              <p class="hint">
+                {isEn
+                  ? 'Signature and consent still need to be completed for this booking.'
+                  : '署名と同意事項は今回の予約で改めてお願いします。'}
+              </p>
+              <button type="button" id="prefillAutoClear" class="btn btn-ghost btn-sm">
+                {isEn ? 'Clear and start fresh' : '情報をクリアして最初から入力'}
+              </button>
+            </div>
+
             <div id="signinInvite" hidden class="signin-invite">
               <div class="si-h">
                 {isEn
@@ -943,10 +961,18 @@ const termsHtml = terms
     const prefillClear = document.getElementById('prefillClear') as HTMLButtonElement | null;
     const prefillHeading = document.getElementById('prefillHeading');
     const prefillHint = document.getElementById('prefillHint');
+    const prefillAutoBanner = document.getElementById('prefillAutoBanner');
+    const prefillAutoClear = document.getElementById('prefillAutoClear') as HTMLButtonElement | null;
     const signinInvite = document.getElementById('signinInvite');
     const signedInEmpty = document.getElementById('signedInEmpty');
     const seEmail = document.getElementById('seEmail');
     const seSignOut = document.getElementById('seSignOut') as HTMLButtonElement | null;
+
+    // ?from=complete で来たら prefill を自動実行する。別端末や他人の
+    // iPad での誤発火を減らすため、「同一セッションの連続操作」を示す
+    // ?from=complete フラグが明示的に付いてる時だけ auto-apply。
+    const urlParams = new URLSearchParams(location.search);
+    const fromComplete = urlParams.get('from') === 'complete';
 
     let savedPrefill: any = null;
     let prefillSource: 'local' | 'auth' = 'local';
@@ -1120,7 +1146,34 @@ const termsHtml = terms
       }
       savedPrefill = null;
       if (prefillPanel) prefillPanel.hidden = true;
+      if (prefillAutoBanner) prefillAutoBanner.hidden = true;
     });
+
+    // auto-banner 側の「情報をクリアして最初から入力」ボタン
+    prefillAutoClear?.addEventListener('click', () => {
+      if (!confirm('このブラウザに保存されている前回のご予約情報を削除して、最初から入力しますか？')) return;
+      try { localStorage.removeItem(LS_KEY); } catch {}
+      // フォームの各欄をリセット
+      ['g_name','g_kana','g_phone','g_email','g_postal','g_address','g_banchi',
+       'e_name','e_phone','e_relation'].forEach((n) => {
+        const el = form.querySelector<HTMLInputElement>(`[name="${n}"]`);
+        if (el) el.value = '';
+      });
+      host.querySelectorAll<HTMLInputElement>('.participant input[type="text"], .participant input[type="date"], .participant input[type="number"]').forEach((el) => { el.value = ''; });
+      host.querySelectorAll<HTMLSelectElement>('.participant select').forEach((el) => { el.value = ''; });
+      savedPrefill = null;
+      if (prefillAutoBanner) prefillAutoBanner.hidden = true;
+    });
+
+    // ?from=complete で来て savedPrefill があれば自動 apply。
+    // prefill 関連の UI (panel / banner) の表示切替もここで。
+    if (fromComplete && savedPrefill && prefillApply) {
+      // 既存の apply ロジックを再利用 (click を programmatic 発火)。
+      // savedPrefill が localStorage に由来するケース用。
+      prefillApply.click();
+      if (prefillPanel) prefillPanel.hidden = true;
+      if (prefillAutoBanner) prefillAutoBanner.hidden = false;
+    }
 
     // "緊急連絡先は保護者と同じ" toggle: reveal / hide the emergency
     // form and skip its required validation when checked.
@@ -1535,6 +1588,21 @@ const termsHtml = terms
     padding: .9rem 1rem;
     margin-bottom: 1rem;
   }
+  .prefill-auto-banner {
+    background: linear-gradient(135deg, rgba(164,214,94,.14), rgba(164,214,94,.03));
+    border: 1px solid var(--lime-deep);
+    border-radius: 10px;
+    padding: .8rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .prefill-auto-banner .pab-h {
+    font-weight: 800; font-size: .9rem; color: var(--lime-deep);
+    margin-bottom: .3rem;
+  }
+  .prefill-auto-banner .hint {
+    font-size: .74rem; color: var(--ink-2); margin: 0 0 .6rem;
+  }
+  .btn-sm { padding: .35rem .8rem !important; font-size: .74rem !important; }
   .signin-invite {
     background: linear-gradient(135deg, rgba(255,201,67,.10), rgba(255,201,67,.02));
     border: 1px dashed var(--sun);
