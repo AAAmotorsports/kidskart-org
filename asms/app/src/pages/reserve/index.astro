@@ -90,6 +90,11 @@ const url = new URL(Astro.request.url);
 const courseFilter = url.searchParams.get('course') ?? '';
 const activeCourse = courses?.find((c) => c.code === courseFilter) ?? null;
 
+// ?from=complete は予約完了ページの「続けて予約」経由フラグ。
+// スロットリンクに引き継いで、wizard 側で auto-prefill を発動させる。
+const fromComplete = url.searchParams.get('from') === 'complete';
+const slotLinkSuffix = fromComplete ? '?from=complete' : '';
+
 // --- Audience filter (2026-10-25): カート初めての親御さん向けに
 // コース選択の第一歩を絞り込む。「初めて」= 体験教室のみ、
 // 「2回目以降」= リピート + チャレンジ。all = 全部表示。
@@ -627,7 +632,7 @@ const supabaseAnonKey = env.PUBLIC_SUPABASE_ANON_KEY;
                             <span class="slot-arrow" aria-hidden="true">×</span>
                           </div>
                         ) : (
-                          <a class="slot-link" href={`/reserve/${s.id}`}>
+                          <a class="slot-link" href={`/reserve/${s.id}${slotLinkSuffix}`}>
                             <span class="slot-time">{s.start_time.slice(0, 5)}</span>
                             <span class="slot-course">{(s.courses as any)?.name ?? ''}</span>
                             {remaining <= 3 && (
