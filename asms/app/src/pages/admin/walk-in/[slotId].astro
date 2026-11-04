@@ -269,8 +269,16 @@ const defaultBirth = (() => {
             required />
         </div>
         <div class="field">
+          <label>{tr('郵便番号', 'Postal code')}</label>
+          <input type="text" id="g_postal" name="g_postal" maxlength="10" placeholder="8110011"
+            inputmode="numeric" autocomplete="postal-code" />
+          <p class="hint zip-hint" id="zipHint">
+            {tr('7桁入力で住所が自動入力されます', 'Enter 7 digits and address will auto-fill (Japan only)')}
+          </p>
+        </div>
+        <div class="field">
           <label>{tr('住所 (都道府県・市区町村)', 'Address (prefecture / city)')}</label>
-          <input type="text" name="g_address" autocomplete="street-address"
+          <input type="text" id="g_address" name="g_address" autocomplete="street-address"
             placeholder={tr('例: 福岡県福岡市中央区天神', 'e.g. Fukuoka, Fukuoka-shi…')} />
         </div>
         <div class="field">
@@ -280,7 +288,7 @@ const defaultBirth = (() => {
               {tr('(入れ忘れが多いのでご記入ください)', '(easy to forget — please fill in!)')}
             </span>
           </label>
-          <input type="text" name="g_banchi" autocomplete="address-line2"
+          <input type="text" id="g_banchi" name="g_banchi" autocomplete="address-line2"
             placeholder={tr('例: 1-2-3 サンシャインビル 501号室', 'e.g. 1-2-3 Sunshine #501')} />
         </div>
       </section>
@@ -587,6 +595,40 @@ const defaultBirth = (() => {
     sigDrawn = false;
   });
 
+  // ---- 郵便番号 → 住所自動入力 (zipcloud 無料 API、JP のみ) -----------
+  // /reserve/[slotId] と同じ実装。7 桁で自動 lookup、blur でも動く。
+  {
+    const zipInput = document.getElementById('g_postal');
+    const addrInput = document.getElementById('g_address');
+    const zipHint = document.getElementById('zipHint');
+    if (zipInput && addrInput) {
+      async function lookupZip() {
+        const zip = zipInput.value.replace(/[^0-9]/g, '');
+        if (zip.length !== 7) return;
+        if (zipHint) { zipHint.textContent = tr('住所を検索中…', 'Searching...'); }
+        try {
+          const r = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+          const j = await r.json();
+          if (j.results && j.results[0]) {
+            const a = j.results[0];
+            const addr = `${a.address1}${a.address2}${a.address3}`;
+            addrInput.value = addr;
+            if (zipHint) { zipHint.textContent = `✅ ${addr}`; zipHint.style.color = 'var(--lime-deep)'; }
+          } else {
+            if (zipHint) { zipHint.textContent = tr('該当する住所が見つかりませんでした', 'No address found'); zipHint.style.color = 'var(--rose-deep)'; }
+          }
+        } catch {
+          if (zipHint) { zipHint.textContent = tr('住所検索に失敗しました（手動で入力してください）', 'Lookup failed (enter manually)'); zipHint.style.color = 'var(--rose-deep)'; }
+        }
+      }
+      zipInput.addEventListener('blur', lookupZip);
+      zipInput.addEventListener('input', () => {
+        const zip = zipInput.value.replace(/[^0-9]/g, '');
+        if (zip.length === 7) lookupZip();
+      });
+    }
+  }
+
   // ---- フォーム送信 ---------------------------------------------------
   const errEl = document.getElementById('submitErr');
   function showErr(msg) {
@@ -668,6 +710,7 @@ const defaultBirth = (() => {
     }
 
     // 住所 (都道府県・市区町村) + 番地 を半角スペースで結合
+    const g_postal = fd.get('g_postal')?.toString().replace(/[^0-9]/g, '') || '';
     const g_address = fd.get('g_address')?.toString().trim() || '';
     const g_banchi = fd.get('g_banchi')?.toString().trim() || '';
     const combinedAddress = g_banchi ? `${g_address} ${g_banchi}`.trim() : g_address;
@@ -686,6 +729,7 @@ const defaultBirth = (() => {
             name: g_name,
             kana: g_kana,
             phone: g_phone,
+            postal_code: g_postal || undefined,
             address: combinedAddress || undefined,
             email: g_email,
           },
@@ -702,6 +746,7 @@ const defaultBirth = (() => {
             name: g_name,
             kana: g_kana,
             phone: g_phone,
+            postal_code: g_postal || undefined,
             address: combinedAddress || undefined,
             email: g_email,
           },
@@ -728,7 +773,9 @@ const defaultBirth = (() => {
       });
       const body = await r.json();
       if (!r.ok) {
-        showErr(tr('エラー: ', 'Error: ') + (body.error ?? `HTTP ${r.status}`));
+        const msg = body.error ?? `HTTP ${r.status}`;
+        const detail = body.detail ? ` (${body.detail})` : '';
+        showErr(tr('エラー: ', 'Error: ') + msg + detail);
         submitBtn.disabled = false;
         submitBtn.textContent = originalText;
         return;

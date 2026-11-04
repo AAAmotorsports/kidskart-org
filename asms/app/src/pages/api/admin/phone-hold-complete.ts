@@ -145,6 +145,8 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     : safetyItems.map((it) => it.id);
 
   // --- 4) guardians を UPDATE in place ---------------------------------
+  // touch_updated_at トリガーが updated_at を自動更新するので、ここでは明示的に
+  // セットしない (NEW.updated_at = now() で上書きされるため、明示指定は無駄)
   const { error: gErr } = await supabase
     .from('guardians')
     .update({
@@ -157,11 +159,15 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       emergency_contact_name: emergency?.name ?? guardian.name,
       emergency_contact_phone: emergency?.phone ?? guardian.phone,
       emergency_contact_relation: emergency?.relation ?? '本人',
-      updated_at: new Date().toISOString(),
     })
     .eq('id', hold.guardian_id);
   if (gErr) {
-    return json({ error: '保護者情報の更新に失敗しました', detail: gErr.message }, 500);
+    console.warn('[phone-hold-complete] guardian update failed:',
+      JSON.stringify({ guardian_id: hold.guardian_id, code: (gErr as any).code, message: gErr.message, details: (gErr as any).details, hint: (gErr as any).hint }));
+    return json({
+      error: '保護者情報の更新に失敗しました',
+      detail: `${(gErr as any).code ?? ''} ${gErr.message} ${(gErr as any).hint ?? ''}`.trim(),
+    }, 500);
   }
 
   // --- 5) customers と reservation_participants を 1 対 1 で UPDATE ----
@@ -175,7 +181,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     // age_at_booking は RPC と同じく生年月日から計算 (SQL age() の年部分と等価)
     const ageYears = computeAgeYears(p.birth_date);
 
-    // 5a) customers (永続エンティティ) を本番データで上書き
+    // 5a) customers (永続エンティティ) を本番データで上書き (updated_at はトリガー任せ)
     const { error: cErr } = await supabase
       .from('customers')
       .update({
@@ -183,7 +189,6 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
         kana: p.kana,
         birth_date: p.birth_date,
         gender: p.gender,
-        updated_at: new Date().toISOString(),
       })
       .eq('id', existing.customer_id);
     if (cErr) {
@@ -249,7 +254,6 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       is_phone_hold: false,
       price_tier: tier,
       referral_code: 'PROXY_IPAD',
-      updated_at: new Date().toISOString(),
     })
     .eq('id', holdId);
   if (resErr) {
