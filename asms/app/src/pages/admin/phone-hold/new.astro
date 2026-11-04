@@ -1,0 +1,306 @@
+---
+import Base from '@layouts/Base.astro';
+import { envFrom, getSupabaseAdmin } from '@lib/supabase';
+
+export const prerender = false;
+
+// =============================================================================
+// /admin/phone-hold/new?slot_id=xxx
+// -----------------------------------------------------------------------------
+// 電話予約の一時ホールド作成フォーム。
+// 電話中にスタッフが片手で入力できる最小項目:
+//   - 名前 (氏名)
+//   - 電話番号
+//   - 参加人数
+//   - 会員 / 一般
+//
+// 詳細 (子供氏名・生年月日・住所・緊急連絡先・署名・同意) は当日受付時に
+// iPad で本人記入してもらう → /admin/reception/[id] から iPad 画面へ遷移。
+//
+// 認証: middleware で /admin/* は admin cookie 保護済み。
+// =============================================================================
+
+const env = envFrom(Astro.locals);
+const supabase = getSupabaseAdmin(env);
+
+const url = new URL(Astro.request.url);
+const slotIdParam = url.searchParams.get('slot_id') ?? '';
+
+// 今日 (JST) 以降の open スロットを取得 (事前指定された slot_id があれば先頭に)。
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const { data: slotsRaw } = await supabase
+  .from('slots')
+  .select('id, date, start_time, end_time, capacity, status, courses(id, code, name, price_regular, price_member)')
+  .gte('date', today)
+  .eq('status', 'open')
+  .order('date')
+  .order('start_time');
+
+// 残席計算 (= capacity - 非 cancelled 参加者合計)
+const slotIds = (slotsRaw ?? []).map((s: any) => s.id);
+const reservedBySlot = new Map<string, number>();
+if (slotIds.length > 0) {
+  const { data: resRows } = await supabase
+    .from('reservations')
+    .select('id, slot_id, reservation_participants(id, attendance_status)')
+    .in('slot_id', slotIds)
+    .neq('status', 'cancelled');
+  for (const r of (resRows ?? []) as any[]) {
+    const active = ((r.reservation_participants as any[]) ?? [])
+      .filter((p) => p.attendance_status !== 'cancelled').length;
+    reservedBySlot.set(r.slot_id, (reservedBySlot.get(r.slot_id) ?? 0) + active);
+  }
+}
+
+const weekdayJa = ['日','月','火','水','木','金','土'];
+const slots = (slotsRaw ?? [])
+  .map((s: any) => {
+    const reserved = reservedBySlot.get(s.id) ?? 0;
+    const remaining = Math.max(0, s.capacity - reserved);
+    const weekday = weekdayJa[new Date(s.date + 'T00:00:00').getDay()];
+    return {
+      id: s.id,
+      label: `${s.date} (${weekday}) ${s.start_time.slice(0,5)}〜${s.end_time?.slice(0,5) ?? ''} ${s.courses?.name ?? ''} [残${remaining}/${s.capacity}]`,
+      priceRegular: s.courses?.price_regular ?? 0,
+      priceMember: s.courses?.price_member ?? 0,
+      remaining,
+    };
+  })
+  .filter((s) => s.remaining > 0);
+
+const slotsJson = JSON.stringify(
+  slots.reduce((acc, s) => {
+    acc[s.id] = { priceRegular: s.priceRegular, priceMember: s.priceMember, remaining: s.remaining };
+    return acc;
+  }, {} as any),
+);
+
+const preselectedSlotId = slots.some((s) => s.id === slotIdParam) ? slotIdParam : '';
+---
+<Base title="電話予約の一時ホールド — 管理">
+  <main>
+    <header class="hd">
+      <div class="hd-nav">
+        <a href="/admin/reservations">← 予約一覧へ戻る</a>
+      </div>
+      <h1>📞 電話予約（一時ホールド）</h1>
+      <p class="sub">
+        電話中に最小項目だけ入力して席を確保します。<br />
+        <strong>詳細は当日受付で iPad に本人記入してもらう</strong>ので、
+        住所・子供氏名・緊急連絡先・署名はここでは不要です。
+      </p>
+    </header>
+
+    {slots.length === 0 && (
+      <div class="err">
+        受付可能なスロット (今日以降・open・残席あり) がありません。<br />
+        <a href="/admin/schedule">スケジュール管理</a>でスロットを追加してください。
+      </div>
+    )}
+
+    {slots.length > 0 && (
+      <form id="phoneHoldForm" novalidate>
+        <section class="sect">
+          <h2>1. スロット選択</h2>
+          <div class="field">
+            <label for="slot_id">開催枠 <span class="req">*</span></label>
+            <select id="slot_id" name="slot_id" required>
+              <option value="">— 選択してください —</option>
+              {slots.map((s) => (
+                <option value={s.id} selected={s.id === preselectedSlotId}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        <section class="sect">
+          <h2>2. お客様情報（電話口で聞く）</h2>
+          <div class="field">
+            <label>お客様の氏名 <span class="req">*</span></label>
+            <input type="text" id="g_name" required maxlength="40" placeholder="例: 山田 太郎" />
+            <p class="hint">保護者の氏名で OK (漢字 or ひらがな)</p>
+          </div>
+          <div class="field">
+            <label>電話番号 <span class="req">*</span></label>
+            <input type="tel" id="g_phone" required maxlength="20" placeholder="09012345678" />
+          </div>
+        </section>
+
+        <section class="sect">
+          <h2>3. 予約内容</h2>
+          <div class="row">
+            <div class="field">
+              <label>参加人数 <span class="req">*</span></label>
+              <div class="radios">
+                {[1,2,3].map((n) => (
+                  <label class="ch">
+                    <input type="radio" name="participant_count" value={n} checked={n===1} />
+                    <span>{n} 名</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div class="field">
+              <label>会員種別 <span class="req">*</span></label>
+              <div class="radios">
+                <label class="ch"><input type="radio" name="price_tier" value="regular" checked /><span>一般</span></label>
+                <label class="ch"><input type="radio" name="price_tier" value="member" /><span>会員</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="total-preview">席確保のみ (会計は当日): <strong id="totalPreview">¥0</strong></div>
+        </section>
+
+        <section class="sect note">
+          <p>
+            💡 <strong>作成すると席が確保されます</strong>。当日お客様が来場したら、
+            受付画面から「📱 iPad で記入してもらう」をタップして、お客様自身に
+            氏名・住所・署名等を入力していただきます。<br />
+            キャンセルが入った場合は、予約一覧から該当予約を削除してください。
+          </p>
+        </section>
+
+        <div id="submitError" class="err" hidden></div>
+        <div class="submit-row">
+          <button type="submit" class="btn btn-primary" id="submitBtn">📞 席を確保する</button>
+        </div>
+      </form>
+    )}
+  </main>
+</Base>
+
+<script is:inline define:vars={{ slotsJson }}>
+  window.__ASMS_SLOTS = JSON.parse(slotsJson);
+</script>
+
+<script>
+  const form = document.getElementById('phoneHoldForm') as HTMLFormElement | null;
+  if (form) init(form);
+
+  function init(form: HTMLFormElement) {
+    const slotSel = form.querySelector<HTMLSelectElement>('select[name="slot_id"]')!;
+    const totalEl = document.getElementById('totalPreview')!;
+    const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
+    const errBox = document.getElementById('submitError')!;
+    const slots = (window as any).__ASMS_SLOTS ?? {};
+
+    function getRadio(name: string): string {
+      const el = form.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`);
+      return el ? el.value : '';
+    }
+
+    const updateTotal = () => {
+      const slotId = slotSel.value;
+      const tier = getRadio('price_tier') || 'regular';
+      const count = parseInt(getRadio('participant_count') || '1', 10);
+      const s = slots[slotId];
+      const per = s ? (tier === 'member' ? s.priceMember : s.priceRegular) : 0;
+      totalEl.textContent = `¥${(per * count).toLocaleString()}`;
+    };
+    slotSel.addEventListener('change', updateTotal);
+    form.querySelectorAll<HTMLInputElement>('input[name="participant_count"], input[name="price_tier"]').forEach((el) => {
+      el.addEventListener('change', updateTotal);
+    });
+    updateTotal();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errBox.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中...';
+      try {
+        const payload = {
+          slot_id: slotSel.value,
+          guardian: {
+            name: (document.getElementById('g_name') as HTMLInputElement).value.trim(),
+            phone: (document.getElementById('g_phone') as HTMLInputElement).value.trim(),
+          },
+          participant_count: parseInt(getRadio('participant_count') || '1', 10),
+          price_tier: getRadio('price_tier') === 'member' ? 'member' : 'regular',
+        };
+        const r = await fetch('/api/admin/phone-hold-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await r.json();
+        if (!r.ok) throw new Error(body?.error || `HTTP ${r.status}`);
+        alert(`✅ 電話予約を作成しました\n予約番号: ${body.reservation_number}\n\n当日は受付画面から「iPad で記入」で詳細入力に進んでください。`);
+        window.location.href = '/admin/reservations';
+      } catch (err: any) {
+        errBox.textContent = `送信に失敗しました: ${err.message || err}`;
+        errBox.hidden = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = '📞 席を確保する';
+      }
+    });
+  }
+</script>
+
+<style>
+  main { max-width: 640px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+  .hd { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.2rem; }
+  .hd-nav { margin-bottom: .3rem; }
+  .hd-nav a { font-size: .78rem; color: var(--ink-3); text-decoration: none; }
+  h1 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 800; }
+  .sub { margin: 0; font-size: .85rem; color: var(--ink-3); line-height: 1.6; }
+
+  .err {
+    background: rgba(229,85,111,.08); border: 1px solid rgba(229,85,111,.3);
+    color: var(--rose-deep); padding: .8rem 1rem; border-radius: 8px;
+    margin: 1rem 0; font-size: .88rem;
+  }
+
+  .sect {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1rem; margin-bottom: .9rem;
+  }
+  .sect h2 { margin: 0 0 .8rem; font-size: 1rem; font-weight: 800; }
+  .sect.note { background: rgba(255,201,67,.08); border-color: rgba(255,201,67,.4); }
+  .sect.note p { margin: 0; font-size: .85rem; line-height: 1.8; }
+
+  .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .7rem; }
+  .field label { font-size: .74rem; font-weight: 700; color: var(--ink-2); }
+  .field input, .field select {
+    padding: .65rem .75rem; font-size: 1rem;
+    border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--jp);
+  }
+  .req { color: var(--rose-deep); font-weight: 800; }
+  .hint { font-size: .72rem; color: var(--ink-3); margin: .2rem 0 0; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+
+  .radios { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .ch {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .6rem 1rem; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--bg);
+    cursor: pointer; font-size: .92rem; font-weight: 700;
+    position: relative;
+  }
+  .ch input { position: absolute; opacity: 0; pointer-events: none; }
+  .ch:has(input:checked) {
+    background: var(--sky-mist); border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(58,169,232,.12);
+    color: var(--sky-deep);
+  }
+
+  .total-preview { text-align: right; padding: .5rem 0; font-size: .95rem; color: var(--ink-2); }
+  .total-preview strong { font-family: var(--mono); font-size: 1.4rem; color: var(--orange-deep); margin-left: .5rem; }
+
+  .submit-row { margin-top: 1.5rem; text-align: right; }
+  .btn { padding: .9rem 1.5rem; border-radius: 10px;
+    font-family: var(--jp); font-size: 1rem; font-weight: 800;
+    border: none; cursor: pointer; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; box-shadow: 0 4px 12px rgba(229,99,26,.3);
+  }
+  .btn:disabled { background: var(--bg-3); color: var(--ink-3); box-shadow: none; cursor: wait; }
+</style>

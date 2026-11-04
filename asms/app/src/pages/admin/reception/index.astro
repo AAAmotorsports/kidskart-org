@@ -34,7 +34,7 @@ const { data: slots, error } = await supabase
     id, date, start_time, end_time, status,
     courses(code, name),
     reservations(
-      id, reservation_number, status, price_tier, payment_method, paid_at,
+      id, reservation_number, status, price_tier, payment_method, paid_at, is_phone_hold,
       guardians(name, phone),
       reservation_participants(id, name_snapshot, attendance_status)
     )
@@ -68,6 +68,7 @@ type Res = {
   price_tier: string;
   payment_method?: string | null;
   paid_at?: string | null;
+  is_phone_hold?: boolean | null;
   guardians?: { name?: string; phone?: string } | null;
   reservation_participants?: Array<{ id: string; name_snapshot: string; attendance_status: string }>;
 };
@@ -136,10 +137,13 @@ type SlotRow = {
                     const partsLabel = parts.map(p => p.name_snapshot).join('・');
                     const paid = !!r.paid_at;
                     return (
-                      <li class="res-item">
+                      <li class={`res-item ${r.is_phone_hold ? 'res-item-hold' : ''}`}>
                         <a class="res-link" href={`/admin/reception/${r.id}`}>
                           <div class="res-row-1">
                             <span class="res-num">#{r.reservation_number}</span>
+                            {r.is_phone_hold && (
+                              <span class="chip chip-phone-hold">📞 {tr('電話予約 (iPad 記入待ち)', 'Phone hold (iPad)')}</span>
+                            )}
                             {paid
                               ? <span class="chip chip-paid">💰 {tr('会計済', 'Paid')}</span>
                               : <span class="chip chip-unpaid">💴 {tr('未会計', 'Unpaid')}</span>}
@@ -263,6 +267,14 @@ type SlotRow = {
   .chip-tier.chip-member { background: #fff0f5; color: #c73854; }
   .chip-tier.chip-regular { background: var(--bg-3); color: var(--ink-2); }
   .chip-cancel { background: var(--ink-3); color: #fff; }
+  .chip-phone-hold {
+    background: linear-gradient(135deg, rgba(255,201,67,.3), rgba(255,138,61,.2));
+    color: #a66b00; border: 1px solid rgba(232,168,51,.5);
+  }
+  .res-item-hold .res-link {
+    border-color: rgba(232,168,51,.5);
+    background: linear-gradient(180deg, rgba(255,247,224,.5), var(--bg-2));
+  }
   .restore-hint { font-size: .72rem; color: var(--sky-deep); font-weight: 700; }
 
   .cancelled-fold {
