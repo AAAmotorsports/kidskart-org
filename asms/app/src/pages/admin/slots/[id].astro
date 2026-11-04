@@ -47,6 +47,17 @@ if (Astro.request.method === 'POST') {
     if (!ATTENDANCE_CODE_SET.has(status as any)) {
       return back('', `出欠ステータス "${status}" は不正です。許可: ${[...ATTENDANCE_CODE_SET].join(', ')}`);
     }
+    // 電話予約ホールドのまま出欠を記録すると placeholder customer に履歴が
+    // 付いてしまい、後の iPad 本登録 (UPDATE in place) で参加履歴が歪む。
+    // 本登録前は出欠記録を受け付けない (UI でも disabled にしている)。
+    const { data: phPart } = await supabase
+      .from('reservation_participants')
+      .select('reservations(is_phone_hold)')
+      .eq('id', partId)
+      .maybeSingle();
+    if ((phPart as any)?.reservations?.is_phone_hold) {
+      return back('', '電話予約の出欠は iPad での本登録後に記録してください (📱 iPad で記入してもらう ボタンから)');
+    }
     const { error } = await supabase
       .from('reservation_participants')
       .update({ attendance_status: status })
@@ -1154,18 +1165,28 @@ async function sendAdminCancelNotification(env: Env, args: {
               )}
 
               <div class="p-actions">
-                <form method="post" class="a-form">
-                  <input type="hidden" name="op" value="set_attendance" />
-                  <input type="hidden" name="participant_id" value={p.id} />
-                  <div class="btn-group">
-                    {ATTENDANCE_STATUSES.map((s) => (
-                      <button type="submit" name="status" value={s.code}
-                              class={`btn-attend ${p.attendance_status === s.code ? 'active' : ''}`}>
-                        {s.label}
-                      </button>
-                    ))}
+                {r.is_phone_hold ? (
+                  <div class="attend-hold-note">
+                    🔒 電話予約のため出欠記録は無効です。
+                    先に「📱 iPad で記入してもらう」から本登録してください。
+                    <a class="attend-hold-link" href={`/admin/reception/${r.id}`}>
+                      → 受付画面へ
+                    </a>
                   </div>
-                </form>
+                ) : (
+                  <form method="post" class="a-form">
+                    <input type="hidden" name="op" value="set_attendance" />
+                    <input type="hidden" name="participant_id" value={p.id} />
+                    <div class="btn-group">
+                      {ATTENDANCE_STATUSES.map((s) => (
+                        <button type="submit" name="status" value={s.code}
+                                class={`btn-attend ${p.attendance_status === s.code ? 'active' : ''}`}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </form>
+                )}
 
                 <details class="lvl-details">
                   <summary>🎯 習熟度を更新</summary>
@@ -1424,6 +1445,17 @@ async function sendAdminCancelNotification(env: Env, args: {
   .btn-attend.active {
     background: var(--sky); color: #fff; border-color: var(--sky-deep);
     box-shadow: 0 2px 6px rgba(58,169,232,.3);
+  }
+
+  .attend-hold-note {
+    background: linear-gradient(135deg, rgba(255,201,67,.18), rgba(255,138,61,.1));
+    border: 1px solid rgba(232,168,51,.5);
+    color: #a66b00; padding: .55rem .75rem; border-radius: 10px;
+    font-size: .82rem; line-height: 1.5;
+  }
+  .attend-hold-link {
+    display: inline-block; margin-left: .3rem; color: #7a4e00;
+    font-weight: 700; text-decoration: underline;
   }
 
   .lvl-details {
