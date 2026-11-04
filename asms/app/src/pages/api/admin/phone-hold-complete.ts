@@ -144,30 +144,128 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     ? safetyInput.map((n: any) => parseInt(n, 10)).filter((n) => Number.isFinite(n))
     : safetyItems.map((it) => it.id);
 
-  // --- 4) guardians を UPDATE in place ---------------------------------
-  // touch_updated_at トリガーが updated_at を自動更新するので、ここでは明示的に
-  // セットしない (NEW.updated_at = now() で上書きされるため、明示指定は無駄)
-  const { error: gErr } = await supabase
+  // --- 4) guardians の処理: 既存の同一メール行があるかで分岐 --------------
+  //
+  //   guardians.email には UNIQUE 制約 (0015) があるため、placeholder 行を
+  //   そのまま UPDATE すると、入力されたメールが既に別 guardians 行に存在
+  //   した場合に 23505 duplicate key violation で失敗する (リピート客の電話
+  //   予約で頻発するケース)。
+  //
+  //   対処: 入力メールの既存行があるか先に探し、
+  //     - 無ければ: placeholder を UPDATE in place (従来通り)
+  //     - あれば:  既存行を本番データで更新 → reservation を既存 guardian_id
+  //                に repoint → placeholder の guardian_customer_links と
+  //                guardian 行を掃除。
+  //   既存 guardian に紐付く過去予約の履歴 (customers / reservation_participants)
+  //   を保ったまま、今回の電話予約が過去履歴と繋がる状態になる。
+  //
+  // touch_updated_at トリガーが updated_at を自動更新するため、明示指定しない。
+  const newGuardianFields = {
+    name: guardian.name,
+    kana: guardian.kana ?? '',
+    phone: guardian.phone,
+    email: guardian.email,
+    postal_code: guardian.postal_code ?? null,
+    address: guardian.address ?? null,
+    emergency_contact_name: emergency?.name ?? guardian.name,
+    emergency_contact_phone: emergency?.phone ?? guardian.phone,
+    emergency_contact_relation: emergency?.relation ?? '本人',
+  };
+
+  const { data: existingGuardian, error: lookupErr } = await supabase
     .from('guardians')
-    .update({
-      name: guardian.name,
-      kana: guardian.kana ?? '',
-      phone: guardian.phone,
-      email: guardian.email,
-      postal_code: guardian.postal_code ?? null,
-      address: guardian.address ?? null,
-      emergency_contact_name: emergency?.name ?? guardian.name,
-      emergency_contact_phone: emergency?.phone ?? guardian.phone,
-      emergency_contact_relation: emergency?.relation ?? '本人',
-    })
-    .eq('id', hold.guardian_id);
-  if (gErr) {
-    console.warn('[phone-hold-complete] guardian update failed:',
-      JSON.stringify({ guardian_id: hold.guardian_id, code: (gErr as any).code, message: gErr.message, details: (gErr as any).details, hint: (gErr as any).hint }));
-    return json({
-      error: '保護者情報の更新に失敗しました',
-      detail: `${(gErr as any).code ?? ''} ${gErr.message} ${(gErr as any).hint ?? ''}`.trim(),
-    }, 500);
+    .select('id')
+    .eq('email', guardian.email)
+    .maybeSingle();
+  if (lookupErr) {
+    console.warn('[phone-hold-complete] guardian lookup failed:', lookupErr.message);
+    return json({ error: '既存の保護者メール検索に失敗しました', detail: lookupErr.message }, 500);
+  }
+
+  // 実効 guardian_id (UPDATE 対象、customer link 再張替の対象)
+  let effectiveGuardianId: string = hold.guardian_id;
+
+  if (existingGuardian && existingGuardian.id !== hold.guardian_id) {
+    // === 分岐 A: 既存リピート客の guardian 行に repoint する ===
+    effectiveGuardianId = existingGuardian.id;
+
+    // 4a-1) 既存 guardian を今回の iPad 入力で更新 (住所・緊急連絡先の鮮度維持)
+    const { error: g1Err } = await supabase
+      .from('guardians')
+      .update(newGuardianFields)
+      .eq('id', existingGuardian.id);
+    if (g1Err) {
+      console.warn('[phone-hold-complete] existing guardian update failed:',
+        JSON.stringify({ guardian_id: existingGuardian.id, code: (g1Err as any).code, message: g1Err.message }));
+      return json({
+        error: '既存保護者情報の更新に失敗しました',
+        detail: `${(g1Err as any).code ?? ''} ${g1Err.message}`.trim(),
+      }, 500);
+    }
+
+    // 4a-2) reservation を既存 guardian に repoint
+    const { error: repErr } = await supabase
+      .from('reservations')
+      .update({ guardian_id: existingGuardian.id })
+      .eq('id', holdId);
+    if (repErr) {
+      console.warn('[phone-hold-complete] reservation repoint failed:', repErr.message);
+      return json({ error: '予約の保護者再紐付けに失敗しました', detail: repErr.message }, 500);
+    }
+
+    // 4a-3) placeholder guardian に紐付いていた guardian_customer_links を削除
+    //   (次の step で既存 guardian から本番 customer への link を upsert する)
+    const { error: delLinkErr } = await supabase
+      .from('guardian_customer_links')
+      .delete()
+      .eq('guardian_id', hold.guardian_id);
+    if (delLinkErr) {
+      console.warn('[phone-hold-complete] placeholder link delete failed:', delLinkErr.message);
+      // 続行可能 (orphan が残るだけ)
+    }
+
+    // 4a-4) placeholder guardian 行を削除 (この時点で参照は無いはず)
+    const { error: delGErr } = await supabase
+      .from('guardians')
+      .delete()
+      .eq('id', hold.guardian_id);
+    if (delGErr) {
+      console.warn('[phone-hold-complete] placeholder guardian delete failed:', delGErr.message);
+      // 続行可能 (orphan placeholder が残るだけで機能上は問題なし)
+    }
+
+    // 4a-5) 既存 guardian ↔ 参加者 customer のリンクを upsert (ON CONFLICT DO NOTHING)
+    //   既存 guardian が同じ customer と既に紐付いていれば (guardian_id, customer_id)
+    //   UNIQUE で弾かれるので、個別に insert を試みて重複エラーは無視する。
+    for (const existing of existingPs) {
+      const { error: linkErr } = await supabase
+        .from('guardian_customer_links')
+        .insert({
+          guardian_id: effectiveGuardianId,
+          customer_id: existing.customer_id,
+          relation: emergency?.relation ?? '本人',
+          is_primary: false,
+        });
+      if (linkErr && (linkErr as any).code !== '23505') {
+        console.warn('[phone-hold-complete] link upsert failed (non-unique):',
+          JSON.stringify({ guardian_id: effectiveGuardianId, customer_id: existing.customer_id, code: (linkErr as any).code, message: linkErr.message }));
+        // 続行可能 (関係性紐付けが弱まるだけ)
+      }
+    }
+  } else {
+    // === 分岐 B: メールは placeholder だけ or 同一行 → UPDATE in place ===
+    const { error: gErr } = await supabase
+      .from('guardians')
+      .update(newGuardianFields)
+      .eq('id', hold.guardian_id);
+    if (gErr) {
+      console.warn('[phone-hold-complete] guardian update failed:',
+        JSON.stringify({ guardian_id: hold.guardian_id, code: (gErr as any).code, message: gErr.message, details: (gErr as any).details, hint: (gErr as any).hint }));
+      return json({
+        error: '保護者情報の更新に失敗しました',
+        detail: `${(gErr as any).code ?? ''} ${gErr.message} ${(gErr as any).hint ?? ''}`.trim(),
+      }, 500);
+    }
   }
 
   // --- 5) customers と reservation_participants を 1 対 1 で UPDATE ----
