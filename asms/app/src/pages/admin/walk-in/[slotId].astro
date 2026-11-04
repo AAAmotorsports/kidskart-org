@@ -36,6 +36,10 @@ const tr = (jp: string, en: string) => isEn ? en : jp;
 const { slotId } = Astro.params;
 if (!slotId) return new Response('missing slotId', { status: 400 });
 
+// 電話予約ホールドからの完成動線 (?from_hold=<reservationId>)。
+// 指定時は保護者氏名・人数・料金区分をプリフィル、送信先を phone-hold-complete に切り替える。
+const fromHoldId = Astro.url.searchParams.get('from_hold')?.trim() || null;
+
 const { data: slot, error } = await supabase
   .from('slots')
   .select('id, date, start_time, end_time, capacity, status, courses(id, code, name, price_regular, price_member)')
@@ -47,6 +51,63 @@ if (error || !slot) {
     tr(`スロットが見つかりません: ${slotId}`, `Slot not found: ${slotId}`),
     { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
   );
+}
+
+// --- ホールド予約の情報取得 (fromHoldId 指定時のみ) ----------------------
+// slot_id ミスマッチ時は 400 で止める (誤 URL 混入防止)。
+type HoldData = {
+  reservationId: string;
+  reservationNumber: string;
+  guardianName: string;
+  guardianPhone: string;
+  participantCount: number;
+  priceTier: 'member' | 'regular';
+};
+let hold: HoldData | null = null;
+if (fromHoldId) {
+  const { data: holdRes } = await supabase
+    .from('reservations')
+    .select(`
+      id, reservation_number, slot_id, status, price_tier, is_phone_hold,
+      guardians(name, phone),
+      reservation_participants(id)
+    `)
+    .eq('id', fromHoldId)
+    .maybeSingle();
+  if (!holdRes) {
+    return new Response(
+      tr(`電話予約が見つかりません: ${fromHoldId}`, `Phone hold not found: ${fromHoldId}`),
+      { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    );
+  }
+  if (!(holdRes as any).is_phone_hold) {
+    return new Response(
+      tr('この予約は電話予約ホールドではありません (既に完成済み)', 'Not a phone-hold (already completed)'),
+      { status: 409, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    );
+  }
+  if ((holdRes as any).status === 'cancelled') {
+    return new Response(
+      tr('この電話予約はキャンセル済みです', 'This phone-hold is already cancelled'),
+      { status: 409, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    );
+  }
+  if ((holdRes as any).slot_id !== slotId) {
+    return new Response(
+      tr('電話予約のスロットが URL と一致しません', 'Phone-hold slot does not match URL slot'),
+      { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    );
+  }
+  const g: any = (holdRes as any).guardians ?? {};
+  const parts: Array<any> = (holdRes as any).reservation_participants ?? [];
+  hold = {
+    reservationId: (holdRes as any).id,
+    reservationNumber: (holdRes as any).reservation_number,
+    guardianName: g.name ?? '',
+    guardianPhone: g.phone ?? '',
+    participantCount: parts.length || 1,
+    priceTier: (holdRes as any).price_tier === 'member' ? 'member' : 'regular',
+  };
 }
 
 const course: any = (slot as any).courses ?? {};
@@ -112,6 +173,26 @@ const defaultBirth = (() => {
     </section>
 
     <h1>{tr('🏃 当日受付', '🏃 Walk-in reservation')}</h1>
+
+    {hold ? (
+      <div class="phone-hold-notice">
+        <div class="ph-title">📞 {tr('電話予約の本登録', 'Phone-hold completion')}</div>
+        <div class="ph-detail">
+          {tr('予約番号', 'Reservation #')}: <strong>{hold.reservationNumber}</strong>
+          <br />
+          {tr('お電話で受けた内容', 'Received by phone')}:
+          {' '}{hold.guardianName}{tr(' さま', ' (guardian)')} / {hold.guardianPhone} /
+          {' '}{hold.participantCount}{tr('名', 'p')} / {hold.priceTier === 'member' ? tr('会員','Member') : tr('一般','Regular')}
+        </div>
+        <div class="ph-note">
+          {tr(
+            'この iPad での入力内容で本予約情報を上書きします。参加人数と席はそのまま保持されます。',
+            'Submitting this form overwrites the hold with real info. Seat count stays the same.'
+          )}
+        </div>
+      </div>
+    ) : null}
+
     <p class="intro">
       {tr(
         'iPad を参加者さまに渡して、以下を入力していただいてください。入力完了後、電子署名をいただきます。',
@@ -119,32 +200,44 @@ const defaultBirth = (() => {
       )}
     </p>
 
-    <form id="wiForm" novalidate>
+    <form id="wiForm" novalidate data-from-hold={hold ? '1' : ''} data-hold-id={hold?.reservationId ?? ''}>
       <input type="hidden" name="slot_id" value={(slot as any).id} />
 
       <!-- 参加人数 + 料金プレビュー -->
       <section class="sect">
         <h2>1. {tr('参加人数', 'Number of participants')}</h2>
-        <div class="pcount-row">
-          {[1,2,3,4].map((n) => (
-            <label class={`pc-chip ${n===1?'checked':''}`}>
-              <input type="radio" name="participant_count" value={n} checked={n===1} />
-              <span>{n} {tr('名', '')}</span>
-            </label>
-          ))}
+        <div class={`pcount-row ${hold ? 'locked' : ''}`}>
+          {[1,2,3,4].map((n) => {
+            const preselected = hold ? hold.participantCount === n : n === 1;
+            return (
+              <label class={`pc-chip ${preselected ? 'checked' : ''} ${hold && !preselected ? 'disabled' : ''}`}>
+                <input type="radio" name="participant_count" value={n} checked={preselected}
+                       disabled={!!hold && !preselected} />
+                <span>{n} {tr('名', '')}</span>
+              </label>
+            );
+          })}
         </div>
+        {hold && (
+          <p class="lock-hint">
+            🔒 {tr(
+              '電話予約時点の人数で席を確保しています。変更する場合は本ホールドを管理画面でキャンセルして、通常の当日受付からお願いします。',
+              'Participant count is locked to the phone-hold value. To change, cancel the hold in admin and use normal walk-in.'
+            )}
+          </p>
+        )}
         <div class="tier-row">
-          <label class="pc-chip checked">
-            <input type="radio" name="price_tier" value="regular" checked />
+          <label class={`pc-chip ${(!hold || hold.priceTier === 'regular') ? 'checked' : ''}`}>
+            <input type="radio" name="price_tier" value="regular" checked={!hold || hold.priceTier === 'regular'} />
             <span>{tr('一般', 'Regular')}</span>
           </label>
-          <label class="pc-chip">
-            <input type="radio" name="price_tier" value="member" />
+          <label class={`pc-chip ${hold?.priceTier === 'member' ? 'checked' : ''}`}>
+            <input type="radio" name="price_tier" value="member" checked={hold?.priceTier === 'member'} />
             <span>{tr('トヨピー会員', 'Toyopy member')}</span>
           </label>
         </div>
         <div class="total-row">
-          {tr('合計', 'Total')}: <strong id="totalPreview">¥{priceRegular.toLocaleString()}</strong>
+          {tr('合計', 'Total')}: <strong id="totalPreview">¥{(((hold?.priceTier === 'member') ? priceMember : priceRegular) * (hold?.participantCount ?? 1)).toLocaleString()}</strong>
         </div>
       </section>
 
@@ -159,7 +252,7 @@ const defaultBirth = (() => {
         <h2>3. {tr('保護者情報', 'Guardian info')}</h2>
         <div class="field">
           <label>{tr('お名前', 'Name')} <span class="req">*</span></label>
-          <input type="text" name="g_name" autocomplete="name" required />
+          <input type="text" name="g_name" autocomplete="name" required value={hold?.guardianName ?? ''} />
         </div>
         <div class="field">
           <label>{tr('フリガナ', 'Kana')} <span class="req">*</span></label>
@@ -167,7 +260,7 @@ const defaultBirth = (() => {
         </div>
         <div class="field">
           <label>{tr('電話番号', 'Phone')} <span class="req">*</span></label>
-          <input type="tel" name="g_phone" autocomplete="tel" placeholder="090..." required />
+          <input type="tel" name="g_phone" autocomplete="tel" placeholder="090..." required value={hold?.guardianPhone ?? ''} />
         </div>
         <div class="field">
           <label>{tr('メール', 'Email')} <span class="req">*</span></label>
@@ -579,30 +672,56 @@ const defaultBirth = (() => {
     const g_banchi = fd.get('g_banchi')?.toString().trim() || '';
     const combinedAddress = g_banchi ? `${g_address} ${g_banchi}`.trim() : g_address;
 
-    const payload = {
-      slot_id: slotId,
-      term_id: termId,  // 現行 terms を明示指定 (admin create は省略時に自動選択するが、確実性のため)
-      price_tier: fd.get('price_tier')?.toString() === 'member' ? 'member' : 'regular',
-      guardian: {
-        name: g_name,
-        kana: g_kana,
-        phone: g_phone,
-        address: combinedAddress || undefined,
-        email: g_email,
-      },
-      emergency,
-      participants,
-      signature: { type: 'drawn', image_data: canvas.toDataURL('image/png') },
-      checked_safety_items: checkedSafety,
-    };
+    // 電話予約ホールドからの完成動線の場合、送信先と payload を差し替える
+    const holdId = form.dataset.holdId || '';
+    const isPhoneHoldComplete = form.dataset.fromHold === '1' && !!holdId;
+
+    const payload = isPhoneHoldComplete
+      ? {
+          hold_reservation_id: holdId,
+          slot_id: slotId,
+          term_id: termId,
+          price_tier: fd.get('price_tier')?.toString() === 'member' ? 'member' : 'regular',
+          guardian: {
+            name: g_name,
+            kana: g_kana,
+            phone: g_phone,
+            address: combinedAddress || undefined,
+            email: g_email,
+          },
+          emergency,
+          participants,
+          signature: { type: 'drawn', image_data: canvas.toDataURL('image/png') },
+          checked_safety_items: checkedSafety,
+        }
+      : {
+          slot_id: slotId,
+          term_id: termId,  // 現行 terms を明示指定 (admin create は省略時に自動選択するが、確実性のため)
+          price_tier: fd.get('price_tier')?.toString() === 'member' ? 'member' : 'regular',
+          guardian: {
+            name: g_name,
+            kana: g_kana,
+            phone: g_phone,
+            address: combinedAddress || undefined,
+            email: g_email,
+          },
+          emergency,
+          participants,
+          signature: { type: 'drawn', image_data: canvas.toDataURL('image/png') },
+          checked_safety_items: checkedSafety,
+        };
 
     const submitBtn = form.querySelector('.btn-submit');
     submitBtn.disabled = true;
     const originalText = submitBtn.textContent;
     submitBtn.textContent = tr('送信中…', 'Submitting...');
 
+    const endpoint = isPhoneHoldComplete
+      ? '/api/admin/phone-hold-complete'
+      : '/api/admin/reservations/create';
+
     try {
-      const r = await fetch('/api/admin/reservations/create', {
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -848,5 +967,32 @@ const defaultBirth = (() => {
     background: #fff0f0; color: var(--rose-deep);
     padding: .7rem 1rem; border-radius: 8px; margin-top: .8rem;
     font-size: .9rem; border: 1px solid #ffd0d0;
+  }
+
+  .phone-hold-notice {
+    background: linear-gradient(135deg, rgba(255,201,67,.18), rgba(255,138,61,.1));
+    border: 2px solid rgba(232,168,51,.5);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    margin: 0 0 1rem;
+  }
+  .phone-hold-notice .ph-title {
+    font-size: 1.1rem; font-weight: 800; color: #a66b00; margin-bottom: .4rem;
+  }
+  .phone-hold-notice .ph-detail {
+    font-size: .95rem; color: var(--ink); line-height: 1.6;
+  }
+  .phone-hold-notice .ph-detail strong {
+    font-family: var(--mono); color: #7a4e00;
+  }
+  .phone-hold-notice .ph-note {
+    font-size: .82rem; color: var(--ink-2); margin-top: .5rem;
+  }
+
+  .pcount-row.locked { opacity: .9; }
+  .pc-chip.disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
+  .lock-hint {
+    font-size: .8rem; color: var(--ink-2); margin: .3rem 0 .7rem;
+    background: var(--bg-2); padding: .5rem .7rem; border-radius: 8px;
   }
 </style>
