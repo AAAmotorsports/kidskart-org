@@ -58,7 +58,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 対象予約が存在するか確認
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id, status')
+    .select('id, status, is_phone_hold')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
@@ -72,6 +72,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({
       error: `この予約は "${curStatus}" 状態なので会計を記録できません。先に予約を確定してください。`,
       current_status: curStatus,
+    }, 409);
+  }
+  // 電話予約ホールドは price_tier が iPad 本登録で変わり得るため、
+  // 先に会計を打つと total_amount と paid_amount が食い違う。本登録後に記録する。
+  if ((res as any).is_phone_hold) {
+    return json({
+      error: '電話予約の会計は iPad での本登録後に記録してください (📱 iPad で記入してもらう ボタンから)',
+      is_phone_hold: true,
     }, 409);
   }
 

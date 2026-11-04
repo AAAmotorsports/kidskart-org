@@ -50,12 +50,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // slot.date は birth_date_snapshot 更新時の age_at_booking 再計算で使う。
   const { data: res, error: resErr } = await supabase
     .from('reservations')
-    .select('id, guardian_id, slots(date)')
+    .select('id, guardian_id, is_phone_hold, slots(date)')
     .eq('id', reservationId)
     .maybeSingle();
   if (resErr) return json({ error: `reservation lookup failed: ${resErr.message}` }, 500);
   if (!res) return json({ error: 'reservation not found' }, 404);
   const slotDate: string | undefined = (res as any).slots?.date;
+
+  // 電話予約ホールドのまま参加者・保護者情報を編集すると、直後に iPad 本登録
+  // (phone-hold-complete) が走った時に同じ行を競合更新する。順序ズレで不整合を
+  // 生まないよう、本登録前の admin 編集は一律 409 で止めて iPad 本登録 API に
+  // 書き込みを集約する。
+  if ((res as any).is_phone_hold) {
+    return json({
+      error: '電話予約の編集は iPad での本登録後に行ってください (📱 iPad で記入してもらう ボタンから)',
+      is_phone_hold: true,
+    }, 409);
+  }
 
   const results: Record<string, any> = { guardian: null, participants: [] };
 
@@ -70,11 +81,36 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
     }
     if (Object.keys(update).length > 0 && res.guardian_id) {
+      // email を変更する場合、別の guardians 行に既に存在する email だと
+      // 0015 で追加した UNIQUE 制約で 23505 エラーになる。先に lookup して
+      // わかりやすいメッセージで返す (DB の素のエラー文を見せない)。
+      if ('email' in update && update.email) {
+        const { data: clash } = await supabase
+          .from('guardians')
+          .select('id')
+          .eq('email', update.email)
+          .maybeSingle();
+        if (clash && clash.id !== res.guardian_id) {
+          return json({
+            error: `このメールアドレスは別の保護者に使用されています。入力ミスでなければ、重複保護者の統合が必要です (担当者に連絡してください)。`,
+            conflicting_guardian_id: clash.id,
+          }, 409);
+        }
+      }
       const { error: gErr } = await supabase
         .from('guardians')
         .update(update)
         .eq('id', res.guardian_id);
-      if (gErr) return json({ error: `guardian update failed: ${gErr.message}` }, 500);
+      if (gErr) {
+        // UNIQUE 違反 (23505) は上の lookup でカバーしているが、race で漏れる場合に備えて
+        // 専用メッセージを返す。それ以外は素のエラー文で返す。
+        if ((gErr as any).code === '23505') {
+          return json({
+            error: `このメールアドレスは別の保護者に使用されています: ${gErr.message}`,
+          }, 409);
+        }
+        return json({ error: `guardian update failed: ${gErr.message}` }, 500);
+      }
       results.guardian = { updated_fields: Object.keys(update) };
     }
   }

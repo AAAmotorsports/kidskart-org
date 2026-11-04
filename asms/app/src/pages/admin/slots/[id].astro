@@ -144,7 +144,8 @@ if (Astro.request.method === 'POST') {
     const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
     type MailTag = { label: string; p: Promise<any> };
     const mails: MailTag[] = [];
-    if (notify && guardian.email) {
+    // walk-in / phone-hold の placeholder (@noemail.local) は Resend で bounce するので skip
+    if (notify && guardian.email && !/@noemail\.local$/i.test(guardian.email)) {
       mails.push({
         label: `保護者(${guardian.email})`,
         p: sendParticipantCancelEmail(env, {
@@ -278,7 +279,8 @@ if (Astro.request.method === 'POST') {
         const slot = r.slots ?? {};
         const guardian = r.guardians ?? {};
         const parts = (r.reservation_participants ?? []).map((p: any) => p.name_snapshot);
-        if (guardian.email) {
+        // walk-in / phone-hold の placeholder (@noemail.local) は Resend で bounce するので skip
+        if (guardian.email && !/@noemail\.local$/i.test(guardian.email)) {
           mails.push({
             label: `保護者(${guardian.email}/${r.reservation_number})`,
             p: sendSlotCancelEmail(env, {
@@ -426,7 +428,8 @@ if (Astro.request.method === 'POST') {
     const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO || '';
     type MailTag = { label: string; p: Promise<any> };
     const mails: MailTag[] = [];
-    if (notify && guardian.email) {
+    // walk-in / phone-hold の placeholder (@noemail.local) は Resend で bounce するので skip
+    if (notify && guardian.email && !/@noemail\.local$/i.test(guardian.email)) {
       mails.push({
         label: `保護者(${guardian.email})`,
         p: sendReservationCancelEmail(env, {

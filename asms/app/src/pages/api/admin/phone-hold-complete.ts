@@ -121,14 +121,18 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   }
 
   // --- 3) 現行 terms を取得 (declaration_text / version / body / hash) --
-  const { data: term, error: termErr } = await supabase
-    .from('terms')
-    .select('id, version, body_markdown, content_hash, safety_items')
-    .eq('id', termIdInput ?? '')
-    .maybeSingle();
-  // termIdInput が null の場合、もしくは hit しない場合は現行 terms を lookup
-  let effectiveTerm = term;
-  if (termErr || !effectiveTerm) {
+  // termIdInput があればそれを lookup、なければ is_current=true を lookup。
+  // termIdInput='' で無駄 lookup しないよう、先に有無で分岐する。
+  let effectiveTerm: any = null;
+  if (termIdInput) {
+    const { data: term } = await supabase
+      .from('terms')
+      .select('id, version, body_markdown, content_hash, safety_items')
+      .eq('id', termIdInput)
+      .maybeSingle();
+    effectiveTerm = term;
+  }
+  if (!effectiveTerm) {
     const { data: cur, error: curErr } = await supabase
       .from('terms')
       .select('id, version, body_markdown, content_hash, safety_items')

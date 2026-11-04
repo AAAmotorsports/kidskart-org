@@ -153,8 +153,8 @@ const isPhoneHold = !!(res as any).is_phone_hold;
         </a>
         <p class="ph-note">
           {tr(
-            '※ iPad で入力が完了したら、新しい予約として登録されます。この電話予約は入力完了後に「予約をキャンセル」で削除してください。',
-            '* After the iPad form is submitted, a new reservation is created. Delete this phone-hold via Cancel after completion.',
+            '※ iPad で入力すると、この予約が本登録に切り替わります。予約番号・席はそのまま、追加の削除操作は不要です。',
+            '* Submitting the iPad form upgrades THIS reservation in place. Number & seat are preserved; no extra cleanup needed.',
           )}
         </p>
       </section>
@@ -375,7 +375,7 @@ const isPhoneHold = !!(res as any).is_phone_hold;
     )}
 
     <!-- アクションボタン (特大) -->
-    {!resCancelled && (
+    {!resCancelled && !isPhoneHold && (
       <section class="actions">
         <button
           type="button"
@@ -403,6 +403,16 @@ const isPhoneHold = !!(res as any).is_phone_hold;
         >
           {tr('⚠️ 無断欠席にする', '⚠️ Mark no-show')}
         </button>
+      </section>
+    )}
+    {!resCancelled && isPhoneHold && (
+      <section class="actions">
+        <div class="hold-lock-note">
+          🔒 {tr(
+            '電話予約のため出欠・会計の記録は無効です。先に上記「📱 iPad で記入してもらう」から本登録を完了してください。',
+            'Attendance / payment disabled while this is a phone-hold. Complete the iPad form above first.'
+          )}
+        </div>
       </section>
     )}
 
@@ -732,6 +742,12 @@ const isPhoneHold = !!(res as any).is_phone_hold;
     box-shadow: 0 4px 12px rgba(229,99,26,.3);
   }
   .btn-ipad-input:hover { filter: brightness(1.05); }
+  .hold-lock-note {
+    background: linear-gradient(135deg, rgba(255,201,67,.18), rgba(255,138,61,.1));
+    border: 1px solid rgba(232,168,51,.5); color: #7a4e00;
+    padding: 1rem 1.2rem; border-radius: 12px;
+    font-size: .95rem; line-height: 1.6; text-align: center; font-weight: 700;
+  }
 
   /* ---- キャンセル予約の警告 + 復活ボタン ---- */
   .cancel-banner {
