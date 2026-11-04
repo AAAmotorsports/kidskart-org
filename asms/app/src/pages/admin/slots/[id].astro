@@ -533,7 +533,7 @@ const { data: reservations } = await supabase
   .from('reservations')
   .select(`
     id, reservation_number, status, price_tier, total_amount,
-    payment_method, paid_at, paid_amount, payment_note,
+    payment_method, paid_at, paid_amount, payment_note, is_phone_hold,
     guardians(name, kana, phone, email),
     reservation_participants(id, customer_id, name_snapshot, kana_snapshot,
                              birth_date_snapshot, age_at_booking, height_cm,
@@ -1136,6 +1136,9 @@ async function sendAdminCancelNotification(env: Env, args: {
                 <span class={`badge badge-${attendanceClass(p.attendance_status)}`}>
                   {attendanceLabel(p.attendance_status)}
                 </span>
+                {r.is_phone_hold && (
+                  <span class="badge badge-phone-hold">📞 電話予約（iPad 記入待ち）</span>
+                )}
                 <span class="p-cur-level">{skillLabel(c.current_skill_level)}</span>
                 <span class="p-parts">🏁 {c.total_participations ?? 0}回目</span>
               </div>
@@ -1467,6 +1470,10 @@ async function sendAdminCancelNotification(env: Env, args: {
   .badge-noshow { background: rgba(229,85,111,.15); color: var(--rose-deep); }
   .badge-cancelled { background: rgba(160,160,160,.15); color: var(--ink-3); }
   .badge-muted { background: var(--bg-3); color: var(--ink-3); }
+  .badge-phone-hold {
+    background: linear-gradient(135deg, rgba(255,201,67,.25), rgba(255,138,61,.15));
+    color: #a66b00; border: 1px solid rgba(232,168,51,.5);
+  }
 
   .btn {
     padding: .5rem 1rem; border-radius: 8px;

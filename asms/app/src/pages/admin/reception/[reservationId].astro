@@ -37,7 +37,7 @@ if (!reservationId) return new Response('missing reservationId', { status: 400 }
 const { data: res, error } = await supabase
   .from('reservations')
   .select(`
-    id, reservation_number, status, price_tier, total_amount, payment_method, paid_at, paid_amount, payment_note,
+    id, reservation_number, status, price_tier, total_amount, payment_method, paid_at, paid_amount, payment_note, is_phone_hold,
     slots(id, date, start_time, end_time, courses(code, name)),
     guardians(id, name, kana, email, phone, address),
     reservation_participants(id, name_snapshot, kana_snapshot, birth_date_snapshot, gender_snapshot, height_cm, age_at_booking, attendance_status),
@@ -113,6 +113,7 @@ const anyAttended = attendedCount > 0;
 const allCancelled = participants.length > 0 && participants.every(p => p.attendance_status === 'cancelled');
 // 予約全体のキャンセル状態 (reservations.status か、全員 cancelled か)
 const resCancelled = (res as any).status === 'cancelled' || allCancelled;
+const isPhoneHold = !!(res as any).is_phone_hold;
 ---
 <Base
   title={tr(`受付 — ${res.reservation_number}`, `Check-in — ${res.reservation_number}`)}
@@ -136,6 +137,28 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
         <span class="time">⏰ {timeLabel}</span>
       </div>
     </section>
+
+    <!-- 電話予約（iPad 記入待ち）の案内 -->
+    {isPhoneHold && !resCancelled && (
+      <section class="phone-hold-banner">
+        <div class="ph-title">📞 {tr('電話予約です（iPad で詳細記入をお願いします）', 'Phone-hold reservation (please fill in details on iPad)')}</div>
+        <div class="ph-detail">
+          {tr(
+            'お客様に iPad をお渡しして、お名前・ご住所・緊急連絡先・署名等をご入力いただきましょう。',
+            'Hand the iPad to the customer so they can enter name, address, emergency contact, signature, etc.'
+          )}
+        </div>
+        <a class="btn-ipad-input" href={`/admin/walk-in/${slot.id ?? ''}?from_hold=${res.id}`}>
+          📱 {tr('iPad で記入してもらう', 'Open iPad form')}
+        </a>
+        <p class="ph-note">
+          {tr(
+            '※ iPad で入力が完了したら、新しい予約として登録されます。この電話予約は入力完了後に「予約をキャンセル」で削除してください。',
+            '* After the iPad form is submitted, a new reservation is created. Delete this phone-hold via Cancel after completion.',
+          )}
+        </p>
+      </section>
+    )}
 
     <!-- キャンセル予約の警告 + 復活ボタン -->
     {resCancelled && (
@@ -682,6 +705,33 @@ const resCancelled = (res as any).status === 'cancelled' || allCancelled;
     background: linear-gradient(135deg, #c9d4df, #8ca2b7);
     filter: grayscale(.2);
   }
+
+  /* ---- 電話予約（iPad 記入待ち）の案内 ---- */
+  .phone-hold-banner {
+    background: linear-gradient(135deg, #fff8e5, #fff0d4);
+    border: 2px solid var(--orange);
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 1.2rem;
+  }
+  .phone-hold-banner .ph-title {
+    font-size: 1.25rem; font-weight: 800; color: #a66b00;
+    margin-bottom: .4rem;
+  }
+  .phone-hold-banner .ph-detail { font-size: .95rem; color: var(--ink-2); margin-bottom: .9rem; line-height: 1.5; }
+  .phone-hold-banner .ph-note {
+    font-size: .78rem; color: var(--ink-3); margin: .7rem 0 0;
+    line-height: 1.6; border-top: 1px dashed rgba(166,107,0,.2); padding-top: .6rem;
+  }
+  .btn-ipad-input {
+    display: inline-block;
+    appearance: none; cursor: pointer; text-decoration: none;
+    background: linear-gradient(135deg, var(--orange), var(--orange-deep));
+    color: #fff; font-size: 1.15rem; font-weight: 800;
+    padding: 1rem 1.6rem; border-radius: 14px;
+    box-shadow: 0 4px 12px rgba(229,99,26,.3);
+  }
+  .btn-ipad-input:hover { filter: brightness(1.05); }
 
   /* ---- キャンセル予約の警告 + 復活ボタン ---- */
   .cancel-banner {
