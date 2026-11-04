@@ -1165,16 +1165,6 @@ const termsHtml = terms
       if (prefillAutoBanner) prefillAutoBanner.hidden = true;
     });
 
-    // ?from=complete で来て savedPrefill があれば自動 apply。
-    // prefill 関連の UI (panel / banner) の表示切替もここで。
-    if (fromComplete && savedPrefill && prefillApply) {
-      // 既存の apply ロジックを再利用 (click を programmatic 発火)。
-      // savedPrefill が localStorage に由来するケース用。
-      prefillApply.click();
-      if (prefillPanel) prefillPanel.hidden = true;
-      if (prefillAutoBanner) prefillAutoBanner.hidden = false;
-    }
-
     // "緊急連絡先は保護者と同じ" toggle: reveal / hide the emergency
     // form and skip its required validation when checked.
     const sameChk = document.getElementById('sameAsGuardian') as HTMLInputElement | null;
@@ -1187,6 +1177,19 @@ const termsHtml = terms
     };
     sameChk?.addEventListener('change', syncSame);
     syncSame();
+
+    // ?from=complete で来て savedPrefill があれば自動 apply。
+    // prefillApply handler は内部で sameChk/syncSame を参照するので、
+    // このブロックは必ず sameChk の const 宣言 + 初期 syncSame() 呼び出しの
+    // 後に置く。前に置くと TDZ ReferenceError で script 全体が停止し、
+    // 予約ウィザードが機能しなくなる (2026-11-04 の code review で発見)。
+    if (fromComplete && savedPrefill && prefillApply) {
+      // 既存の apply ロジックを再利用 (click を programmatic 発火)。
+      // savedPrefill が localStorage に由来するケース用。
+      prefillApply.click();
+      if (prefillPanel) prefillPanel.hidden = true;
+      if (prefillAutoBanner) prefillAutoBanner.hidden = false;
+    }
 
     // Postal code → address auto-fill via zipcloud (free public JP API).
     // Only fills the address field when it's empty so we don't blow away
