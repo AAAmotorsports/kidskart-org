@@ -54,12 +54,11 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   }
 
   // 現行の terms (利用規約) を取得 (create_reservation_atomic が term_id 必須)
+  // カラムは `is_current` (他の endpoint と揃える。`is_active` ではない)
   const { data: term, error: termErr } = await supabase
     .from('terms')
     .select('id, safety_items')
-    .eq('is_active', true)
-    .order('version', { ascending: false })
-    .limit(1)
+    .eq('is_current', true)
     .maybeSingle();
   if (termErr || !term) {
     return json({ error: '現行の利用規約が見つかりません', detail: termErr?.message }, 500);
