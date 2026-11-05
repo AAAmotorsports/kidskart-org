@@ -551,3 +551,29 @@ export function safeReferrer(v: string | null | undefined): Referrer | null {
   const s = (v ?? '').trim().toLowerCase();
   return (REFERRERS as readonly string[]).includes(s) ? (s as Referrer) : null;
 }
+
+/**
+ * 公開面に出すカテゴリーの並び (2026-11 オーナー指示)。
+ *
+ * 同じ枠にまとめてあるもの (GR カート → カート) は **代表のカテゴリーに畳む**。
+ * 「表示はカートだけでいい。GR カートはホームページ上には載せなくていい」
+ * — 同じ枠なので ○ を 2 つ並べても、お客様には同じことしか伝わらない。
+ *
+ * ★ 畳むのは**表示だけ**。予約フォームの選択肢からは外さないこと —
+ *   お客様に選んでもらえないと「GR カートで来る」ことが分からない
+ *   (カテゴリーを足した理由そのもの)。
+ * ★ `running` は**まとめた側からも拾う**。GR カートだけ予約が入っている日も
+ *   「カートが走っている」と出したい (消してしまうと何も出なくなる)。
+ */
+export function foldCategories<
+  T extends { code: string; class_group?: string | null; running?: boolean },
+>(list: readonly T[] | null | undefined): T[] {
+  const all = list ?? [];
+  return all
+    .filter((c) => !c.class_group)
+    .map((head) => {
+      const members = all.filter((c) => c.class_group === head.code);
+      if (members.length === 0) return head;
+      return { ...head, running: Boolean(head.running) || members.some((m) => m.running) };
+    });
+}

@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { dayState, settings, type DayState } from '@lib/queries';
 import {
   STATUS_MARK, BUSINESS_LABELS, SURFACE_LABELS, SURFACE_EMOJI, categoryText,
-  jaDate, todayJst, addDays, blockLabel, dayFocus, openBadge, openNote,
+  jaDate, todayJst, addDays, blockLabel, dayFocus, openBadge, openNote, foldCategories,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -68,8 +68,13 @@ const sessions: Array<['am' | 'pm', string]> = [['am', 'AM'], ['pm', 'PM']];
 // 毎日「要予約」と並べても利用者の判断材料にならないので、
 // **その日に予約が入っているときだけ**出す (= その日は実際に走っている)。
 // 予約したい人は予約フォームからいつでも申し込める。
-function visibleCats<T extends { requires_reservation: boolean; running: boolean }>(list: T[]): T[] {
-  return list.filter((c) => !c.requires_reservation || c.running);
+// 公開面に出すカテゴリー。
+// 1. 同じ枠のもの (GR カート) は代表 (カート) に畳む — 2026-11 オーナー指示
+// 2. 要予約のものは、その日に予約が入っているときだけ出す
+function visibleCats<T extends {
+  code: string; class_group?: string | null; requires_reservation: boolean; running: boolean;
+}>(list: T[]): T[] {
+  return foldCategories(list).filter((c) => !c.requires_reservation || c.running);
 }
 const publicBlocks = (state?.blocks ?? []).filter((b) => b.is_public);
 // 走行中止・休業の日は「走れない」。営業確認中はまだ走れる可能性がある

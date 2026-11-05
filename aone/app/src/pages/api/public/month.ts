@@ -1,7 +1,9 @@
 import type { APIRoute } from 'astro';
 import { envFrom, json } from '@lib/supabase';
 import { monthState, rentalBookings, openEvents } from '@lib/queries';
-import { todayJst, BUSINESS_LABELS, SURFACE_LABELS, BLOCK_KIND_LABELS, blockLabel } from '@lib/domain';
+import {
+  todayJst, BUSINESS_LABELS, SURFACE_LABELS, BLOCK_KIND_LABELS, blockLabel, foldCategories,
+} from '@lib/domain';
 
 export const prerender = false;
 
@@ -77,8 +79,9 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       // ★ カテゴリーを渡さないと、ウィジェットは「予約が入っているクラス」
       //   (ミニバイク等) を出せず ○ のままになる。/schedule と食い違う
       //   (2026-09 オーナー指摘)。公開スケジュールに出しているものと同じ内容
-      am_categories: slimCats(d.am_categories),
-      pm_categories: slimCats(d.pm_categories),
+      // ★ 同じ枠のもの (GR カート) は代表 (カート) に畳んでから出す (2026-11)
+      am_categories: slimCats(foldCategories(d.am_categories as any)),
+      pm_categories: slimCats(foldCategories(d.pm_categories as any)),
       rp_free: d.rp_free,
       // ご予約不要のレンタルカート走行ができるか。
       // 営業していて、その時間帯の RP 枠が生きていれば走れる

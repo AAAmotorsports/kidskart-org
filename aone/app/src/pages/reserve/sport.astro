@@ -12,17 +12,10 @@ const env = envFrom(Astro.locals);
 const [cfg, cats] = await Promise.all([settings(env), categories(env)]);
 // ★ カテゴリー名を手で書かない。増やしたときに、ここだけ古いままになる
 //   (2026-11、GR カートを足したときに実際に取り残された)
-const shownCats = cats.filter((c) => !c.admin_only);
-const catNames = shownCats.map((c) => c.name).join('・');
-// 同じ枠にまとめてあるもの (カート + GR カート) は、合わせて 1 クラスとして数える
-const sameFrame = shownCats
-  .filter((c) => c.class_group)
-  .map((c) => {
-    const head = shownCats.find((x) => x.code === c.class_group);
-    return head ? `${head.name}・${c.name}` : null;
-  })
-  .filter(Boolean)
-  .join('、');
+// ★ 説明文に並べるのは「枠」の代表だけ。GR カートは選択肢には出すが、
+//   案内文には載せない (2026-11 オーナー指示: 表示はカートだけでいい)
+const catNames = cats.filter((c) => !c.admin_only && !c.class_group)
+  .map((c) => c.name).join('・');
 const today = todayJst();
 const maxDate = addDays(today, 180);
 // 18 時を過ぎたら翌日を初期値にする (「今日走れる？」の切り替えと揃える)
@@ -42,7 +35,7 @@ const showTitle = !embed || Astro.url.searchParams.get('title') === '1';
   {showTitle && <h1>スポーツ走行のご予約</h1>}
   <p class="small muted">
     {catNames} のスポーツ走行枠です。
-    同じカテゴリーは何台入っても 1 クラス扱いです{sameFrame && `（${sameFrame}は同じ枠として数えます）`}。
+    同じカテゴリーは何台入っても 1 クラス扱いです。
   </p>
   <div class="notice info small" style="margin-bottom:1rem">
     マイマシンでの走行です。<strong>前日までに走行枠のご予約</strong>をされてご来場ください。<br />
