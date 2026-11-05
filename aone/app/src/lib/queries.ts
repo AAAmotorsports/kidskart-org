@@ -180,6 +180,11 @@ export interface Category {
   admin_only: boolean;
   /** 管理カレンダーでの表示色 */
   color: string;
+  /**
+   * クラス数を数えるときにまとめる先のカテゴリー code。null = 単独で 1 クラス。
+   * 例) GR カートは 'kart' … カートと合わせて 1 クラスとして数える (0035)
+   */
+  class_group: string | null;
 }
 
 export async function categories(env: Env): Promise<Category[]> {

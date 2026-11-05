@@ -1,7 +1,7 @@
 ---
 import Base from '@layouts/Base.astro';
 import { envFrom } from '@lib/supabase';
-import { monthState, rentalBookings, openEvents, type MonthDay } from '@lib/queries';
+import { monthState, rentalBookings, openEvents, categories, type MonthDay } from '@lib/queries';
 import {
   todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS, monthOptions,
   rentalMark, sessionTag, blockSessionTag,
@@ -13,6 +13,12 @@ export const prerender = false;
 // 管理カレンダーに登録された予定から自動生成する — 別途ページを手で書かない。
 const env = envFrom(Astro.locals);
 const today = todayJst();
+const cats = await categories(env);
+// 「ご予約について」の案内はカテゴリーの設定から組み立てる (手で書くと古くなる)
+const walkInNames = cats.filter((c) => !c.admin_only && !c.requires_reservation)
+  .map((c) => c.name).join('・');
+const needBookingNames = cats.filter((c) => !c.admin_only && c.requires_reservation)
+  .map((c) => c.name).join('・');
 const ymParam = Astro.url.searchParams.get('ym') ?? today.slice(0, 7);
 const [y, m] = ymParam.split('-').map(Number);
 const year = Number.isFinite(y) ? y : Number(today.slice(0, 4));
@@ -334,8 +340,8 @@ function sessionOpen(cats: { status: string; requires_reservation: boolean; runn
         </ul>
         <h2 style="margin-top:1rem">ご予約について</h2>
         <ul class="small">
-          <li>カート・ミニバイクは、ご予約なしでもお越しいただけます (○ の日)</li>
-          <li>その他 (大型バイク等) は<strong>事前のご予約が必要</strong>です</li>
+          {walkInNames && <li>{walkInNames}は、ご予約なしでもお越しいただけます (○ の日)</li>}
+          {needBookingNames && <li>{needBookingNames}は<strong>事前のご予約が必要</strong>です</li>}
           <li>
             <strong>小学生以下のお子様</strong>は
             <a href="https://kidskart.org/" target="_blank" rel="noopener">

@@ -162,10 +162,13 @@ const TIME = [
           「走れます」（予約なしの飛び込みOK）と常時表示されます。<br />
           <strong>管理のみ</strong>: ✔があると顧客向けの予約フォームに出しません
           （電話で相談を受けてスタッフが代理入力する運用）。管理画面の代理入力には出ます。<br />
-          <strong>色</strong>: 管理カレンダーでの色分けに使います。
+          <strong>色</strong>: 管理カレンダーでの色分けに使います。<br />
+          <strong>枠</strong>: 一緒に走るカテゴリーは同じ枠にまとめられます。同じ枠のものは
+          何件入っても <strong>合わせて 1 クラス</strong>です（例: GR カートはカートと同じ枠）。
+          「単独」にすると、そのカテゴリーだけで 1 クラスを使います。
         </p>
         <table>
-          <thead><tr><th>カテゴリー</th><th>色</th><th>要予約</th><th>管理のみ</th><th>受付する</th></tr></thead>
+          <thead><tr><th>カテゴリー</th><th>色</th><th>枠</th><th>要予約</th><th>管理のみ</th><th>受付する</th></tr></thead>
           <tbody>
             {cats.map((c) => (
               <tr>
@@ -173,6 +176,18 @@ const TIME = [
                 <td>
                   <input type="color" class="cat-color" data-code={c.code} value={c.color}
                          style="width:3rem;height:1.8rem;padding:0" />
+                </td>
+                <td>
+                  {/* まとめ先に選べるのは「単独」のカテゴリーだけ。
+                      A → B → C と数珠つなぎにすると数え方が追えなくなる */}
+                  <select class="cat-group" data-code={c.code}>
+                    <option value="" selected={!c.class_group}>単独</option>
+                    {cats.filter((x) => x.code !== c.code && !x.class_group).map((x) => (
+                      <option value={x.code} selected={c.class_group === x.code}>
+                        {x.short_name || x.name}と同じ
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td>
                   <input type="checkbox" class="cat-req" data-code={c.code} checked={c.requires_reservation} />
@@ -218,6 +233,10 @@ const TIME = [
       document.querySelectorAll('.cat-admin').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
         byCode[el.dataset.code].admin_only = el.checked;
+      });
+      document.querySelectorAll('.cat-group').forEach((el) => {
+        byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
+        byCode[el.dataset.code].class_group = el.value;
       });
       document.querySelectorAll('.cat-active').forEach((el) => {
         byCode[el.dataset.code] = byCode[el.dataset.code] || { code: el.dataset.code };
