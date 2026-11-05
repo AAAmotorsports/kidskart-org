@@ -4,7 +4,7 @@ import { envFrom } from '@lib/supabase';
 import { monthState, rentalBookings, openEvents, categories, type MonthDay } from '@lib/queries';
 import {
   todayJst, BUSINESS_LABELS, SURFACE_LABELS, blockLabel, BLOCK_KIND_LABELS, monthOptions,
-  rentalMark, sessionTag, blockSessionTag,
+  rentalMark, sessionTag, blockSessionTag, foldCategories,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -15,9 +15,11 @@ const env = envFrom(Astro.locals);
 const today = todayJst();
 const cats = await categories(env);
 // 「ご予約について」の案内はカテゴリーの設定から組み立てる (手で書くと古くなる)
-const walkInNames = cats.filter((c) => !c.admin_only && !c.requires_reservation)
+// ★ 同じ枠にまとめてあるもの (GR カート) は公開面に出さない (2026-11 オーナー指示)
+const publicCats = cats.filter((c) => !c.admin_only && !c.class_group);
+const walkInNames = publicCats.filter((c) => !c.requires_reservation)
   .map((c) => c.name).join('・');
-const needBookingNames = cats.filter((c) => !c.admin_only && c.requires_reservation)
+const needBookingNames = publicCats.filter((c) => c.requires_reservation)
   .map((c) => c.name).join('・');
 const ymParam = Astro.url.searchParams.get('ym') ?? today.slice(0, 7);
 const [y, m] = ymParam.split('-').map(Number);
@@ -95,8 +97,12 @@ const isOpen = (v: string) => v === 'true';
 // その時間帯に **予約が入っている** クラス。
 // 旧スケジュール表と同じ考え方: 毎日「カート・ミニバイク」と並べても情報量が無い。
 // 実際に走るクラスが入っている日だけそれを出し、空いている日は予約を促す。
-function bookedClasses(cats: { short_name: string; running: boolean }[]): string[] {
-  return (cats ?? []).filter((c) => c.running).map((c) => c.short_name);
+// ★ 同じ枠のもの (GR カート) は代表 (カート) に畳む。GR カートだけ予約が
+//   入っている日も「カート」と出す (2026-11 オーナー指示)
+function bookedClasses(
+  cats: { code: string; class_group?: string | null; short_name: string; running: boolean }[],
+): string[] {
+  return foldCategories(cats ?? []).filter((c) => c.running).map((c) => c.short_name);
 }
 
 /**

@@ -1406,12 +1406,18 @@ begin
     assert (r->>'status') = 'confirmed',
       '32-7 上限到達後に同じ枠の GR カートが弾かれた: ' || r::text;
 
-    -- 32-8 画面にも GR カートが出る (受付可)
-    assert (t_cat(st, 'am', 'grkart')->>'status') = 'open', '32-8 GR カートが open でない';
-    assert (t_cat(st, 'am', 'other')->>'status') = 'closed', '32-8 その他が closed でない';
+    -- 32-8 day_state に class_group が入っている (公開面で畳むのに要る。0036)
+    assert (t_cat(st, 'am', 'grkart')->>'class_group') = 'kart',
+      '32-8 day_state に class_group が出ていない';
+    assert (t_cat(st, 'am', 'kart')->'class_group') = 'null'::jsonb,
+      '32-8 単独カテゴリーの class_group が null でない';
+
+    -- 32-9 画面にも GR カートが出る (受付可)
+    assert (t_cat(st, 'am', 'grkart')->>'status') = 'open', '32-9 GR カートが open でない';
+    assert (t_cat(st, 'am', 'other')->>'status') = 'closed', '32-9 その他が closed でない';
     -- 飛び込みで走れる扱い (カートと同じ)
     assert (t_cat(st, 'am', 'grkart')->>'walk_in_ok')::boolean,
-      '32-8 GR カートが飛び込み可になっていない';
+      '32-9 GR カートが飛び込み可になっていない';
   end;
 
   raise notice 'ALL TESTS PASSED';

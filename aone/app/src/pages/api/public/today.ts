@@ -3,7 +3,7 @@ import { envFrom, json } from '@lib/supabase';
 import { dayState, settings } from '@lib/queries';
 import {
   todayJst, jaDate, STATUS_MARK, BUSINESS_LABELS, SURFACE_LABELS, categoryText,
-  BLOCK_KIND_LABELS, blockLabel, dayFocus, openBadge, openNote,
+  BLOCK_KIND_LABELS, blockLabel, dayFocus, openBadge, openNote, foldCategories,
 } from '@lib/domain';
 
 export const prerender = false;
@@ -65,7 +65,9 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       accepting: s.accepting,
       // カート・ミニバイクは常に表示。キッズ・その他は事前予約制なので、
       // 予約が入っている日だけ出す (index.astro と同じルール)。
-      categories: s.categories
+      // ★ 同じ枠のもの (GR カート) は代表 (カート) に畳んでから出す。
+      //   ホームページには載せない (2026-11 オーナー指示)
+      categories: foldCategories(s.categories)
         .filter((c) => !c.requires_reservation || c.running)
         .map((c) => ({
         code: c.code,
@@ -80,7 +82,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
       })),
       // 予約が入っていないため非表示にしたカテゴリー (WordPress 側で
       // 「キッズは要予約です」と案内したいとき用)
-      hidden_categories: s.categories
+      hidden_categories: foldCategories(s.categories)
         .filter((c) => c.requires_reservation && !c.running)
         .map((c) => ({ code: c.code, name: c.name, short_name: c.short_name })),
     };
