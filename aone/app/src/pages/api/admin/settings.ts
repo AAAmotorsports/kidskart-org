@@ -77,6 +77,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // カテゴリーごとの「予約が必要か」「受付するか」も同じ画面から更新する。
   // カート・ミニバイクは飛び込み可、キッズ・その他は要予約、が既定。
   if (Array.isArray(body?.categories)) {
+    // クラス枠のまとめ先を確かめるために、今の並びを 1 度だけ読む
+    const { data: allCats } = await supabase.from('aone_categories').select('code,class_group');
+    const groupOf = new Map<string, string | null>(
+      (allCats ?? []).map((x: any) => [String(x.code), x.class_group ?? null]),
+    );
     for (const c of body.categories) {
       const code = str(c?.code);
       if (!code) continue;
@@ -86,6 +91,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
       const color = str(c?.color);
       if (color && /^#[0-9a-fA-F]{6}$/.test(color)) cpatch.color = color;
       if (typeof c?.is_active === 'boolean') cpatch.is_active = c.is_active;
+      // クラス枠のまとめ先。同じ枠のものは合わせて 1 クラスとして数える (0035)。
+      // ★ 1 段しかたどらないので、数珠つなぎになる組み合わせは受け付けない
+      if (c && Object.prototype.hasOwnProperty.call(c, 'class_group')) {
+        const group = str(c.class_group);
+        if (!group) {
+          cpatch.class_group = null;
+        } else if (group === code || !groupOf.has(group) || groupOf.get(group)) {
+          return json({ error: `${code}: クラス枠のまとめ先に指定できないカテゴリーです` }, 400);
+        } else if ([...groupOf.entries()].some(([k, v]) => k !== code && v === code)) {
+          // 自分をまとめ先にしているカテゴリーがある間は、自分を他へまとめられない
+          return json({ error: `${code}: 他のカテゴリーのまとめ先になっています` }, 400);
+        } else {
+          cpatch.class_group = group;
+        }
+      }
       if (Object.keys(cpatch).length === 0) continue;
       const { error: cerr } = await supabase.from('aone_categories').update(cpatch).eq('code', code);
       if (cerr) return mapRpcError(cerr);

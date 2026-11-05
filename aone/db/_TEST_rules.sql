@@ -22,6 +22,15 @@ select
   (select d from generate_series(aone_today() + 6, aone_today() + 20, interval '1 day') g(d)
     where extract(dow from d) between 1 and 5 and not aone_is_holiday(d::date) limit 1)::date as weekday2;
 
+-- カテゴリーの状態は **コードで引く**。並び順の番号で引くと、
+-- カテゴリーが 1 つ増えただけで無関係なテストが落ちる
+-- (2026-11、GR カートを足したときに 1-6 が落ちた)
+create or replace function t_cat(st jsonb, p_sess text, p_code text) returns jsonb
+language sql immutable as $$
+  select c from jsonb_array_elements(st->'sport'->p_sess->'categories') c
+  where c->>'code' = p_code;
+$$;
+
 create or replace function t_book(p jsonb) returns jsonb language sql volatile as $$
   select aone_create_reservation(
     p || jsonb_build_object('contact', jsonb_build_object(
@@ -85,8 +94,8 @@ begin
 
   -- 「今日走れる？」表示: 午前のキッズは closed、カートは open (既存クラス)
   st := aone_day_state(d_weekday);
-  assert (st->'sport'->'am'->'categories'->2->>'status') = 'closed', '1-6 キッズが closed でない';
-  assert (st->'sport'->'am'->'categories'->0->>'status') = 'open',   '1-6 カートが open でない';
+  assert (t_cat(st, 'am', 'kidskart')->>'status') = 'closed', '1-6 キッズが closed でない';
+  assert (t_cat(st, 'am', 'kart')->>'status') = 'open',   '1-6 カートが open でない';
   assert (st->'sport'->'am'->>'used_classes') = '2', '1-6 used_classes が 2 でない';
 
   -- =========================================================================
@@ -198,7 +207,7 @@ begin
   r := aone_check_availability('sport', aone_today() + 10, 'kart', 'pm');
   assert (r->>'ok')::boolean, '6-2 午後まで止まっている';
   st := aone_day_state(aone_today() + 10);
-  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '6-3 午前が off 表示にならない';
+  assert (t_cat(st, 'am', 'kart')->>'status') = 'off', '6-3 午前が off 表示にならない';
 
   -- カテゴリー指定ブロック
   insert into aone_blocks (date, kind, title, scope, category_code)
@@ -226,7 +235,7 @@ begin
   assert (r->>'reason') = 'weather_cancelled', '7-1 走行中止が効いていない';
   st := aone_day_state(d_sunday);
   assert (st->'business'->>'status') = 'cancelled', '7-2 day_state に営業状況が出ない';
-  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '7-3 中止日が off 表示にならない';
+  assert (t_cat(st, 'am', 'kart')->>'status') = 'off', '7-3 中止日が off 表示にならない';
 
   -- =========================================================================
   raise notice '--- 8. 変更: 自分自身を除外して再判定';
@@ -581,7 +590,7 @@ begin
   assert (r->>'reason') = 'business_closed', '19-4 休業日が受け付けられてしまう';
   st := aone_day_state(aone_today() + 40);
   assert (st->'business'->>'status') = 'closed', '19-5 day_state が休業にならない';
-  assert (st->'sport'->'am'->'categories'->0->>'status') = 'off', '19-6 休業日が off 表示にならない';
+  assert (t_cat(st, 'am', 'kart')->>'status') = 'off', '19-6 休業日が off 表示にならない';
 
   -- 路面状況は受付可否に一切影響しない (ヘビーウェットでも予約は取れる)
   update aone_business_days set business_status = 'open', surface_status = 'heavy_wet'
@@ -1339,6 +1348,70 @@ begin
     f_book := coalesce((select (x->>'count')::int from jsonb_array_elements(v_eff->'booked') x
                          where x->>'referrer' = 'followup'), 0);
     assert f_book = v_book0, '31-9 キャンセルした予約を成果に数えている: ' || (f_book - v_book0);
+  end;
+
+  -- =========================================================================
+  raise notice '--- 32. GR カートはカートと同じクラス枠 (2026-11)';
+  -- =========================================================================
+  declare
+    d_gr date := aone_today() + 150;
+  begin
+    -- 32-1 お客様が選べる (予約フォームに出す = admin_only が false)
+    assert exists (select 1 from aone_categories
+                   where code = 'grkart' and is_active and not admin_only),
+      '32-1 GR カートがお客様向けに出ない';
+    -- 32-2 カートと同じく予約不要 (飛び込み可)
+    assert (select not requires_reservation from aone_categories where code = 'grkart'),
+      '32-2 GR カートが要予約になっている';
+    -- 32-3 枠はカートと同じ
+    assert aone_class_group('grkart') = aone_class_group('kart'),
+      '32-3 GR カートの枠がカートと違う';
+    -- 枠を持たないカテゴリーは自分自身が枠
+    assert aone_class_group('minibike') = 'minibike', '32-3 単独カテゴリーの枠がおかしい';
+    assert aone_class_group('存在しない') = '存在しない', '32-3 知らない code で落ちる';
+
+    -- 32-4 カートが入っている枠に GR カートを足せる (1 クラスのまま)
+    r := t_book(jsonb_build_object('kind','sport','date',d_gr,'session','am',
+                                   'category_code','kart','party_size',1,'who','カートGR1'));
+    assert (r->>'status') = 'confirmed', '32-4 カートが確定しない: ' || r::text;
+    r := t_book(jsonb_build_object('kind','sport','date',d_gr,'session','am',
+                                   'category_code','grkart','party_size',1,'who','GR1'));
+    assert (r->>'status') = 'confirmed', '32-4 GR カートが弾かれた: ' || r::text;
+    assert (r->'check'->>'reason') = 'existing_class',
+      '32-4 GR カートが別クラス扱いになっている: ' || (r->'check'->>'reason');
+
+    st := aone_day_state(d_gr);
+    assert (st->'sport'->'am'->>'used_classes') = '1',
+      '32-5 カート + GR カートで 1 クラスになっていない: ' || (st->'sport'->'am'->>'used_classes');
+
+    -- 32-6 枠が 1 つ残っているので、別カテゴリーはまだ入る
+    r := t_book(jsonb_build_object('kind','sport','date',d_gr,'session','am',
+                                   'category_code','minibike','party_size',1,'who','バイクGR'));
+    assert (r->>'status') = 'confirmed', '32-6 2 クラス目が弾かれた';
+    st := aone_day_state(d_gr);
+    assert (st->'sport'->'am'->>'used_classes') = '2',
+      '32-6 used_classes が 2 でない: ' || (st->'sport'->'am'->>'used_classes');
+
+    -- 32-7 上限に達したら、GR カートだけは「同じ枠」なのでまだ受けられる
+    begin
+      r := t_book(jsonb_build_object('kind','sport','date',d_gr,'session','am',
+                                     'category_code','other','party_size',1,'who','その他GR'));
+      assert false, '32-7 3 クラス目が受け付けられてしまった';
+    exception when sqlstate 'AONE1' then
+      get stacked diagnostics msg = pg_exception_hint;
+      assert msg = 'class_full', '32-7 hint が class_full でない: ' || msg;
+    end;
+    r := t_book(jsonb_build_object('kind','sport','date',d_gr,'session','am',
+                                   'category_code','grkart','party_size',1,'who','GR2'));
+    assert (r->>'status') = 'confirmed',
+      '32-7 上限到達後に同じ枠の GR カートが弾かれた: ' || r::text;
+
+    -- 32-8 画面にも GR カートが出る (受付可)
+    assert (t_cat(st, 'am', 'grkart')->>'status') = 'open', '32-8 GR カートが open でない';
+    assert (t_cat(st, 'am', 'other')->>'status') = 'closed', '32-8 その他が closed でない';
+    -- 飛び込みで走れる扱い (カートと同じ)
+    assert (t_cat(st, 'am', 'grkart')->>'walk_in_ok')::boolean,
+      '32-8 GR カートが飛び込み可になっていない';
   end;
 
   raise notice 'ALL TESTS PASSED';
