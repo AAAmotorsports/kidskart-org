@@ -20,7 +20,7 @@
   // D1 (SQLite)。作成: npx wrangler d1 create aone-photo → database_id を下に貼る
   //   マイグレーション: npx wrangler d1 migrations apply aone-photo --remote
   "d1_databases": [
-    { "binding": "DB", "database_name": "aone-photo", "database_id": "REPLACE_WITH_D1_ID",
+    { "binding": "DB", "database_name": "aone-photo", "database_id": "61810609-b0e7-4d7e-943f-22157d33c4ee",
       "migrations_dir": "migrations" }
   ],
 
