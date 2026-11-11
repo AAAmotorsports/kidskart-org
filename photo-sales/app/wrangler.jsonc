@@ -1,0 +1,42 @@
+/**
+ * A-ONE 走行写真販売 — Cloudflare Workers 設定
+ *
+ * ★ aone (予約システム) とは別の Worker / 別の Supabase / 別の R2。
+ *   aone/app/wrangler.jsonc の値を**コピーしない** (Supabase URL が違う)。
+ * ★ `vars` は常に全キー入りで維持する (空にすると deploy 時に Dashboard の
+ *   非機密変数が全削除される。aone/CLAUDE.md の事故再発防止と同じ)。
+ * ★ 秘密値 (SERVICE_ROLE_KEY / STRIPE_* / R2 の鍵) は Dashboard の
+ *   「シークレット」型。リポジトリは公開なので vars に置かない。
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aone-photo",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+
+  // R2 バケット (Cloudflare Dashboard で作成してから有効化する)
+  //   aone-photo-originals : 非公開。元画像。Worker 経由でのみ読む
+  //   aone-photo-previews  : 透かし入りプレビュー・サムネ
+  "r2_buckets": [
+    { "binding": "ORIGINALS", "bucket_name": "aone-photo-originals" },
+    { "binding": "PREVIEWS",  "bucket_name": "aone-photo-previews" }
+  ],
+
+  "vars": {
+    // Supabase (写真販売用に新規作成したプロジェクトの値に差し替える)
+    "PUBLIC_SUPABASE_URL": "",
+    "PUBLIC_SUPABASE_ANON_KEY": "",
+    "PUBLIC_SITE_NAME": "A-ONE CIRCUIT フォト",
+    // 当面は仮ドメイン (workers.dev)。本番ドメインは後から設定する
+    "PUBLIC_BASE_URL": "",
+    "STRIPE_MODE": "test"
+  }
+  // Secrets:
+  //   SUPABASE_SERVICE_ROLE_KEY
+  //   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET   (M4 以降。まずテストモード)
+  //   RESEND_API_KEY                              (購入確認・期限案内メール)
+  //   CRON_SECRET
+}

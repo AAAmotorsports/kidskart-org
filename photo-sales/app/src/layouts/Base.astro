@@ -1,0 +1,24 @@
+---
+// 黒・白・赤。写真を主役にするため背景は黒。
+interface Props { title?: string; noindex?: boolean }
+const { title = 'A-ONE CIRCUIT フォト', noindex = true } = Astro.props;
+---
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <title>{title}</title>
+    <style is:global>
+      :root { --bg:#0b0b0c; --fg:#fff; --muted:#9a9a9f; --red:#d71920; --line:#26262a; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--fg);
+             font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+      a { color: inherit; }
+      .btn { display:inline-block; background:var(--red); color:#fff; border:0; border-radius:8px;
+             padding:14px 20px; font-size:17px; font-weight:700; text-decoration:none; }
+    </style>
+  </head>
+  <body><slot /></body>
+</html>
