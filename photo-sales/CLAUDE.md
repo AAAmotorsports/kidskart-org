@@ -45,3 +45,5 @@ npm run typecheck && npm run build
 * お客様・TV の画像は Worker 経由で、都度 `online_ok` / `tv_ok` と団体の一致を確認する (`src/lib/public.ts`)
 * TV は Service Worker (`public/tv-sw.js`) で画像を端末にキャッシュ。通信断でも直近の写真で継続表示
 * 開発時のログインリンク: `wrangler dev` のログ (RESEND_API_KEY 未設定時はメールをコンソールに出す)
+* HEIC: `accept` に heic/heif を含め、そのまま選べる。Safari は端末の標準デコーダ、非対応のブラウザは libheif-js (WASM, LGPL-3.0) を**必要なときだけ遅延読み込み**。EXIF は JPEG と HEIC (ISO-BMFF) の両方から撮影時刻を取る (`src/scripts/imaging.ts`)
+* 大量アップロード: 変換は 1 枚ずつ (iPhone のメモリ対策)・送信は 3 並列・オフライン中は待機・送信済みは localStorage で記録 (`src/scripts/uploader.ts`)。並列変換に戻さない

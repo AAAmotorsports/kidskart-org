@@ -16,6 +16,8 @@ const others = (await db.prepare(
   .bind(id).all<any>()).results;
 const customerUrl = `${baseUrl(getEnv(Astro.locals), Astro.request)}/g/${g.qr_token}`;
 const isAdmin = Astro.locals.staff?.role === 'admin';
+// iPhone の HEIC はそのまま選べる (端末で JPEG に変換)。?accept=jpeg で「iOS に JPEG へ変換させる」方式に切り替えて比較できる
+const accept = Astro.url.searchParams.get('accept') === 'jpeg' ? 'image/jpeg,image/png' : 'image/jpeg,image/png,image/heic,image/heif,.heic,.heif';
 const err = Astro.url.searchParams.get('err');
 const saved = Astro.url.searchParams.get('saved');
 const label = g.status === 'published' ? ['公開中', 'ok'] : !g.online_ok ? ['非公開 (同意なし)', 'ng'] : g.status === 'hidden' ? ['非公開', 'warn'] : ['準備中 (未公開)', 'warn'];
@@ -60,9 +62,10 @@ const label = g.status === 'published' ? ['公開中', 'ok'] : !g.online_ok ? ['
     <b>写真をアップロード</b>
     <p class="muted">iPhone の写真ライブラリから複数枚をまとめて選べます。完了まで画面を開いたままにしてください。</p>
     <label class="btn" style="display:block;text-align:center">写真を選ぶ
-      <input id="pick" type="file" multiple accept="image/jpeg,image/png" style="display:none" />
+      <input id="pick" type="file" multiple accept={accept} style="display:none" />
     </label>
     <div class="progress"><div id="bar"></div></div>
+    <div id="net" class="warnbox" hidden></div>
     <div id="summary" class="muted"></div>
     <div id="failed-list"></div>
     <button id="retry" class="btn sec" style="width:100%;margin-top:8px" hidden>失敗した枚数だけ再送</button>

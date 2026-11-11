@@ -106,3 +106,13 @@ test('画像処理の部品: CRC32 / 縮小 / EXIF 撮影時刻 (JST→UTC)', ()
   assert.equal(exifTakenAt(ab), '2026-11-11T05:31:05.000Z');
   assert.equal(exifTakenAt(new ArrayBuffer(10)), null);
 });
+
+test('HEIC: 判定と EXIF 撮影時刻 (iPhone の HEIC を想定)', async () => {
+  const { isHeic } = await import('../src/scripts/imaging.ts');
+  const load = (f: string) => { const b = readFileSync(new URL(`./fixtures/${f}`, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer; };
+  const heic = load('exif.heic'), jpg = load('exif.jpg');
+  assert.ok(isHeic(heic)); assert.ok(!isHeic(jpg));
+  assert.ok(isHeic(new ArrayBuffer(4), { name: 'IMG_0001.HEIC' }));
+  assert.equal(exifTakenAt(heic), '2026-11-11T05:31:05.000Z');
+  assert.equal(exifTakenAt(load('noexif.heic')), null);                                   // EXIF 無しでも落ちない
+});

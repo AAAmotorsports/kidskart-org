@@ -42,13 +42,13 @@
     // 当面は仮ドメイン (workers.dev)。本番ドメインは後から設定する
     "PUBLIC_BASE_URL": "",
     "STRIPE_MODE": "test",
-    // ログインメールの送信元 (Resend でドメイン認証済みのアドレス)
-    "MAIL_FROM_ADDRESS": "",
+    // ★ MAIL_FROM_ADDRESS はここに書かない (Dashboard の「シークレット」型で設定する。
+    //   vars に書くと空のままデプロイのたびに Dashboard の値を上書きしてしまう)
     "MAIL_FROM_NAME": "A-ONE CIRCUIT フォト"
   }
   // Secrets:
   //   CF_API_TOKEN (D1 エクスポート用・D1 読み取りのみ) / CF_ACCOUNT_ID
   //   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET   (M4 以降。まずテストモード)
-  //   RESEND_API_KEY                              (ログイン・購入確認・期限案内メール)
+  //   RESEND_API_KEY / MAIL_FROM_ADDRESS          (ログイン・購入確認・期限案内メール)
   //   CRON_SECRET
 }
