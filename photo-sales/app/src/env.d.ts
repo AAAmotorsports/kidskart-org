@@ -13,13 +13,17 @@ interface Env {
   STRIPE_WEBHOOK_SECRET?: string;
   RESEND_API_KEY?: string;
   CRON_SECRET?: string;
+  MAIL_FROM_ADDRESS?: string;
+  MAIL_FROM_NAME?: string;
   ORIGINALS: R2Bucket;
   PREVIEWS: R2Bucket;
   BACKUPS: R2Bucket;
 }
 
 declare namespace App {
-  interface Locals extends Runtime {}
+  interface Locals extends Runtime {
+    staff?: import('./lib/auth.ts').Staff;
+  }
 }
 
 interface ImportMetaEnv extends Env {}

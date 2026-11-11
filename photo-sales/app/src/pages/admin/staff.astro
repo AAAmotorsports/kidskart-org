@@ -1,0 +1,30 @@
+---
+import AdminLayout from '@layouts/AdminLayout.astro';
+import { getDb } from '@lib/env.ts';
+export const prerender = false;
+if (Astro.locals.staff?.role !== 'admin') return new Response('forbidden', { status: 403 });
+const rows = (await getDb(Astro.locals).prepare('SELECT id, email, name, role, active FROM staff_users ORDER BY created_at').all<any>()).results;
+const err = Astro.url.searchParams.get('err');
+---
+<AdminLayout title="スタッフ">
+  <h1>スタッフ</h1>
+  {err && <div class="warnbox">{err}</div>}
+  {rows.map((s) => (
+    <div class="card"><div class="row"><b>{s.name}</b><span class="badge">{s.role === 'admin' ? '管理者' : 'スタッフ'}</span>
+      {!s.active && <span class="badge ng">無効</span>}</div>
+      <div class="muted">{s.email}</div>
+      {s.id !== Astro.locals.staff!.id && (
+        <form method="post" action="/api/admin/staff" class="row" style="margin-top:8px">
+          <input type="hidden" name="id" value={s.id} />
+          <button class="btn sec" name="action" value={s.active ? 'disable' : 'enable'} style="padding:10px 12px;font-size:15px">{s.active ? '無効にする' : '有効にする'}</button>
+        </form>)}
+    </div>))}
+  <form method="post" action="/api/admin/staff" class="card">
+    <input type="hidden" name="action" value="add" /><b>スタッフを追加</b>
+    <label class="f" for="name">名前</label><input id="name" name="name" type="text" required maxlength="40" />
+    <label class="f" for="email">メールアドレス (ログインリンクの送り先)</label><input id="email" name="email" type="email" required />
+    <label class="f" for="role">権限</label>
+    <select id="role" name="role"><option value="staff">スタッフ (撮影・アップロード・団体登録)</option><option value="admin">管理者 (設定・削除・スタッフ管理)</option></select>
+    <button class="btn" style="width:100%;margin-top:14px">追加</button>
+  </form>
+</AdminLayout>

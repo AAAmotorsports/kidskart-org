@@ -33,6 +33,15 @@
 
 ## テスト
 ```
-cd app && npm test        # node:sqlite 上で同じ SQL と TypeScript ロジックを検証 (11 項目)
+cd app && npm test        # node:sqlite 上で同じ SQL と TypeScript ロジックを検証 (20 項目)
 npm run typecheck && npm run build
 ```
+
+## 実装メモ (M1〜M3)
+* スタッフ認証: メールリンク → `/admin/verify` (確認ボタン) → POST でセッション。`src/lib/auth.ts`。パスワード・PBKDF2 は使わない
+* **referrer-policy は `same-origin`。`no-referrer` にしない** (Chromium 系は同一サイトの POST でも Origin: null を送り、CSRF 検査が壊れる)
+* アップロード: ブラウザで原本(EXIF除去)/プレビュー/サムネ/CRC32/SHA-256 を作り、1 枚 = 1 リクエスト (3 画像を連結) で `/api/admin/groups/:id/photos` へ。何度送っても安全 (sha256 で重複無視)
+* R2 のキーは `ph/{photoId}/{original|preview|thumb}.jpg` (団体に依存しない → 写真の移動は DB 更新だけ)
+* お客様・TV の画像は Worker 経由で、都度 `online_ok` / `tv_ok` と団体の一致を確認する (`src/lib/public.ts`)
+* TV は Service Worker (`public/tv-sw.js`) で画像を端末にキャッシュ。通信断でも直近の写真で継続表示
+* 開発時のログインリンク: `wrangler dev` のログ (RESEND_API_KEY 未設定時はメールをコンソールに出す)

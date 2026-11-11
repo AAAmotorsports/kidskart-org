@@ -1,0 +1,35 @@
+---
+import Base from '@layouts/Base.astro';
+import { baseUrl, getDb, getEnv } from '@lib/env.ts';
+export const prerender = false;
+// QR の画面提示・印刷用 (紙に出してお客様に渡す)
+const g = await getDb(Astro.locals).prepare(`SELECT name, start_time, shoot_date, qr_token FROM groups WHERE id = ? AND status <> 'deleted'`)
+  .bind(Astro.params.id!).first<any>();
+if (!g) return new Response('not found', { status: 404 });
+const url = `${baseUrl(getEnv(Astro.locals), Astro.request)}/g/${g.qr_token}`;
+---
+<Base title="QR">
+  <style is:global>
+    body { background:#fff; color:#000; }
+    .sheet { max-width:520px; margin:0 auto; padding:24px; text-align:center; }
+    .sheet h1 { color:#d71920; letter-spacing:.1em; margin:0 0 4px; }
+    #qr svg { width:100%; max-width:420px; height:auto; }
+    .note { font-size:13px; color:#333; text-align:left; border-top:1px solid #ccc; margin-top:16px; padding-top:10px; }
+    @media print { .noprint { display:none; } }
+  </style>
+  <div class="sheet">
+    <h1>A-ONE CIRCUIT</h1>
+    <p style="margin:0 0 4px">走行写真はこちらからご覧・ご購入いただけます</p>
+    <p style="margin:0 0 12px"><b>{g.shoot_date.replaceAll('-', '/')} {g.start_time ?? ''} {g.name ?? ''}</b></p>
+    <div id="qr" data-url={url}></div>
+    <p style="font-size:13px">スマートフォンのカメラで読み取ってください</p>
+    <div class="note">※ この QR コードをお持ちの方は、この団体の写真を閲覧できます。SNS 等で公開しないでください。<br />※ 写真の公開は撮影日から30日間です。</div>
+    <p class="noprint"><button class="btn" onclick="window.print()">印刷する</button></p>
+  </div>
+  <script>
+    import qrcode from 'qrcode-generator';
+    const el = document.getElementById('qr')!;
+    const q = qrcode(0, 'M'); q.addData(el.dataset.url!); q.make();
+    el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  </script>
+</Base>

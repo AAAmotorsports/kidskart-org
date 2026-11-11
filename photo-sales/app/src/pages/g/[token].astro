@@ -1,0 +1,109 @@
+---
+import Base from '@layouts/Base.astro';
+export const prerender = false;
+const token = Astro.params.token!;
+---
+<Base title="A-ONE CIRCUIT 走行写真">
+  <style is:global>
+    .top { padding:14px 16px 10px; border-bottom:1px solid var(--line); }
+    .top .logo { color:var(--red); font-weight:800; letter-spacing:.1em; font-size:18px; }
+    .top .sub { color:var(--muted); font-size:14px; margin-top:2px; }
+    #wrap { padding:6px 6px 120px; }
+    #grid { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+    #grid .c { position:relative; aspect-ratio:4/3; background:#1a1a1d; border-radius:6px; overflow:hidden; }
+    #grid img { width:100%; height:100%; object-fit:cover; display:block; }
+    #grid .c .h { position:absolute; right:6px; bottom:6px; width:34px; height:34px; border-radius:99px; background:#000a;
+                  text-align:center; line-height:34px; font-size:19px; border:0; color:#fff; }
+    #grid .c.on .h { background:var(--red); }
+    #grid .c.on { outline:3px solid var(--red); outline-offset:-3px; }
+    .msg { text-align:center; padding:60px 20px; color:var(--muted); }
+    #bar { position:fixed; left:0; right:0; bottom:0; background:#101012; border-top:1px solid var(--line);
+           padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; align-items:center; gap:10px; }
+    #bar .sum { flex:1; } #bar .sum b { font-size:20px; } #bar .btn { padding:13px 16px; font-size:16px; }
+    #lb { position:fixed; inset:0; background:#000; z-index:10; display:none; flex-direction:column; }
+    #lb.show { display:flex; }
+    #lb .stage { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; touch-action:pan-y; }
+    #lb img { max-width:100%; max-height:100%; object-fit:contain; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    #lb .ctl { display:flex; gap:10px; padding:12px 14px calc(12px + env(safe-area-inset-bottom)); align-items:center; }
+    #lb .ctl button { flex:1; padding:14px; font-size:17px; border-radius:10px; border:0; background:#2a2a2e; color:#fff; font-weight:700; }
+    #lb .ctl button.sel { background:var(--red); }
+    .note { color:var(--muted); font-size:12px; padding:14px 10px; }
+  </style>
+  <div class="top"><div class="logo">A-ONE CIRCUIT</div><div class="sub" id="sub">走行写真</div></div>
+  <div id="wrap"><div class="msg" id="msg">読み込み中…</div><div id="grid"></div>
+    <p class="note" id="note" hidden>※ 写真には透かしが入っています (購入後に高画質版をダウンロードできます)。この QR コードをお持ちの方はこの団体の写真を閲覧できます。SNS 等に公開しないでください。写真の公開は撮影日から30日間です。</p></div>
+  <div id="bar" hidden><div class="sum"><div class="muted" id="cnt" style="color:var(--muted);font-size:13px"></div><b id="price"></b></div>
+    <button class="btn" id="buy" disabled>購入手続きは準備中</button></div>
+  <div id="lb"><div class="stage"><img id="lbimg" alt="" /></div>
+    <div class="ctl"><button id="prev">‹ 前</button><button id="pick">♡ 選ぶ</button><button id="next">次 ›</button><button id="close">閉じる</button></div></div>
+  <script define:vars={{ token }}>window.__token = token;</script>
+  <script>
+    import { calcPrice } from '../../lib/shop/pricing.ts';
+    const token: string = (window as any).__token;
+    const $ = (id: string) => document.getElementById(id)!;
+    const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+    let photos: string[] = [], prices = { single: 500, set3: 1000, pack: 2000 }, cur = -1;
+    const key = `sel:${token}`;
+    let sel = new Set<string>();
+    try { sel = new Set(JSON.parse(sessionStorage.getItem(key) ?? '[]')); } catch { /* */ }
+    const save = () => { try { sessionStorage.setItem(key, JSON.stringify([...sel])); } catch { /* */ } };
+
+    function bar() {
+      const n = [...sel].filter((id) => photos.includes(id)).length;
+      $('bar').hidden = n === 0;
+      if (!n) return;
+      const c = calcPrice(n, prices);
+      $('cnt').textContent = c.pack ? `${n}枚選択 → 全写真パックがお得 (全${photos.length}枚)` : `${n}枚選択中`;
+      $('price').textContent = yen(c.amount);
+    }
+    function paint() {
+      document.querySelectorAll<HTMLElement>('#grid .c').forEach((el) => el.classList.toggle('on', sel.has(el.dataset.id!)));
+      if (cur >= 0) $('pick').classList.toggle('sel', sel.has(photos[cur]));
+      $('pick').textContent = cur >= 0 && sel.has(photos[cur]) ? '♥ 選択中' : '♡ 選ぶ';
+      bar();
+    }
+    const toggle = (id: string) => { sel.has(id) ? sel.delete(id) : sel.add(id); save(); paint(); };
+    function openLb(i: number) {
+      cur = (i + photos.length) % photos.length;
+      ($('lbimg') as HTMLImageElement).src = `/g/${token}/img/${photos[cur]}/preview`;
+      $('lb').classList.add('show'); paint();
+      const nx = new Image(); nx.src = `/g/${token}/img/${photos[(cur + 1) % photos.length]}/preview`;
+    }
+    $('close').onclick = () => { $('lb').classList.remove('show'); cur = -1; };
+    $('prev').onclick = () => openLb(cur - 1);
+    $('next').onclick = () => openLb(cur + 1);
+    $('pick').onclick = () => toggle(photos[cur]);
+    let x0 = 0;
+    $('lb').addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    $('lb').addEventListener('touchend', (e) => { const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 60) openLb(cur + (dx < 0 ? 1 : -1)); });
+    $('grid').addEventListener('click', (e) => {
+      const t = e.target as HTMLElement, c = t.closest('.c') as HTMLElement | null;
+      if (!c) return;
+      if (t.closest('.h')) toggle(c.dataset.id!); else openLb(photos.indexOf(c.dataset.id!));
+    });
+
+    function render(d: any) {
+      const msg = $('msg'), grid = $('grid');
+      if (d.state === 'closed') { msg.hidden = false; msg.textContent = 'この写真は公開されていません。'; grid.innerHTML = ''; $('note').hidden = true; return; }
+      $('sub').textContent = `${(d.date ?? '').replaceAll('-', '/')} ${d.time ?? ''} ${d.title ?? ''}`.trim();
+      if (d.state === 'preparing' || !d.photos?.length) { msg.hidden = false; msg.textContent = '写真準備中です。しばらくお待ちください。(自動で更新されます)'; grid.innerHTML = ''; return; }
+      msg.hidden = true; $('note').hidden = false; prices = d.prices;
+      const next: string[] = d.photos;
+      const have = new Set(photos);
+      photos = next;
+      for (const id of [...sel]) if (!photos.includes(id)) sel.delete(id);
+      // 既にある写真は作り直さず、新しい写真だけ追加 (スクロール位置を保つ)
+      if (!grid.children.length || next.some((id) => !have.has(id))) {
+        grid.innerHTML = next.map((id) => `<div class="c" data-id="${id}"><img loading="lazy" decoding="async" src="/g/${token}/img/${id}/thumb" alt=""><button class="h" aria-label="選ぶ">♡</button></div>`).join('');
+      }
+      paint();
+    }
+    async function load() {
+      try { const r = await fetch(`/g/${token}/photos.json`, { cache: 'no-store' }); if (r.ok) render(await r.json()); }
+      catch { /* 通信できないときは今の表示のまま */ }
+    }
+    load();
+    setInterval(() => { if (!document.hidden && !$('lb').classList.contains('show')) load(); }, 15000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+  </script>
+</Base>

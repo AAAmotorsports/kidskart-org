@@ -1,0 +1,11 @@
+---
+import AdminLayout from '@layouts/AdminLayout.astro';
+import GroupForm from '@components/GroupForm.astro';
+export const prerender = false;
+const err = Astro.url.searchParams.get('err');
+---
+<AdminLayout title="団体登録">
+  <h1>新しい団体</h1>
+  {err && <div class="warnbox">{err}</div>}
+  <GroupForm action="/api/admin/groups" submitLabel="登録して QR を表示" />
+</AdminLayout>

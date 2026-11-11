@@ -1,0 +1,44 @@
+---
+import Base from './Base.astro';
+interface Props { title: string }
+const { title } = Astro.props;
+const staff = Astro.locals.staff;
+const path = Astro.url.pathname;
+const nav = [
+  ['/admin', 'ホーム'], ['/admin/groups/new', '団体登録'], ['/admin/tv', 'テレビ'],
+  ...(staff?.role === 'admin' ? [['/admin/staff', 'スタッフ']] : []),
+];
+---
+<Base title={`${title} | 管理`}>
+  <style is:global>
+    .adm { max-width: 760px; margin: 0 auto; padding: 12px 14px 80px; }
+    .adm header { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:10px 0 14px;
+                  border-bottom:1px solid var(--line); margin-bottom:16px; }
+    .adm header .logo { color:var(--red); font-weight:800; letter-spacing:.06em; margin-right:auto; }
+    .adm nav a { display:inline-block; padding:10px 12px; border-radius:8px; text-decoration:none;
+                 background:#1a1a1d; font-size:15px; }
+    .adm nav a.on { background:var(--red); }
+    .adm h1 { font-size:22px; margin:6px 0 14px; }
+    .card { background:#141416; border:1px solid var(--line); border-radius:12px; padding:14px; margin:12px 0; }
+    label.f { display:block; margin:12px 0 4px; color:var(--muted); font-size:14px; }
+    input[type=text],input[type=email],input[type=date],input[type=time],input[type=number],select,textarea {
+      width:100%; padding:13px; font-size:17px; border-radius:8px; border:1px solid #3a3a40; background:#0e0e10; color:#fff; }
+    .chk { display:flex; gap:10px; align-items:flex-start; padding:10px 0; font-size:16px; }
+    .chk input { width:22px; height:22px; flex:none; margin-top:2px; }
+    .btn.sec { background:#2a2a2e; } .btn.ghost { background:transparent; border:1px solid #4a4a50; }
+    .btn[disabled] { opacity:.4; }
+    .badge { display:inline-block; padding:3px 9px; border-radius:99px; font-size:13px; background:#2a2a2e; }
+    .badge.ok { background:#12512a; } .badge.warn { background:#6b4a00; } .badge.ng { background:#6b1217; }
+    .warnbox { background:#3a0d10; border:1px solid var(--red); border-radius:8px; padding:10px 12px; margin:10px 0; }
+    .muted { color:var(--muted); font-size:14px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  </style>
+  <div class="adm">
+    <header>
+      <span class="logo">A-ONE フォト</span>
+      <nav class="row">{nav.map(([href, label]) => <a href={href} class={path === href ? 'on' : ''}>{label}</a>)}</nav>
+      <form method="post" action="/api/auth/logout"><button class="btn sec" style="padding:10px 12px;font-size:15px">ログアウト</button></form>
+    </header>
+    <slot />
+  </div>
+</Base>

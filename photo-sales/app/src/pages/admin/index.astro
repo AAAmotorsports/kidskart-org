@@ -1,0 +1,35 @@
+---
+import AdminLayout from '@layouts/AdminLayout.astro';
+import { getDb } from '@lib/env.ts';
+import { todayJst } from '@lib/jst.ts';
+export const prerender = false;
+const db = getDb(Astro.locals);
+const today = todayJst();
+const rows = (await db.prepare(
+  `SELECT g.id, g.name, g.start_time, g.status, g.online_ok, g.tv_ok, g.shoot_date,
+          (SELECT count(*) FROM photos p WHERE p.group_id = g.id AND p.status = 'ready') AS n
+     FROM groups g WHERE g.shoot_date = ? AND g.status <> 'deleted' ORDER BY g.start_time, g.created_at`)
+  .bind(today).all<any>()).results;
+const total = rows.reduce((a, r) => a + r.n, 0);
+const badge = (r: any) => r.status === 'published' ? ['公開中', 'ok'] : !r.online_ok ? ['非公開(同意なし)', 'ng'] : r.status === 'hidden' ? ['非公開', 'warn'] : ['準備中', 'warn'];
+---
+<AdminLayout title="ホーム">
+  <h1>本日 {today.slice(5).replace('-', '/')}</h1>
+  <div class="row" style="margin-bottom:8px">
+    <span class="badge">団体 {rows.length}</span><span class="badge">写真 {total} 枚</span>
+    <span class="badge">売上・購入 (決済は未実装)</span>
+  </div>
+  <a class="btn" href="/admin/groups/new" style="display:block;text-align:center;margin:12px 0">＋ 新しい団体を登録</a>
+  {rows.length === 0 && <p class="muted">本日の団体はまだありません。</p>}
+  {rows.map((r) => {
+    const [label, cls] = badge(r);
+    return (
+      <a href={`/admin/groups/${r.id}`} class="card" style="display:block;text-decoration:none">
+        <div class="row"><b style="font-size:18px">{r.start_time ?? '--:--'}</b>
+          <span style="font-size:18px">{r.name ?? '(団体名なし)'}</span></div>
+        <div class="row" style="margin-top:8px"><span class={`badge ${cls}`}>{label}</span>
+          <span class="badge">写真 {r.n} 枚</span>{r.tv_ok ? <span class="badge">TV可</span> : <span class="badge">TV不可</span>}</div>
+      </a>
+    );
+  })}
+</AdminLayout>

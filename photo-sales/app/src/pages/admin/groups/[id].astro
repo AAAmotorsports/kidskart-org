@@ -1,0 +1,115 @@
+---
+import AdminLayout from '@layouts/AdminLayout.astro';
+import GroupForm from '@components/GroupForm.astro';
+import { baseUrl, getDb, getEnv } from '@lib/env.ts';
+export const prerender = false;
+
+const db = getDb(Astro.locals);
+const id = Astro.params.id!;
+const g = await db.prepare(`SELECT * FROM groups WHERE id = ? AND status <> 'deleted'`).bind(id).first<any>();
+if (!g) return new Response('not found', { status: 404 });
+const photos = (await db.prepare(
+  `SELECT id, status FROM photos WHERE group_id = ? AND status IN ('ready','hidden') ORDER BY taken_at, id`)
+  .bind(id).all<{ id: string; status: string }>()).results;
+const others = (await db.prepare(
+  `SELECT id, name, start_time, shoot_date FROM groups WHERE id <> ? AND status <> 'deleted' ORDER BY shoot_date DESC, start_time DESC LIMIT 30`)
+  .bind(id).all<any>()).results;
+const customerUrl = `${baseUrl(getEnv(Astro.locals), Astro.request)}/g/${g.qr_token}`;
+const isAdmin = Astro.locals.staff?.role === 'admin';
+const err = Astro.url.searchParams.get('err');
+const saved = Astro.url.searchParams.get('saved');
+const label = g.status === 'published' ? ['公開中', 'ok'] : !g.online_ok ? ['非公開 (同意なし)', 'ng'] : g.status === 'hidden' ? ['非公開', 'warn'] : ['準備中 (未公開)', 'warn'];
+---
+<AdminLayout title={g.name ?? '団体'}>
+  <style is:global>
+    #grid { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+    #grid .cell { position:relative; aspect-ratio:1; background:#1a1a1d; cursor:pointer; }
+    #grid img { width:100%; height:100%; object-fit:cover; display:block; }
+    #grid .cell.sel { outline:4px solid var(--red); outline-offset:-4px; }
+    #grid .cell.sel::after { content:'✓'; position:absolute; top:4px; right:6px; background:var(--red); border-radius:99px; width:24px; height:24px; text-align:center; line-height:24px; font-weight:800; }
+    #grid .cell.hid img { opacity:.35; } #grid .cell.hid::before { content:'非表示'; position:absolute; left:4px; top:4px; font-size:11px; background:#000a; padding:2px 6px; border-radius:6px; z-index:1; }
+    #selbar { position:sticky; bottom:0; background:#101012; border-top:1px solid var(--line); padding:10px; margin:0 -14px; }
+    .progress { height:10px; background:#222; border-radius:99px; overflow:hidden; margin:10px 0; }
+    #bar { height:100%; width:0; background:var(--red); transition:width .2s; }
+    #qr svg { width:100%; max-width:240px; height:auto; background:#fff; padding:10px; border-radius:8px; }
+  </style>
+  <div class="row"><h1 style="margin-right:auto">{g.name ?? '(団体名なし)'}</h1><span class={`badge ${label[1]}`}>{label[0]}</span></div>
+  <p class="muted">{g.shoot_date} {g.start_time ?? ''}　{g.headcount ? `${g.headcount}名` : ''}　写真 {photos.length} 枚　{g.tv_ok ? 'テレビ表示:可' : 'テレビ表示:不可'}</p>
+  {err && <div class="warnbox">{err}</div>}
+  {saved && <div class="card" style="border-color:#1f6b3a">保存しました</div>}
+  {!g.online_ok && <div class="warnbox">⚠ 同意が揃っていないため、この団体の写真は販売ページに公開されません{g.tv_ok ? '' : '(テレビにも表示されません)'}。</div>}
+
+  <div class="card">
+    <b>お客様用 QR コード</b>
+    <div class="row" style="margin-top:10px;align-items:flex-start">
+      <div id="qr" data-url={customerUrl}></div>
+      <div style="flex:1;min-width:200px">
+        <p class="muted" style="word-break:break-all">{customerUrl}</p>
+        <a class="btn sec" href={`/admin/groups/${id}/qr`} target="_blank" style="display:block;text-align:center;margin-bottom:8px">QR を大きく表示 / 印刷</a>
+        <form method="post" action={`/api/admin/groups/${id}`}>
+          {g.status === 'published'
+            ? <><input type="hidden" name="action" value="unpublish" /><button class="btn ghost" style="width:100%">公開を止める</button></>
+            : <><input type="hidden" name="action" value="publish" /><button class="btn" style="width:100%" disabled={!g.online_ok}>写真を公開する</button></>}
+        </form>
+      </div>
+    </div>
+    <p class="muted">⚠ QR コードを持つ方はこの団体の写真を閲覧できます。受付でお客様に「SNS 等に公開しないでください」とお伝えください。</p>
+  </div>
+
+  <div class="card">
+    <b>写真をアップロード</b>
+    <p class="muted">iPhone の写真ライブラリから複数枚をまとめて選べます。完了まで画面を開いたままにしてください。</p>
+    <label class="btn" style="display:block;text-align:center">写真を選ぶ
+      <input id="pick" type="file" multiple accept="image/jpeg,image/png" style="display:none" />
+    </label>
+    <div class="progress"><div id="bar"></div></div>
+    <div id="summary" class="muted"></div>
+    <div id="failed-list"></div>
+    <button id="retry" class="btn sec" style="width:100%;margin-top:8px" hidden>失敗した枚数だけ再送</button>
+    <button id="reload" class="btn ghost" style="width:100%;margin-top:8px" hidden>一覧を更新する</button>
+  </div>
+
+  <div class="card">
+    <b>写真 ({photos.length} 枚)</b> <span class="muted">タップで選択 → 削除・非表示・移動</span>
+    <div id="grid" style="margin-top:10px">
+      {photos.map((p) => (
+        <div class={`cell ${p.status === 'hidden' ? 'hid' : ''}`} data-id={p.id}>
+          <img src={`/api/admin/photos/${p.id}/thumb`} loading="lazy" alt="" />
+        </div>
+      ))}
+    </div>
+    {photos.length === 0 && <p class="muted">まだ写真がありません。</p>}
+    <div id="selbar" hidden>
+      <div class="row"><b><span id="selcount">0</span> 枚選択中</b>
+        <button id="sel-clear" class="btn ghost" style="padding:10px 12px;font-size:15px">解除</button>
+        <button id="sel-hide" class="btn sec" style="padding:10px 12px;font-size:15px">非表示</button>
+        <button id="sel-show" class="btn sec" style="padding:10px 12px;font-size:15px">再表示</button>
+        <button id="sel-delete" class="btn" style="padding:10px 12px;font-size:15px">削除</button></div>
+      <div class="row" style="margin-top:8px">
+        <select id="move-to" style="flex:1"><option value="">移動先の団体を選ぶ</option>
+          {others.map((o) => <option value={o.id}>{o.shoot_date.slice(5)} {o.start_time ?? ''} {o.name ?? '(団体名なし)'}</option>)}
+        </select>
+        <button id="sel-move" class="btn sec" style="padding:10px 12px;font-size:15px">移動</button></div>
+    </div>
+  </div>
+
+  <details class="card"><summary><b>団体情報・同意の編集</b></summary>
+    <GroupForm group={g} action={`/api/admin/groups/${id}`} submitLabel="保存" />
+  </details>
+  {isAdmin && (
+    <form method="post" action={`/api/admin/groups/${id}`} onsubmit="return confirm('この団体を削除します。写真も削除されます。よろしいですか？')">
+      <input type="hidden" name="action" value="delete" /><button class="btn ghost" style="width:100%">この団体を削除 (管理者)</button>
+    </form>
+  )}
+  <script define:vars={{ groupId: id }}>window.__groupId = groupId;</script>
+  <script>
+    import qrcode from 'qrcode-generator';
+    import { initUploader } from '../../../scripts/uploader.ts';
+    import { initGrid } from '../../../scripts/photogrid.ts';
+    const el = document.getElementById('qr')!;
+    const q = qrcode(0, 'M'); q.addData(el.dataset.url!); q.make();
+    el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+    initUploader((window as any).__groupId);
+    initGrid();
+  </script>
+</AdminLayout>

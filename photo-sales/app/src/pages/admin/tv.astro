@@ -1,0 +1,41 @@
+---
+import AdminLayout from '@layouts/AdminLayout.astro';
+import { baseUrl, getDb, getEnv } from '@lib/env.ts';
+import { todayJst } from '@lib/jst.ts';
+export const prerender = false;
+const db = getDb(Astro.locals);
+const t = (await db.prepare('SELECT * FROM tv_state WHERE id = 1').first<any>())!;
+const groups = (await db.prepare(
+  `SELECT id, name, start_time, shoot_date, tv_ok FROM groups WHERE status IN ('preparing','published') AND shoot_date >= date(?, '-7 days')
+    ORDER BY shoot_date DESC, start_time DESC LIMIT 40`).bind(todayJst()).all<any>()).results;
+const url = `${baseUrl(getEnv(Astro.locals), Astro.request)}/tv/${t.tv_token}`;
+const saved = Astro.url.searchParams.get('saved');
+---
+<AdminLayout title="テレビ表示">
+  <h1>テレビ表示</h1>
+  {saved && <div class="card" style="border-color:#1f6b3a">保存しました</div>}
+  <div class="card">
+    <b>テレビ (PC) で開く URL</b>
+    <p style="word-break:break-all"><a href={url} target="_blank">{url}</a></p>
+    <p class="muted">PC のブラウザでこの URL を開き、全画面表示 (F11) にしてテレビに映します。操作は不要です。URL を知っている人はテレビ表示を見られるので、人に教えないでください。</p>
+    <form method="post" action="/api/admin/tv" onsubmit="return confirm('URL を作り直します。テレビ側の URL も入れ替える必要があります。よろしいですか？')">
+      <input type="hidden" name="action" value="regen" /><button class="btn ghost">URL を作り直す</button></form>
+  </div>
+  <form method="post" action="/api/admin/tv" class="card">
+    <input type="hidden" name="action" value="save" />
+    <b>表示の設定</b>
+    <label class="chk"><input type="radio" name="mode" value="auto" checked={t.mode === 'auto'} /> 自動 (本日の団体を、新しくアップロードされた順に表示)</label>
+    <label class="chk"><input type="radio" name="mode" value="manual" checked={t.mode === 'manual'} /> 手動 (下で選んだ団体だけ表示)</label>
+    <label class="chk"><input type="radio" name="mode" value="off" checked={t.mode === 'off'} /> 表示停止 (ロゴと案内だけ)</label>
+    <label class="f" for="group_id">手動で表示する団体</label>
+    <select id="group_id" name="group_id"><option value="">選択してください</option>
+      {groups.map((g) => <option value={g.id} selected={t.group_id === g.id} disabled={!g.tv_ok}>{g.shoot_date.slice(5)} {g.start_time ?? ''} {g.name ?? '(団体名なし)'}{g.tv_ok ? '' : ' (テレビ同意なし)'}</option>)}
+    </select>
+    <label class="f" for="slide_seconds">1 枚あたりの表示秒数 (2〜60)</label>
+    <input id="slide_seconds" name="slide_seconds" type="number" min="2" max="60" value={t.slide_seconds} />
+    <label class="f" for="group_seconds">1 団体あたりの表示秒数 (10〜600)</label>
+    <input id="group_seconds" name="group_seconds" type="number" min="10" max="600" value={t.group_seconds} />
+    <button class="btn" style="width:100%;margin-top:14px">保存</button>
+  </form>
+  <p class="muted">店内テレビの同意がある団体の写真だけが表示されます。写真は透かし入りの低解像度です。</p>
+</AdminLayout>

@@ -1,0 +1,60 @@
+---
+// 団体の登録・編集で共通のフォーム (2 か所に同じフォームを書かない)。
+import { nowHmJst, todayJst } from '@lib/jst.ts';
+interface Props { group?: Record<string, any>; action: string; submitLabel: string }
+const { group, action, submitLabel } = Astro.props;
+const g = group ?? {};
+const checked = (k: string) => (g[k] ? 'checked' : '');
+---
+<form method="post" action={action} id="groupform">
+  <label class="f" for="shoot_date">利用日</label>
+  <input id="shoot_date" name="shoot_date" type="date" required value={g.shoot_date ?? todayJst()} />
+
+  <label class="f" for="start_time">走行開始時間</label>
+  <input id="start_time" name="start_time" type="time" value={g.start_time ?? (group ? '' : nowHmJst())} />
+
+  <label class="f" for="name">団体名 (任意)</label>
+  <input id="name" name="name" type="text" maxlength="80" value={g.name ?? ''} />
+
+  <label class="f" for="headcount">利用人数 (任意)</label>
+  <input id="headcount" name="headcount" type="number" inputmode="numeric" min="1" max="500" value={g.headcount ?? ''} />
+
+  <label class="f" for="plan">利用プラン</label>
+  <select id="plan" name="plan">
+    <option value="rental" selected={(g.plan ?? 'rental') === 'rental'}>レンタルカート</option>
+    <option value="race_pack" selected={g.plan === 'race_pack'}>レースパック</option>
+    <option value="other" selected={g.plan === 'other'}>その他</option>
+  </select>
+
+  <div class="card" style="margin-top:18px">
+    <b>お客様の同意 (受付でご案内して確認)</b>
+    <label class="chk"><input type="checkbox" name="consent_shoot" {...(g.consent_shoot ? { checked: true } : {})} /> 走行中の写真撮影</label>
+    <label class="chk"><input type="checkbox" name="consent_online" {...(g.consent_online ? { checked: true } : {})} /> 販売ページ (オンライン) への写真の掲載</label>
+    <label class="chk"><input type="checkbox" name="consent_tv" {...(g.consent_tv ? { checked: true } : {})} /> 店内テレビへの写真の表示 (別の同意)</label>
+    <label class="chk"><input type="checkbox" name="has_minor" id="has_minor" {...(g.has_minor ? { checked: true } : {})} /> 未成年のお客様が含まれる</label>
+    <label class="chk" id="guardian_row" style="margin-left:32px"><input type="checkbox" name="guardian_consent" id="guardian_consent" {...(g.guardian_consent ? { checked: true } : {})} /> 保護者の同意を得た</label>
+    <label class="f" for="consent_note">メモ (任意)</label>
+    <input id="consent_note" name="consent_note" type="text" maxlength="300" value={g.consent_note ?? ''} />
+    <div id="consent_warn" class="warnbox" hidden></div>
+  </div>
+  <button class="btn" style="width:100%">{submitLabel}</button>
+</form>
+<script>
+  // 表示だけ。公開してよいかの判定は DB (groups.online_ok / tv_ok) が行う
+  const f = document.getElementById('groupform') as HTMLFormElement;
+  const v = (n: string) => (f.elements.namedItem(n) as HTMLInputElement).checked;
+  const warn = document.getElementById('consent_warn')!;
+  const guardian = document.getElementById('guardian_row')!;
+  function refresh() {
+    guardian.style.opacity = v('has_minor') ? '1' : '.35';
+    const msgs: string[] = [];
+    const minorNg = v('has_minor') && !v('guardian_consent');
+    if (!v('consent_shoot')) msgs.push('撮影の同意が無いため、撮影・公開しないでください。');
+    if (minorNg) msgs.push('未成年は保護者の同意が必要です。同意が無い写真は販売ページにもテレビにも出ません。');
+    if (v('consent_shoot') && !v('consent_online')) msgs.push('このグループの写真は販売ページに公開されません。');
+    if (v('consent_shoot') && !v('consent_tv') && !minorNg) msgs.push('このグループの写真は店内テレビに表示されません。');
+    warn.hidden = msgs.length === 0;
+    warn.innerHTML = msgs.map((m) => `<div>⚠ ${m}</div>`).join('');
+  }
+  f.addEventListener('change', refresh); refresh();
+</script>

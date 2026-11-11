@@ -1,0 +1,15 @@
+---
+import Base from '@layouts/Base.astro';
+export const prerender = false;
+const t = Astro.url.searchParams.get('t') ?? '';
+const next = Astro.url.searchParams.get('next') ?? '';
+---
+<Base title="ログイン | A-ONE フォト">
+  <main style="max-width:420px;margin:0 auto;padding:60px 20px;text-align:center">
+    <h1 style="color:var(--red);letter-spacing:.08em">A-ONE CIRCUIT</h1>
+    <form method="post" action="/api/auth/verify">
+      <input type="hidden" name="t" value={t} /><input type="hidden" name="next" value={next} />
+      <button class="btn" style="width:100%;font-size:20px;padding:18px">ログインする</button>
+    </form>
+  </main>
+</Base>

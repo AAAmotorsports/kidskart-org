@@ -1,0 +1,86 @@
+---
+export const prerender = false;
+const token = Astro.params.token!;
+---
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" /><title>A-ONE CIRCUIT</title>
+  <style>
+    html, body { margin:0; height:100%; background:#000; color:#fff; overflow:hidden; cursor:none;
+      font-family:-apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif; }
+    .layer { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .8s; }
+    .layer.on { opacity:1; }
+    .layer img { max-width:100%; max-height:100%; object-fit:contain; }
+    .logo { position:absolute; left:3vw; top:2.5vh; font-weight:800; letter-spacing:.12em; font-size:3.2vh; color:#d71920; text-shadow:0 0 12px #000; z-index:3; }
+    .cap { position:absolute; left:3vw; bottom:3vh; font-size:3.4vh; font-weight:700; text-shadow:0 0 12px #000,0 0 4px #000; z-index:3; }
+    .buy { position:absolute; right:3vw; bottom:3vh; font-size:3vh; background:#d71920; padding:1.2vh 2vw; border-radius:1vh; z-index:3; font-weight:700; }
+    #idle { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:3vh; z-index:2; text-align:center; }
+    #idle.on { display:flex; }
+    #idle .big { font-size:9vh; font-weight:800; letter-spacing:.14em; color:#d71920; }
+    #idle .small { font-size:3.6vh; color:#ddd; }
+  </style>
+</head>
+<body>
+  <div class="logo">A-ONE CIRCUIT</div>
+  <div class="layer" id="a"><img alt="" /></div><div class="layer" id="b"><img alt="" /></div>
+  <div id="idle"><div class="big">A-ONE CIRCUIT</div><div class="small">走行写真は 受付でお渡しする QR コードからご覧・ご購入いただけます</div></div>
+  <div class="cap" id="cap"></div><div class="buy" id="buy" style="display:none">📷 走行写真は受付の QR コードからご購入いただけます</div>
+  <script define:vars={{ token }}>window.__tv = token;</script>
+  <script is:inline>
+    const token = window.__tv;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/tv-sw.js', { scope: '/tv/' }).catch(() => {});
+    const $ = (id) => document.getElementById(id);
+    let state = { mode: 'auto', slideSeconds: 6, groupSeconds: 60, groups: [] };
+    let gi = 0, pi = 0, groupStart = 0, front = 'a', topPriority = null, timer = null, curGroupId = null;
+    const img = (id) => `/tv/${token}/img/${id}`;
+    const pre = (id) => { const i = new Image(); i.src = img(id); };
+
+    function show(group, photoId) {
+      const to = front === 'a' ? 'b' : 'a';
+      const el = $(to), im = el.querySelector('img');
+      im.onload = () => { el.classList.add('on'); $(front).classList.remove('on'); front = to; };
+      im.src = img(photoId);
+      $('cap').textContent = `${group.time ? group.time + ' 走行' : ''}${group.name ? '  ' + group.name : ''}`.trim();
+    }
+    function idle(on) { $('idle').classList.toggle('on', on); $('buy').style.display = on ? 'none' : 'block'; if (on) { $('a').classList.remove('on'); $('b').classList.remove('on'); $('cap').textContent = ''; } }
+
+    function tick() {
+      clearTimeout(timer);
+      const gs = state.groups;
+      if (!gs.length) { idle(true); timer = setTimeout(tick, 5000); return; }
+      idle(false);
+      const now = Date.now();
+      if (gs.length > 1 && now - groupStart > state.groupSeconds * 1000) { gi = (gi + 1) % gs.length; pi = 0; groupStart = now; }
+      if (gi >= gs.length) gi = 0;
+      const g = gs[gi]; curGroupId = g.id;
+      if (pi >= g.photos.length) pi = 0;
+      show(g, g.photos[pi]);
+      pre(g.photos[(pi + 1) % g.photos.length]);
+      pi++;
+      timer = setTimeout(tick, state.slideSeconds * 1000);
+    }
+
+    async function refresh() {
+      try {
+        const r = await fetch(`/tv/${token}/state.json`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const s = await r.json();
+        const top = s.groups[0]?.priority ?? null;
+        const keep = curGroupId;
+        state = s;
+        // 新しくアップロードされた団体を優先して表示する
+        if (state.mode === 'auto' && top && top !== topPriority && topPriority !== null) { gi = 0; pi = 0; groupStart = Date.now(); }
+        else { const k = state.groups.findIndex((g) => g.id === keep); gi = k >= 0 ? k : 0; if (k < 0) { pi = 0; groupStart = Date.now(); } }
+        topPriority = top;
+        if (!timer) tick();
+      } catch (e) { /* 通信できないときは今の表示を続ける */ }
+    }
+    groupStart = Date.now();
+    refresh().then(() => { if (!timer) tick(); });
+    setInterval(refresh, 30000);
+    setTimeout(() => location.reload(), 6 * 3600 * 1000);   // 長時間運転用の定期リロード (オフラインでもキャッシュで復帰)
+  </script>
+</body>
+</html>

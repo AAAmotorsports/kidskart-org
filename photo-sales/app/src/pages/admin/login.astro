@@ -1,0 +1,29 @@
+---
+import Base from '@layouts/Base.astro';
+export const prerender = false;
+const sent = Astro.url.searchParams.get('sent');
+const err = Astro.url.searchParams.get('err');
+const dev = import.meta.env.DEV ? Astro.url.searchParams.get('dev') : null;   // 開発時だけリンクを画面に出す
+const next = Astro.url.searchParams.get('next') ?? '';
+---
+<Base title="ログイン | A-ONE フォト">
+  <main style="max-width:420px;margin:0 auto;padding:48px 20px">
+    <h1 style="color:var(--red);letter-spacing:.08em;text-align:center">A-ONE CIRCUIT</h1>
+    <p style="text-align:center;color:var(--muted)">写真管理 スタッフログイン</p>
+    {sent && (
+      <div style="background:#12301d;border:1px solid #1f6b3a;border-radius:10px;padding:14px;margin:18px 0">
+        登録されているメールアドレスなら、ログイン用のリンクを送りました。メールのリンクを開いてください (15分間有効)。
+        {dev && <p><a href={dev}>[開発用] ログインリンク</a></p>}
+      </div>
+    )}
+    {err && <div style="background:#3a0d10;border:1px solid var(--red);border-radius:10px;padding:14px;margin:18px 0">リンクが無効か期限切れです。もう一度メールアドレスを入力してください。</div>}
+    <form method="post" action="/api/auth/request">
+      <input type="hidden" name="next" value={next} />
+      <label for="email" style="display:block;margin:14px 0 6px;color:var(--muted)">メールアドレス</label>
+      <input id="email" name="email" type="email" required autocomplete="username email" inputmode="email" autocapitalize="off"
+             style="width:100%;padding:14px;font-size:18px;border-radius:8px;border:1px solid #3a3a40;background:#0e0e10;color:#fff" />
+      <button class="btn" style="width:100%;margin-top:16px">ログインリンクを送る</button>
+    </form>
+    <p class="muted" style="color:var(--muted);font-size:13px;margin-top:20px">パスワードはありません。メールのリンクを iPhone で開くと、30日間ログインしたままになります。</p>
+  </main>
+</Base>
