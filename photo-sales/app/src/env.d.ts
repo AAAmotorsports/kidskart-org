@@ -3,9 +3,9 @@
 type Runtime = import('@astrojs/cloudflare').Runtime<Env>;
 
 interface Env {
-  PUBLIC_SUPABASE_URL: string;
-  PUBLIC_SUPABASE_ANON_KEY: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  DB: D1Database;
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
   PUBLIC_SITE_NAME?: string;
   PUBLIC_BASE_URL?: string;
   STRIPE_MODE?: string;
@@ -15,6 +15,7 @@ interface Env {
   CRON_SECRET?: string;
   ORIGINALS: R2Bucket;
   PREVIEWS: R2Bucket;
+  BACKUPS: R2Bucket;
 }
 
 declare namespace App {

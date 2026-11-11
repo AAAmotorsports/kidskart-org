@@ -17,25 +17,34 @@
   "assets": { "directory": "./dist", "binding": "ASSETS" },
   "observability": { "enabled": true },
 
-  // R2 バケット (Cloudflare Dashboard で作成してから有効化する)
-  //   aone-photo-originals : 非公開。元画像。Worker 経由でのみ読む
-  //   aone-photo-previews  : 透かし入りプレビュー・サムネ
-  "r2_buckets": [
-    { "binding": "ORIGINALS", "bucket_name": "aone-photo-originals" },
-    { "binding": "PREVIEWS",  "bucket_name": "aone-photo-previews" }
+  // D1 (SQLite)。作成: npx wrangler d1 create aone-photo → database_id を下に貼る
+  //   マイグレーション: npx wrangler d1 migrations apply aone-photo --remote
+  "d1_databases": [
+    { "binding": "DB", "database_name": "aone-photo", "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations" }
   ],
 
+  // R2 バケット (どちらも非公開。プレビューも Worker 経由で配信する)
+  //   aone-photo-originals : 元画像。注文の paid 確認後にだけ Worker が返す
+  //   aone-photo-previews  : 透かし入りプレビュー・サムネ
+  //   aone-photo-backups   : D1 の日次バックアップ (SQL ダンプ)
+  "r2_buckets": [
+    { "binding": "ORIGINALS", "bucket_name": "aone-photo-originals" },
+    { "binding": "PREVIEWS",  "bucket_name": "aone-photo-previews" },
+    { "binding": "BACKUPS",   "bucket_name": "aone-photo-backups" }
+  ],
+
+  // 毎日 JST 4:00 (UTC 19:00): 期限切れ写真の削除・未決済注文の失効・D1 バックアップ
+  "triggers": { "crons": ["0 19 * * *"] },
+
   "vars": {
-    // Supabase (写真販売用に新規作成したプロジェクトの値に差し替える)
-    "PUBLIC_SUPABASE_URL": "",
-    "PUBLIC_SUPABASE_ANON_KEY": "",
     "PUBLIC_SITE_NAME": "A-ONE CIRCUIT フォト",
     // 当面は仮ドメイン (workers.dev)。本番ドメインは後から設定する
     "PUBLIC_BASE_URL": "",
     "STRIPE_MODE": "test"
   }
   // Secrets:
-  //   SUPABASE_SERVICE_ROLE_KEY
+  //   CF_API_TOKEN (D1 エクスポート用・D1 読み取りのみ) / CF_ACCOUNT_ID
   //   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET   (M4 以降。まずテストモード)
   //   RESEND_API_KEY                              (購入確認・期限案内メール)
   //   CRON_SECRET

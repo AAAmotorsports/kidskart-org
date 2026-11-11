@@ -1,11 +1,18 @@
 # A-ONE CIRCUIT 走行写真販売システム — 設計・費用提案書 (v2)
 
+> **v3 (固定費 0 円・複数人購入)**: v2 から次を変更。詳細は `docs/INFRA_D1.md`。
+> - **構成を Cloudflare Workers + D1 + R2 に変更** (Supabase を使わない)。月額固定費 0 円、従量費は R2 の月 〜100 円のみ。バックアップ・セキュリティ・障害復旧は 3 層バックアップ等で妥協しない
+> - **同じ写真を何人にでも販売可**。注文・ダウンロード権限・返金は購入者ごとに独立
+> - **全写真パック** = 注文時点で公開中の写真すべて (他の購入者が買った写真も含む)
+> - **同一注文の二重決済防止**を維持 (未決済注文の再利用・payment_intent 一意・条件付き確定・2 本目の支払いは要確認→返金)
+> - 認証はメールのログインリンク (パスワードなし)。画像処理はブラウザ内のまま
+>
 > **v2 (M0 確定)**: オーナー承認条件を反映。v1 からの変更点:
 > - 二重購入: 決済前にサーバーで検証 (`photo_create_pending_order`)。万一の二重決済は `needs_review` に回し、管理者が確認・返金 (自動返金はしない)
 > - 同意: 撮影 / 販売ページ掲載 / 店内TV を別管理。未成年は保護者同意が必須。**同意の無い写真は公開しない** (DB の CHECK で強制)
 > - メールアドレスは購入時に必須
 > - アップロードは「画面を開いたまま」方式。失敗した写真だけ再送を最優先
-> - Supabase は無料プランで開発し、本番前に Pro を判断。Stripe はテストモード、手数料は仮 3.6%
+> - Stripe はテストモード、手数料は仮 3.6%
 > - 売上試算は購入率 10 / 20 / 30% が基本、40% は好調ケース (§8-2 を差し替え)
 > - 実装物: `db/0001_initial_schema.sql` (テスト付き)、`docs/SCREENS.md`、`app/` 雛形
 
@@ -17,61 +24,49 @@
 
 | 項目 | 提案 |
 |---|---|
-| 構成 | 独立アプリ。既存 `aone/` と同じ流儀 (Cloudflare Worker + Supabase) に揃え、**DB・Worker・Stripe は別プロジェクト** |
+| 構成 | 独立アプリ。**Cloudflare Workers + D1 + R2** (v3)。aone とは DB・Worker・R2・Stripe すべて別 |
 | 画像処理 | **スタッフのiPhoneブラウザ内で**プレビュー(透かし)・サムネ生成・EXIF除去 → R2へ直接アップロード。サーバー側画像処理費は 0 円、Workerの負荷も最小 |
 | 画像保存 | Cloudflare R2 (egress無料)。元画像は非公開バケット、プレビューは別バケット |
 | 決済 | Stripe Checkout (Hosted) + Webhook。金額は**必ずサーバー側で再計算** |
-| 認証 | スタッフ: Supabase Auth (メールOTP) + `staff_users` で権限管理。お客様: ログイン無し (QRトークン + 注文トークン) |
-| 月額固定費 | **約 800〜1,000 円** (Workers有料 $5 + ドメイン)。Supabase無料枠利用の場合。Pro にしても約 4,800 円 |
+| 認証 | スタッフ: メールのログインリンク + `staff_users` で権限管理。お客様: ログイン無し (QRトークン + 注文トークン) |
+| 月額固定費 | **0 円** (Workers/D1/R2 無料枠)。従量費は R2 保存の月 〜100 円 + Stripe 手数料のみ |
 | 初期費用 | **0 円** (既存iPhone・TV・PC利用)。任意でHDMIスティック/三脚等 0〜1.5 万円 |
 | MVP工期目安 | 実装 約 3〜4 週間 (レビュー待ち時間除く) |
 
-最大の確認事項は §10 の **「Supabaseを既存と別プロジェクトで新設してよいか」「撮影対象に未成年が多い点の同意文言」「Stripe契約状況」** です。
+最大の技術リスクは無料枠の CPU 10ms (`docs/INFRA_D1.md` §3 S1)。M1 の最初に実測して判断します。
 
 ---
 
-## 1. システム全体構成図
+## 1. システム全体構成図 (v3)
 
 ```
  [スタッフ iPhone]                         [お客様 スマホ]              [受付TV + PC]
-  Safari/PWA                               QR → /g/{token}              /tv/{tvToken} (全画面)
+  Safari                                   QR → /g/{token}              /tv/{tvToken} (全画面)
    │ ①写真選択(100枚)                        │                            │ 30秒ポーリング
-   │ ②ブラウザ内で                            │                            │ + localStorage キャッシュ
-   │   原本(EXIF除去)/プレビュー(透かし)/       │                            │
-   │   サムネ を生成                          │                            │
+   │ ②ブラウザ内で原本(EXIF除去)/              │                            │ + 端末キャッシュ
+   │   プレビュー(透かし)/サムネ/CRC32 生成    │                            │
    │ ③署名付きURLでR2へ直接PUT                │                            │
    ▼                                         ▼                            ▼
- ┌──────────────────────── Cloudflare ───────────────────────────────────────┐
- │  Worker (Hono, API + 静的配信)                                              │
- │   /api/admin/*   スタッフAPI (JWT検証・権限チェック・監査ログ)                │
- │   /api/g/*       お客様API (QRトークン検証)                                  │
- │   /api/tv/*      TV用API (プレビューのみ・同意済みのみ)                       │
- │   /api/stripe/webhook   署名検証 → 注文確定                                 │
- │   /api/dl/*      ダウンロード (署名トークン検証 → R2ストリーム / ZIP)         │
- │   Cron Trigger   毎日 保存期間チェック・削除・通知                            │
- │                                                                             │
- │  R2: photo-originals (非公開・Worker経由のみ)                                │
- │      photo-previews  (透かし済み・推測不能キー・CDNキャッシュ)                 │
- └─────────────┬───────────────────────────────────────┬───────────────────────┘
-               │                                       │
-        Supabase PostgreSQL (新規プロジェクト)       Stripe Checkout
-        groups / photos / orders ...                  (カード情報は触らない)
+ ┌──────────────────────── Cloudflare (すべて無料枠) ─────────────────────────┐
+ │  Worker (Astro SSR + API)                                                   │
+ │   /api/admin/*  スタッフAPI (セッション検証・権限・監査ログ)                   │
+ │   /api/g/*      お客様API (QRトークン検証)    /api/tv/*  TV用 (tv_okのみ)      │
+ │   /api/stripe/webhook  署名検証 → 決済確定     /api/dl/*  ダウンロード/ZIP      │
+ │   Cron (毎日 JST 4:00) 期限切れ削除・注文失効・D1バックアップ                  │
+ │  D1: groups / photos / orders / order_items / payments / refunds ...         │
+ │  R2: originals (非公開) / previews (非公開・Worker経由) / backups              │
+ └──────────────────────────────────────────┬──────────────────────────────────┘
+                                            └─ Stripe Checkout / Resend(メール)
 ```
 
-### 技術選定の比較と推奨
-
-| 論点 | 案A (推奨) | 案B | 理由 |
-|---|---|---|---|
-| 画像処理 | ブラウザ内 (Canvas) | Worker + Cloudflare Images / wasm | Workerは128MB・CPU時間制限があり12MP JPEGの透かし合成は不安定。Images変換は $0.5/1,000枚相当で費用が増える。iPhoneは性能十分 |
-| HEIC | `<input accept="image/jpeg,image/*">` でiOSが選択時にJPEG変換 | サーバーでHEIC→JPEG | iOS標準挙動で解決。端末側設定「写真→転送：自動」のみ運用ルール化 |
-| DB | Supabase (既存と流儀統一・将来の予約連携が容易) | Cloudflare D1 | D1は無料で最安だが、既存SQL資産/Auth/RLSの流儀と別物になる。連携を重視してA |
-| フロント | **Astro + 小さなReact島** (既存 `aone/app` と同じ) | Next.js | CloudflareでのNext.jsは追加アダプタが必要で保守が重い。既存と揃える方が運用が楽 |
-| 管理認証 | Supabase Auth メールOTP | Cloudflare Access | 既存と同方式。Basic認証は使わない(既存方針) |
-| ZIP | Workerでストア(無圧縮)ストリーミングZIP | 事前生成してR2保存 | JPEGは圧縮不要でCPU僅少。保存コスト無し |
-
-> 注意: 既存システムとは **リポジトリ内の別ディレクトリ `photo-sales/`** (または別リポジトリ) に置き、既存の予約テーブルには一切触れません。
-
----
+### 技術選定 (v3)
+| 論点 | 採用 | 理由 |
+|---|---|---|
+| DB | **Cloudflare D1** | 固定費 0・停止しない・Time Travel 付き (比較は `docs/INFRA_D1.md` §5) |
+| 画像処理 | ブラウザ内 (Canvas) | サーバー費 0、Worker の CPU 制限に収まる |
+| ZIP | 原本の CRC32 を事前保存し無圧縮でつなぐ | 無料枠 CPU 10ms で成立させるため。実測ゲート S1/S2 |
+| 管理認証 | メールのログインリンク + セッション | PBKDF2 は無料枠 CPU に収まらない |
+| フロント | Astro + 小さな島 | 既存 aone と同じ流儀 |
 
 ## 2. 画面構成
 
@@ -108,35 +103,26 @@
 
 ---
 
-## 3. データベース設計 (Supabase PostgreSQL、要点)
+## 3. データベース設計 (D1 / SQLite)
+
+正は `app/migrations/0001_init.sql`。主なテーブル:
 
 ```
-staff_users      (id, auth_user_id, email, name, role[admin|staff], active)
-groups           (id, qr_token UNIQUE[128bit乱数], shoot_date, start_time, name, headcount,
-                  plan, consent_tv bool, consent_online bool, consent_note,
-                  status[preparing|published|hidden|deleted], published_at,
-                  tv_priority_at, expires_at, created_by)
-photos           (id, group_id, sort_key[撮影時刻], sha256, taken_at,
-                  original_key, preview_key, thumb_key, width, height, bytes,
-                  status[ready|hidden|deleted], deleted_at)
-                  UNIQUE(group_id, sha256)        -- 重複防止
-orders           (id, order_token UNIQUE, group_id, status[pending|paid|failed|canceled|refunded|partially_refunded],
-                  stripe_session_id UNIQUE, stripe_payment_intent, amount_jpy, currency,
-                  email, pricing_snapshot jsonb, paid_at, download_expires_at)
-order_items      (id, order_id, photo_id, UNIQUE(order_id, photo_id))   -- 購入時点で確定(全パックも展開して固定)
-stripe_events    (event_id PK)                     -- Webhook冪等性
-download_events  (id, order_id, photo_id, kind, ip_hash, at)  -- 不正DL検知用
-refunds          (id, order_id, stripe_refund_id, amount, reason, by_staff)
-settings         (key PK, value jsonb)             -- 価格, 保存日数, TV秒数 (価格変更履歴は pricing_snapshot で保持)
-tv_state         (id, mode[auto|manual|off], group_id, slide_seconds, tv_token_hash)
-audit_logs       (id, staff_id, action, target_type, target_id, detail jsonb, at)
+staff_users / login_tokens / sessions     スタッフ・メールログイン
+settings                                  価格 / 保存期間 / TV (管理画面で変更)
+groups     qr_token(128bit) + 同意 (consent_shoot / online / tv, has_minor, guardian_consent)
+           online_ok / tv_ok (生成列) ← 公開可否の唯一の正。status='published' は CHECK で同意必須
+photos     sha256 (重複防止) / crc32 (ZIP用) / original_key / preview_key / thumb_key / status
+orders     購入者(email)ごとに 1 件。cart_hash (未決済の二重注文防止)、pricing_snapshot、
+           paid_payment_id、download_expires_at。★注文をまたぐ写真の一意制約は無い
+order_items 注文 × 写真 (UNIQUE(order_id, photo_id) のみ)。パックは注文時点の公開写真を全件展開して固定
+payments   1 注文に複数付きうる。stripe_payment_intent UNIQUE。2 本目は review_reason='duplicate_payment'
+refunds    支払い単位。購入者ごとに独立して返金
+stripe_events / download_events / takedown_requests / audit_logs
+v_group_sales  団体別: 注文数・購入者数・パック数・延べ販売枚数・売上・人数あたり売上
 ```
-
-- **RLS**: 全テーブル既定で拒否。ブラウザからの直接アクセスなし、アクセスは Worker (service role) 経由のみ。お客様はトークンで Worker が認可
-- 同一写真の二重購入は `order_items` と paid 済み照会で Worker 側が拒否 (checkout作成時に検証)
-- `group_id` 別売上は `orders` 集計 (ビュー)。会計ID/メールは最小限のみ保存
-
----
+* 複数人購入: 同じ写真が A・B・C の注文それぞれの `order_items` に入る。ダウンロード可否・期限・返金は注文ごと
+* 同じ購入者 (メール) が単品で買い直そうとした場合のみ「購入済み」で止める (うっかり防止)。パックは常に購入可
 
 ## 4. 写真アップロード・画像変換の実装方式
 
@@ -156,30 +142,25 @@ audit_logs       (id, staff_id, action, target_type, target_id, detail jsonb, at
 
 ---
 
-## 5. Stripe決済と購入権限の管理方式
+## 5. Stripe決済と購入権限の管理方式 (v3)
 
 ```
-[お客様] 写真選択 → POST /api/g/{token}/checkout {photoIds[]}
- Worker: ①QRトークンからグループ特定 ②photoIdsがそのグループの公開写真か検証
-         ③購入済み写真を除外 ④サーバーで金額を再計算 (クライアント金額は無視)
-         ⑤orders(pending) 作成 + Stripe Checkout Session作成 (単一line item、metadata=order_id)
-         ⑥Idempotency-Key = order_id で二重生成を防止
- Stripe → 決済 → success_url=/o/{orderToken}
+[お客様] 写真選択 + メール入力 → POST /api/g/{token}/checkout
+ Worker (createPendingOrder):
+   ①QRトークンからグループ特定 (公開可・期間内か)  ②写真IDがそのグループの公開写真か検証
+   ③同じメールが購入済みの写真を単品で選んでいないか  ④サーバーで金額を再計算 (クライアント金額は無視)
+   ⑤同じ購入者・同じ内容の未決済注文があれば再利用 (連打・再読込でも注文は 1 本)
+   ⑥orders(pending)+order_items を 1 batch で作成 → Stripe Checkout Session (Idempotency-Key = order_id)
  Stripe → Webhook checkout.session.completed
- Worker: 署名検証 → stripe_events に event_id INSERT (重複なら無視)
-         → orders paid化 + order_items確定 (全パックは当時の公開写真IDを展開して固定)
-         → download_expires_at 設定
- 期限切れSession (expired) / payment_failed → failed 扱い、写真は解放
+ Worker (finalizePayment, 何度呼ばれても結果は同じ):
+   payments に記録 (payment_intent 一意) → 条件付き UPDATE で paid に (同時に来ても 1 回だけ)
+   既に決済済みの注文への 2 本目の支払い → payments に duplicate_payment を付けて要確認 (写真は増えない)
+   金額不一致 → needs_review (ダウンロード不可)
 ```
-
-- **購入権限 = paid 状態の order_items** のみ。success_url に戻っただけでは権限を与えない (Webhook確定を待つ画面)
-- ダウンロード: `GET /api/dl/{orderToken}/{photoId}` → Worker が `orders.status=paid` かつ期限内か検証 → R2から原本をストリーム (R2の公開URLは存在しない)。署名付き短命URL方式も可
-- ZIP: `GET /api/dl/{orderToken}/zip` でストリーミングZIP
-- 返金: 管理画面→Stripe Refund API→Webhook `charge.refunded` で状態更新、返金後はDL不可
-- 同時決済の二重購入: Session作成時に未払pendingの写真を30分間ソフト予約せず、**Webhook確定時に重複が見つかった場合は自動返金**の方針を提案 (稀なケースで実装簡素)
-- カード情報・PANは一切受け取らない。Apple Pay/Google Pay は Stripe Dashboard 設定とドメイン登録で有効化
-
----
+* **全写真パック**: 注文時点の公開写真すべて (他の購入者が買った写真も含む) を注文に展開して固定。後から追加された写真は含まない (必要ならスタッフが追加付与)
+* ダウンロード権限は注文ごと (`canDownload`): paid かつ期限内かつ注文に含まれる写真のみ。他の購入者の返金・期限の影響を受けない
+* 返金: 管理者が支払い単位で全額返金 → その注文だけ無効。二重決済分だけ返金しても注文は有効のまま
+* 成功画面に戻っただけでは権限を与えない。カード情報は一切受け取らない。Stripe はテストモードで開発
 
 ## 6. 写真保存・自動削除の設計
 
@@ -201,7 +182,7 @@ audit_logs       (id, staff_id, action, target_type, target_id, detail jsonb, at
 
 | # | 内容 | 目安 |
 |---|---|---|
-| M0 | `photo-sales/` 雛形、Supabase/R2/Stripe(テスト)接続、CI | 2日 |
+| M0 | `photo-sales/` 雛形、D1/R2 作成、無料枠 CPU 実測 (S1/S2)、Stripe(テスト)接続 | 2日 |
 | M1 | スタッフ認証、グループ作成、QR生成(画面/印刷) | 3日 |
 | M2 | **一括アップロード** (iPhone実機検証、再試行、重複防止、並び替え) | 5日 ★最優先 |
 | M3 | お客様閲覧ページ (準備中/自動更新/拡大/選択) | 3日 |
@@ -227,30 +208,30 @@ Phase 2/3 (自動撮影・ラップタイム連携等) は DB/ストレージの
 - 為替 150円/USD
 - 料金は2025〜2026年時点の公開料金を前提。**契約前に最新値を確認してください**
 
-### 8-2. 試算 (月額) — 購入率 10 / 20 / 30% (40% は好調ケース)
+### 8-2. 試算 (月額) — v3: 固定費 0 円
 
-「購入率」= 公開したグループのうち 1 件以上購入があった割合。平均注文額 1,500 円、Stripe 3.6% (仮) で試算。
-システム費用は **本番で Supabase Pro を使う前提** (Workers $5 ≒ 750円 + Pro ≒ 3,750円 + R2 + ドメイン)。開発中の無料プランなら 約 800 円。
+固定費: **0 円** (Workers / D1 / R2 / Resend 無料枠、サブドメイン利用)。変動費は R2 保存量 (10GB 超過分 $0.015/GB) と Stripe 手数料 3.6% (仮)。
+無料枠の上限と超過時の費用は `docs/INFRA_D1.md` §2。
 
 | | 300人 (60組) | 500人 (100組) | 1,000人 (200組) |
 |---|---|---|---|
-| 常時保存量 / R2費用 | 約16GB / 約13円 | 約27GB / 約38円 | 約54GB / 約100円 |
-| システム費用 (Pro前提) | 約 4,500円 | 約 4,540円 | 約 4,600円 |
-| 画像変換・R2転送 | 0円 | 0円 | 0円 |
+| 常時保存量 | 約16GB | 約27GB | 約54GB |
+| R2 従量費 | 約 14円 | 約 38円 | 約 100円 |
+| 固定費合計 | 0円 | 0円 | 0円 |
 
-月間の **売上 / Stripe手数料 / 差引** (差引 = 売上 − 手数料 − システム費用。撮影スタッフ人件費は含まない):
+月間の **売上 / Stripe手数料 / 差引** (差引 = 売上 − 手数料 − R2。人件費は含まない)。購入率 = 公開団体のうち 1 件以上購入があった割合、購入した団体あたり平均 1,500 円:
 
-| 購入率 | 300人 売上 / 手数料 / 差引 | 500人 | 1,000人 |
+| 購入率 | 300人 | 500人 | 1,000人 |
 |---|---|---|---|
-| 10% | 9,000 / 324 / **約 4,200** | 15,000 / 540 / **約 9,900** | 30,000 / 1,080 / **約 24,300** |
-| 20% | 18,000 / 648 / **約 12,800** | 30,000 / 1,080 / **約 24,400** | 60,000 / 2,160 / **約 53,200** |
-| 30% | 27,000 / 972 / **約 21,500** | 45,000 / 1,620 / **約 38,800** | 90,000 / 3,240 / **約 82,200** |
-| 40% (好調) | 36,000 / 1,296 / **約 30,200** | 60,000 / 2,160 / **約 53,300** | 120,000 / 4,320 / **約 111,100** |
+| 10% | 9,000 / 324 / **約 8,700** | 15,000 / 540 / **約 14,400** | 30,000 / 1,080 / **約 28,800** |
+| 20% | 18,000 / 648 / **約 17,300** | 30,000 / 1,080 / **約 28,900** | 60,000 / 2,160 / **約 57,700** |
+| 30% | 27,000 / 972 / **約 26,000** | 45,000 / 1,620 / **約 43,300** | 90,000 / 3,240 / **約 86,700** |
+| 40% (好調) | 36,000 / 1,296 / **約 34,700** | 60,000 / 2,160 / **約 57,800** | 120,000 / 4,320 / **約 115,600** |
 
-- 300人・購入率10% でもシステム費用は賄える見込み。損益分岐は月 約 4,700円の売上 (Pro 前提)
-- 平均注文額は仮定。全写真パックが多く売れれば上がり (2,000円)、1枚購入が多ければ下がる。**実績で更新する**ため `v_group_sales` でパック比率と人数あたり売上を見られるようにしてある
-- 感度: 撮影枚数が 2 倍でも R2 費用は月数百円。保存費は事実上問題にならない
-- Workers 無料プランは 10 万 req/日。本番は有料 $5 を推奨
+- 売上が 0 の月の費用は 0 円〜数十円。損益分岐の心配がない
+- 複数人購入を許可したため、1 団体あたりの売上は 1,500 円より増える可能性がある (団体内の購入者数は `v_group_sales.buyers` で実績を取る)
+- 無料枠が足りなくなる側 (Workers 日 10 万 req) に上げる場合も +$5 (約 750 円)
+- (参考) Supabase Pro を使う v2 構成は固定費 約 4,500 円/月だった
 
 ### 8-3. 初期費用
 - 開発: 0円 (社内/Claude)
@@ -282,7 +263,7 @@ Phase 2/3 (自動撮影・ラップタイム連携等) は DB/ストレージの
 ## 10. 実装前に確認が必要な事項
 
 **必須 (これが決まらないと着手できない)**
-1. **インフラ**: Supabase は既存の `aone` とは別プロジェクトを新設してよいか (推奨)。Cloudflare アカウントは既存と同一でよいか
+1. **インフラ**: 確定済み (Cloudflare 既存アカウント、D1 + R2 + Workers)
 2. **Stripe**: 既に本番アカウントがあるか、あれば法人名/屋号、利用可能な決済手段 (Apple Pay等)、手数料率の契約条件
 3. **同意の取り方**: 受付時の同意は口頭か書面か。未成年(保護者同意)の文言。**オンライン掲載を拒否された場合は撮影自体を行わないのか、アップロードしないのか**
 4. **お客様のメール**: 購入時にメール入力を必須にしてよいか (再DLリンクの再送・期限告知のため。不要なら注文ページURLのブックマーク/スクショ運用)
@@ -300,7 +281,7 @@ Phase 2/3 (自動撮影・ラップタイム連携等) は DB/ストレージの
 
 **判断をお願いしたい分岐**
 - A) クライアント側画像処理 (推奨) か、B) サーバー側処理 (費用・負荷増)
-- Supabase Free で開始/Pro で開始
+- (確定済み) D1 無料枠で開始。Workers Paid ($5) へ上げる基準は `docs/INFRA_D1.md` §2
 - 二重購入の競合: 自動返金 (提案) か、先着ロック
 
 ---
