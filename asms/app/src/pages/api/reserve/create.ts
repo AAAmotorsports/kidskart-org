@@ -404,6 +404,10 @@ async function sendConfirmationEmail(env: Env, args: {
       '▼ 📱 当日のお願い',
       'トヨピー会員料金でご予約いただきましたので、当日の受付時に「トヨピー会員画面」をスタッフにご提示ください (スマホ画面で可)。',
       '',
+      'まだ会員登録がお済みでない方: 下記から事前登録いただくか、当日受付時にその場でもご登録いただけます (どちらも入会無料)。',
+      '  🚗 事前登録はこちら: https://family-fukuoka-toyopet.com/pre-regist.html',
+      '  ℹ️ トヨピー会員について: https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html',
+      '',
     ] : []),
     '▼ 🔔 開催のお知らせを受け取る',
     '新しいスケジュールが公開されたら通知を受け取れます:',
@@ -460,6 +464,13 @@ async function sendConfirmationEmail(env: Env, args: {
       <div style="font-weight:800;color:#1a7fb8;font-size:.95rem;margin-bottom:.3rem">📱 当日のお願い</div>
       トヨピー会員料金でご予約いただきました。<br>
       当日の受付時に、<strong>「トヨピー会員画面」をスタッフにご提示</strong>ください (スマホ画面で OK)。
+      <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px dashed #cde8f8;font-size:.8rem;color:#1a5a8a">
+        <strong>まだ会員登録がお済みでない方へ</strong>: 事前登録または当日その場でもご登録いただけます (どちらも入会無料)。
+      </div>
+      <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem">
+        <a href="https://family-fukuoka-toyopet.com/pre-regist.html" style="display:inline-block;padding:.4rem .8rem;background:#fff;border:1px solid #1a7fb8;border-radius:6px;color:#1a7fb8;text-decoration:none;font-weight:700;font-size:.8rem">🚗 事前登録はこちら</a>
+        <a href="https://fukuoka-toyopet.jp/file/special/18101/21013/kids_membership/index.html" style="display:inline-block;padding:.4rem .8rem;background:#fff;border:1px solid #ddd;border-radius:6px;color:#555;text-decoration:none;font-weight:700;font-size:.8rem">ℹ️ 会員について</a>
+      </div>
     </div>` : ''}
     ${isPending
       ? `<p style="font-size:.82rem;color:#3d556f;background:rgba(255,201,67,.1);padding:.7rem;border-radius:8px;border:1px solid rgba(255,201,67,.4);margin:0 0 1rem">${tr('当社にて内容を確認のうえ、あらためて確定通知をお送りします。', "We'll review your booking and send a confirmation shortly.")}</p>`
