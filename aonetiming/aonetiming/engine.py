@@ -62,9 +62,6 @@ class Session:
         ok = True
         if last is not None and t_ms - last < self.min_lap_ms:
             ok = False
-        elif last is None and self.kind == "race" and self.start_ms is not None \
-                and t_ms - self.start_ms < self.min_lap_ms:
-            ok = False
         p = {"seq": len(self.passings) + 1, "tp": tp, "t": t_ms, "ok": ok}
         self.passings.append(p)
         return p
@@ -129,16 +126,14 @@ class Session:
     def laps(self, tp: str) -> list[dict]:
         """周回リスト [{no, ms, end, invalid}]。
 
-        レース: 計測開始時刻からの最初の通過が 1 周目。
-        タイムトライアル: 最初の通過は基準点(周回数に入れず)、次の通過から 1 周目。
+        レース・タイムトライアル共通: 計測開始ボタンのあと、その発信器が最初に
+        ラインを通った瞬間が 1 周目のスタート(基準点。周回数には入れない)。
+        2 回目の通過で 1 周目が終わる。
         """
         times = sorted(p["t"] for p in self.passings if p["tp"] == tp and p["ok"])
-        if self.kind == "race" and self.start_ms is not None:
-            base = self.start_ms
-        elif times:
-            base, times = times[0], times[1:]
-        else:
+        if not times:
             return []
+        base, times = times[0], times[1:]
         out = []
         prev = base
         for i, t in enumerate(times, 1):
@@ -153,9 +148,7 @@ class Session:
         best = min(valid, key=lambda l: l["ms"]) if valid else None
         pen = self.penalty_ms.get(tp, 0)
         total = None
-        if laps and self.start_ms is not None and self.kind == "race":
-            total = laps[-1]["end"] - self.start_ms + pen
-        elif laps:
+        if laps:  # 自分の最初の通過 〜 最後の通過 (+ペナルティ)
             total = sum(l["ms"] for l in laps) + pen
         return {
             "tp": tp,

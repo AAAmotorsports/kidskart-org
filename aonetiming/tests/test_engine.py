@@ -48,8 +48,8 @@ class TimeTrialTest(unittest.TestCase):
 class RaceTest(unittest.TestCase):
     def make(self):
         s = Session("race")
-        s.start(10_000)
-        # A: 3周 (70,60,60) B: 3周 (65,65,65)  C: 2周
+        s.start(10_000)  # 計測開始ボタン。ここは 1 周目の始まりではない
+        # 各自の最初の通過が基準点。 A: 周回 60,60  B: 65,65  C: 80
         for tp, ts in {"A": [80_000, 140_000, 200_000],
                        "B": [75_000, 140_000, 205_000],
                        "C": [90_000, 170_000]}.items():
@@ -57,30 +57,31 @@ class RaceTest(unittest.TestCase):
                 s.add_passing(tp, t)
         return s
 
-    def test_laps_from_start(self):
+    def test_first_passing_after_start_is_baseline(self):
         s = self.make()
-        self.assertEqual([l["ms"] for l in s.laps("A")], [70000, 60000, 60000])
+        self.assertEqual([l["ms"] for l in s.laps("A")], [60000, 60000])
+        self.assertEqual(s.stats("A")["laps"], 2)
 
     def test_order_laps_then_total(self):
         r = self.make().ranking()
         self.assertEqual([x["tp"] for x in r], ["A", "B", "C"])
-        self.assertEqual(r[0]["total_ms"], 190_000)
-        self.assertEqual(r[1]["gap_ms"], 5000)
+        self.assertEqual(r[0]["total_ms"], 120_000)
+        self.assertEqual(r[1]["gap_ms"], 10_000)
         self.assertEqual(r[2]["gap_laps"], 1)
 
     def test_penalty_changes_order(self):
         s = self.make()
         s.add_penalty("A", 5000)
-        s.add_penalty("A", 1000)
+        s.add_penalty("A", 6000)
         r = s.ranking()
         self.assertEqual([x["tp"] for x in r], ["B", "A", "C"])
-        self.assertEqual(s.stats("A")["total_ms"], 196_000)
+        self.assertEqual(s.stats("A")["total_ms"], 131_000)
 
     def test_invalid_lap_still_counts_as_lap(self):
         s = self.make()
-        s.set_lap_invalid("A", 2)
-        self.assertEqual(s.stats("A")["laps"], 3)
-        self.assertEqual(s.stats("A")["best_ms"], 60000)  # 3周目
+        s.set_lap_invalid("B", 1)
+        self.assertEqual(s.stats("B")["laps"], 2)
+        self.assertEqual(s.stats("B")["best_ms"], 65000)
 
     def test_remove_driver(self):
         s = self.make()
