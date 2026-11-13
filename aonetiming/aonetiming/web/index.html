@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AoneTiming</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <b class="logo">AoneTiming</b>
+  <nav id="tabs">
+    <button data-tab="live" class="on">計測</button>
+    <button data-tab="reg">発信器登録</button>
+    <button data-tab="fix">修正</button>
+    <button data-tab="res">結果・印刷</button>
+    <button data-tab="set">設定</button>
+  </nav>
+  <span id="status" class="status"></span>
+</header>
+
+<main>
+<!-- 計測 -->
+<section id="tab-live">
+  <div class="bar">
+    <select id="kind"><option value="tt">タイムトライアル</option><option value="race">レース(予選/決勝)</option></select>
+    <select id="cls"></select>
+    <input id="title" placeholder="タイトル (例: 第3ヒート)" size="24">
+    <button id="new">新規セッション</button>
+    <button id="startstop" class="primary">計測開始 [Enter]</button>
+    <button id="reset">やり直し [Space]</button>
+    <label class="sz">文字 <select id="fs"><option value="1.6">大</option><option value="1.2">中</option><option value="0.95">小</option></select></label>
+  </div>
+  <div class="clock" id="clock"></div>
+  <div class="cols">
+    <div class="rank"><table id="rank"></table></div>
+    <div class="pass"><h3>通過</h3><table id="recent"></table></div>
+  </div>
+</section>
+
+<!-- 登録 -->
+<section id="tab-reg" hidden>
+  <div class="bar">
+    <button id="reg-add">行を追加</button>
+    <button id="reg-save" class="primary">保存</button>
+    <label class="file">CSVを読込<input type="file" id="reg-file" accept=".csv,.txt" hidden></label>
+    <a href="/api/registry.csv" class="btn">CSVで書き出し</a>
+    <span class="hint">列: ゼッケン / 発信器番号 / 選手名 / チーム名 / クラス</span>
+  </div>
+  <table id="reg-table"></table>
+</section>
+
+<!-- 修正 -->
+<section id="tab-fix" hidden>
+  <div class="bar">
+    <select id="fix-driver"></select>
+    <button id="fix-best">ベストタイム抹消</button>
+    <label>ペナルティ(秒) <input id="pen-s" type="number" value="5" style="width:4em"></label>
+    <button id="fix-pen">加算</button>
+    <button id="fix-pen-minus">減算</button>
+    <button id="fix-del" class="danger">この選手を結果から削除</button>
+  </div>
+  <div class="bar">
+    <select id="fix-extra"></select>
+    <button id="fix-add">未走行ドライバー追加</button>
+  </div>
+  <table id="fix-laps"></table>
+</section>
+
+<!-- 結果・印刷 -->
+<section id="tab-res" hidden>
+  <div class="bar">
+    <button id="res-save" class="primary">結果を保存</button>
+    <a href="/api/result.csv" class="btn">CSV書き出し(Excel)</a>
+    <button data-print="rank">順位表を印刷</button>
+    <button data-print="passings">ゴールライン通過データを印刷</button>
+    <button data-print="chart">ゼッケン別ラップチャートを印刷</button>
+  </div>
+  <h3>保存済みの結果</h3>
+  <table id="res-list"></table>
+</section>
+
+<!-- 設定 -->
+<section id="tab-set" hidden>
+  <div class="bar">
+    <label>最小ラップタイム(秒) <input id="set-min" type="number" min="0" step="0.5" style="width:5em"></label>
+    <span class="hint">これより短い間隔の通過は無視(二重検知対策)</span>
+  </div>
+  <h3>クラス名</h3>
+  <textarea id="set-classes" rows="10" cols="30"></textarea><br>
+  <button id="set-save" class="primary">設定を保存</button>
+  <h3>動作確認(本番では使わない)</h3>
+  <div class="bar">
+    <button id="sim-start">疑似データ開始</button>
+    <button id="sim-stop">停止</button>
+    <span class="hint">登録済みの発信器が自動で周回します。計測開始後に押してください</span>
+  </div>
+</section>
+</main>
+<div id="printarea"></div>
+<script src="app.js"></script>
+</body>
+</html>

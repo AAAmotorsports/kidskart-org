@@ -1,0 +1,39 @@
+:root{--bg:#fffdf0;--fg:#111;--line:#d8d3b8;--acc:#1d4ed8;--mut:#666}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Meiryo","Yu Gothic",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{display:flex;align-items:center;gap:1rem;padding:.4rem .8rem;background:#1e293b;color:#fff;flex-wrap:wrap}
+.logo{font-size:1.2rem;letter-spacing:.04em}
+nav button{background:none;border:0;color:#cbd5e1;padding:.5rem .8rem;font-size:1rem;cursor:pointer;border-bottom:3px solid transparent}
+nav button.on{color:#fff;border-bottom-color:#facc15}
+.status{margin-left:auto;font-weight:bold}
+.status.run{color:#f87171}
+main{padding:.6rem .8rem}
+.bar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem}
+button,.btn,.file{font-size:.95rem;padding:.35rem .8rem;border:1px solid #999;border-radius:6px;background:#f1f5f9;color:#111;cursor:pointer;text-decoration:none}
+button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+button.danger{background:#fee2e2;border-color:#ef4444}
+select,input,textarea{font-size:.95rem;padding:.3rem;border:1px solid #999;border-radius:4px;background:#fff}
+.hint{color:var(--mut);font-size:.85rem}
+.clock{font-size:1.4rem;font-weight:bold;margin:.2rem 0;font-variant-numeric:tabular-nums}
+.cols{display:grid;grid-template-columns:1fr 340px;gap:1rem}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+table{border-collapse:collapse;width:100%;background:#fff}
+th,td{border-bottom:1px solid var(--line);padding:.25rem .5rem;text-align:left;white-space:nowrap}
+th{background:#e2e8f0;font-weight:600}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+#rank{font-size:calc(var(--fs,1.6) * 1rem)}
+#rank td{padding:.15em .5em}
+#rank tr.best-pos td:first-child{font-weight:bold}
+#recent{font-size:.9rem}
+tr.rej td{color:#999;text-decoration:line-through}
+td.inv{text-decoration:line-through;color:#b91c1c}
+.reg input{width:100%}
+#printarea{display:none}
+@media print{
+  header,main{display:none!important}
+  #printarea{display:block!important}
+  body{background:#fff}
+  table{font-size:11pt}
+  h2.pt{margin:0 0 .5rem}
+  .pb{page-break-after:always}
+}

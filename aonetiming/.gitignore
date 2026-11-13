@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+AoneTimingData/
+capture-*.log
+build/
+dist/
+*.spec
