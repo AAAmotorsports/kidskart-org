@@ -205,9 +205,14 @@ const isPhoneHold = !!(res as any).is_phone_hold;
                     <span class="p-chip">{genderLabel(p.gender_snapshot)}</span>
                     {h && <span class="p-chip hi">📏 {h} cm</span>}
                   </div>
-                  {birthDate && (
-                    <div class="p-birth">🎂 {birthDate}</div>
-                  )}
+                  {birthDate && (() => {
+                    // 2018-03-15 → 2018年3月15日 (staff が一目で読みやすい形式)
+                    const m = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                    const label = m
+                      ? `${m[1]}年${parseInt(m[2], 10)}月${parseInt(m[3], 10)}日`
+                      : birthDate;
+                    return <div class="p-birth">🎂 {label}</div>;
+                  })()}
                 </div>
                 <!-- 編集モード (hidden) -->
                 <div class="edit-only" hidden>
@@ -802,8 +807,8 @@ const isPhoneHold = !!(res as any).is_phone_hold;
   }
   .p-chip.hi { background: #fff3d9; color: #8a5a00; font-family: var(--mono); }
   .p-birth {
-    margin-top: .35rem; font-size: .88rem; color: var(--ink-3);
-    font-family: var(--mono);
+    margin-top: .5rem; font-size: 1.1rem; font-weight: 700;
+    color: var(--ink-2); letter-spacing: .01em;
   }
   .p-badge {
     position: absolute; top: .6rem; right: .6rem;
