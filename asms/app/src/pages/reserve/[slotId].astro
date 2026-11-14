@@ -1189,6 +1189,31 @@ const termsHtml = terms
       prefillApply.click();
       if (prefillPanel) prefillPanel.hidden = true;
       if (prefillAutoBanner) prefillAutoBanner.hidden = false;
+
+      // --- 続けて予約 (2 回目以降) の省力化 ----------------------------
+      //   先ほど同意していただいた内容なので:
+      //   - ステップ 5「同意して次へ」ボタンを初回スクロール待ちなしで有効化
+      //   - ステップ 6 安全ルール: 全項目を自動 check (uncheck で解除可)
+      //   - ステップ 7 署名: 保護者名のタイプ入力モードを初期化し自動補完
+      //   いずれもユーザー側で後から変更可能 (事前に目を通してもらう前提)。
+      //
+      //   このブロックは enableAgree() / drawnHost / typedHost が定義される
+      //   前に走るので、下流で DOM が整った後に setTimeout で遅延実行する。
+      setTimeout(() => {
+        try { enableAgree(); } catch {}
+        form.querySelectorAll<HTMLInputElement>('input[name="safety"]').forEach((cb) => { cb.checked = true; });
+        const gNameInput = form.querySelector<HTMLInputElement>('[name="g_name"]');
+        const sigTypedRadio = form.querySelector<HTMLInputElement>('input[name="sig_mode"][value="typed"]');
+        const sigTypedName = form.querySelector<HTMLInputElement>('[name="sig_typed_name"]');
+        const drawnHost = document.getElementById('sigDrawn');
+        const typedHost = document.getElementById('sigTyped');
+        if (sigTypedRadio && sigTypedName && gNameInput?.value.trim()) {
+          sigTypedRadio.checked = true;
+          sigTypedName.value = gNameInput.value.trim();
+          if (drawnHost) drawnHost.hidden = true;
+          if (typedHost) typedHost.hidden = false;
+        }
+      }, 0);
     }
 
     // Postal code → address auto-fill via zipcloud (free public JP API).
