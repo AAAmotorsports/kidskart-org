@@ -559,6 +559,12 @@ function buildUrl(next: Record<string, string>) {
       <a class="back" href="/admin">← 管理トップ</a>
       <h1>💰 売上・分析</h1>
       <p class="sub">{periodLabel} · 前年比較: {yoyLabel}</p>
+      <section class="quick-links">
+        <a class="btn-fiscal-report" href={`/admin/sales/fiscal-report?year=${curMonthJst >= 4 ? curYearJst : curYearJst - 1}`}>
+          📊 年度報告用集計 (男女比・年齢・リピート率)
+        </a>
+      </section>
+
       {/* CSV エクスポート: Airレジ「期間別集計(月別)」と同じ 10 列。
           連結して Numbers / Excel に取り込めば時系列で並べられる。 */}
       <details class="csv-export">
@@ -1207,6 +1213,14 @@ function buildUrl(next: Record<string, string>) {
   .csv-note { margin: .6rem 0 .2rem; color: var(--ink-3); font-size: .72rem; line-height: 1.5; }
   .csv-sub { margin: .3rem 0; font-size: .78rem; color: var(--ink-2); line-height: 1.5; }
   .csv-sub strong { color: var(--ink); }
+  .quick-links { margin-top: .8rem; }
+  .btn-fiscal-report {
+    display: inline-block; padding: .6rem 1.1rem;
+    background: linear-gradient(135deg, #8a63d2, #6b4ab0); color: #fff;
+    border-radius: 10px; font-weight: 700; text-decoration: none;
+    font-size: .88rem;
+  }
+  .btn-fiscal-report:hover { filter: brightness(1.05); }
   .h-sub { font-size: .68rem; color: var(--ink-3); font-weight: 400; margin-left: .3rem; }
 
   .mode-tabs {
