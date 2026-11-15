@@ -34,12 +34,17 @@ const rangeToParam = (url.searchParams.get('to') || '').trim();
 const dayParam = (url.searchParams.get('d') || '').trim();
 
 // current-period defaults for controls (kept for UI reuse below)
-const defaultYm = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
-const defaultY = String(now.getFullYear());
-const defaultFrom = isoDay(new Date(now.getFullYear(), now.getMonth() - 2, 1));
-const defaultTo = isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+// JST ベースで「今の年月」を算出 (Cloudflare Worker は UTC で動くため、JST の
+// 0〜9 時に now を参照すると UTC 側は前日 → 前月末日判定になる月跨ぎバグあり)。
+const nowJstForUi = new Date(now.getTime() + 9 * 3600 * 1000);
+const curYearJst = nowJstForUi.getUTCFullYear();
+const curMonthJst = nowJstForUi.getUTCMonth() + 1; // 1-12
+const defaultYm = `${curYearJst}-${pad2(curMonthJst)}`;
+const defaultY = String(curYearJst);
+const defaultFrom = isoDay(new Date(curYearJst, curMonthJst - 1 - 2, 1));
+const defaultTo = isoDay(new Date(curYearJst, curMonthJst - 1 + 1, 0));
 // 今日 (JST ベース): サーバーが UTC で動いていても、JST の「今日」を正しく出すため +9h して ISO 切り出し
-const todayJstStr = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+const todayJstStr = nowJstForUi.toISOString().slice(0, 10);
 
 if (mode === 'day') {
   // 1 日モード: ?d=YYYY-MM-DD 指定、省略時は今日 (JST)
@@ -554,19 +559,30 @@ function buildUrl(next: Record<string, string>) {
       <a class="back" href="/admin">← 管理トップ</a>
       <h1>💰 売上・分析</h1>
       <p class="sub">{periodLabel} · 前年比較: {yoyLabel}</p>
-      {/* CSV エクスポート: 旧 Reserva「期間別集計(月別)」と同じ 10 列。
+      {/* CSV エクスポート: Airレジ「期間別集計(月別)」と同じ 10 列。
           連結して Numbers / Excel に取り込めば時系列で並べられる。 */}
       <details class="csv-export">
-        <summary>📥 月別集計を CSV で出力 (旧 Reserva 形式)</summary>
+        <summary>📥 月別集計を CSV で出力 (Airレジ形式)</summary>
+        <p class="csv-sub">
+          <strong>会計日基準 (basis=paid)</strong>: 支払った月で計上。freee 連携・税務集計と整合。
+        </p>
         <div class="csv-links">
-          <a href={`/api/admin/sales/export-monthly?year=${now.getFullYear()}`}>
-            📥 {now.getFullYear()}年 全月 (1-12月)
-          </a>
-          <a href={`/api/admin/sales/export-monthly?from=${now.getFullYear()}-01&to=${defaultYm}`}>
-            📥 {now.getFullYear()}年 今月まで
-          </a>
-          <a href={`/api/admin/sales/export-monthly?from=2026-09&to=${defaultYm}`}>
+          <a href={`/api/admin/sales/export-monthly?from=2026-09&to=${defaultYm}&basis=paid`}>
             📥 新システム稼働後 (2026-09 〜 今月)
+          </a>
+          <a href={`/api/admin/sales/export-monthly?year=${curYearJst}&basis=paid`}>
+            📥 {curYearJst}年 全月 (1-12月)
+          </a>
+        </div>
+        <p class="csv-sub" style="margin-top:.8rem">
+          <strong>参加日基準 (basis=slot)</strong>: 開催日の月で計上。年度別の参加実績 (何月に何人来たか) に適。
+        </p>
+        <div class="csv-links">
+          <a href={`/api/admin/sales/export-monthly?from=2026-09&to=${defaultYm}&basis=slot`}>
+            📥 新システム稼働後 (2026-09 〜 今月)
+          </a>
+          <a href={`/api/admin/sales/export-monthly?year=${curYearJst}&basis=slot`}>
+            📥 {curYearJst}年 全月 (1-12月)
           </a>
         </div>
         <p class="csv-note">
@@ -1189,6 +1205,8 @@ function buildUrl(next: Record<string, string>) {
   }
   .csv-links a:hover { background: var(--bg); border-color: var(--sky-deep); }
   .csv-note { margin: .6rem 0 .2rem; color: var(--ink-3); font-size: .72rem; line-height: 1.5; }
+  .csv-sub { margin: .3rem 0; font-size: .78rem; color: var(--ink-2); line-height: 1.5; }
+  .csv-sub strong { color: var(--ink); }
   .h-sub { font-size: .68rem; color: var(--ink-3); font-weight: 400; margin-left: .3rem; }
 
   .mode-tabs {
