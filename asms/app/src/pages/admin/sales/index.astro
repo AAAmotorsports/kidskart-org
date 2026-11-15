@@ -554,6 +554,25 @@ function buildUrl(next: Record<string, string>) {
       <a class="back" href="/admin">← 管理トップ</a>
       <h1>💰 売上・分析</h1>
       <p class="sub">{periodLabel} · 前年比較: {yoyLabel}</p>
+      {/* CSV エクスポート: 旧 Reserva「期間別集計(月別)」と同じ 10 列。
+          連結して Numbers / Excel に取り込めば時系列で並べられる。 */}
+      <details class="csv-export">
+        <summary>📥 月別集計を CSV で出力 (旧 Reserva 形式)</summary>
+        <div class="csv-links">
+          <a href={`/api/admin/sales/export-monthly?year=${now.getFullYear()}`}>
+            📥 {now.getFullYear()}年 全月 (1-12月)
+          </a>
+          <a href={`/api/admin/sales/export-monthly?from=${now.getFullYear()}-01&to=${defaultYm}`}>
+            📥 {now.getFullYear()}年 今月まで
+          </a>
+          <a href={`/api/admin/sales/export-monthly?from=2026-09&to=${defaultYm}`}>
+            📥 新システム稼働後 (2026-09 〜 今月)
+          </a>
+        </div>
+        <p class="csv-note">
+          列: 集計期間 / 売上 / 会計数 / 会計単価 / 客数 / 客単価 / 商品数 / 現金支払合計額 / 現金その他支払合計額 / 割引額
+        </p>
+      </details>
     </header>
 
     <section class="mode-tabs">
@@ -1151,6 +1170,25 @@ function buildUrl(next: Record<string, string>) {
   .back { display: inline-block; font-size: .78rem; color: var(--ink-3); text-decoration: none; margin-bottom: .4rem; }
   h1 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 800; }
   .sub { margin: 0; color: var(--ink-3); font-size: .78rem; }
+  .csv-export {
+    margin-top: .8rem; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: .5rem .8rem; font-size: .82rem;
+  }
+  .csv-export summary {
+    cursor: pointer; font-weight: 700; color: var(--ink-2);
+    list-style: none; padding: .2rem 0;
+  }
+  .csv-export summary::-webkit-details-marker { display: none; }
+  .csv-export[open] summary { margin-bottom: .6rem; }
+  .csv-links { display: flex; flex-direction: column; gap: .4rem; }
+  .csv-links a {
+    display: inline-block; padding: .4rem .7rem;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--sky-deep); text-decoration: none; font-weight: 600;
+  }
+  .csv-links a:hover { background: var(--bg); border-color: var(--sky-deep); }
+  .csv-note { margin: .6rem 0 .2rem; color: var(--ink-3); font-size: .72rem; line-height: 1.5; }
   .h-sub { font-size: .68rem; color: var(--ink-3); font-weight: 400; margin-left: .3rem; }
 
   .mode-tabs {
