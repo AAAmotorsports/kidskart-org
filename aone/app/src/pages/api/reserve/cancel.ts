@@ -57,7 +57,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 管理者にも知らせる。枠が空くので、待っているお客様に回せる
   const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO;
   if (adminTo && row) {
-    const a = adminCancelMail(env, row, origin);
+    const a = adminCancelMail(env, row, origin, {
+      by: 'customer',
+      reason: str(body?.reason),
+      feeRate: data.cancel_fee_rate ?? null,
+    });
     keepAlive(locals, sendMail(env, {
       to: adminTo, subject: a.subject, text: a.text,
       kind: 'admin', reservationId: data.id,

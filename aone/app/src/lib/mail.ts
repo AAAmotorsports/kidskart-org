@@ -468,18 +468,57 @@ export function adminChangeMail(
   };
 }
 
-/** お客様が予約者ページからキャンセルしたときの管理者宛通知 */
-export function adminCancelMail(env: Env, r: ReservationForMail, origin: string) {
+/**
+ * キャンセルしたことを管理者に知らせる。
+ *
+ * **誰が取り消しても 1 通出す** (2026-11 オーナー依頼「確認のため」)。
+ * お客様がご自分で取り消したときはもちろん、スタッフが管理画面で押したときも、
+ * 「何がいつ取り消されたか」が受信箱に残るようにしておきたい。
+ *
+ * ★ 文面はここ 1 本。`by` で書き出しを変えるだけにする — お客様用と
+ *   スタッフ用でテンプレートを分けると、片方だけ腐る (§5.1 と同じ考え方)。
+ */
+export function adminCancelMail(
+  env: Env,
+  r: ReservationForMail,
+  origin: string,
+  opts: {
+    /** 誰が取り消したか。既定は予約者ページからのキャンセル */
+    by?: 'customer' | 'staff';
+    /** 無断キャンセル (来場なし) として記録したか */
+    noShow?: boolean;
+    /** 管理画面で操作した人 (created_by と同じ値) */
+    actor?: string | null;
+    /** 取り消しの理由 (入力があれば) */
+    reason?: string | null;
+    /** キャンセル料の割合 (0 / 50 / 100)。null なら出さない */
+    feeRate?: number | null;
+  } = {},
+) {
   const label = KIND_LABELS[r.kind as keyof typeof KIND_LABELS] ?? r.kind;
+  const byStaff = opts.by === 'staff';
+  const head = opts.noShow
+    ? '無断キャンセル (ご来場なし) として記録しました。'
+    : byStaff
+      ? '管理画面からキャンセルしました。枠が空きます。'
+      : 'お客様が予約者ページからキャンセルしました。枠が空きます。';
+
   return {
-    subject: `❌キャンセル [A-ONE] ${label} ${r.date} ${hhmm(r.start_time)} ${nameWithHonorific(r.contact_name)}`,
+    // 無断キャンセルは件名で見分けられるようにする (あとで請求を判断するため)
+    subject: `${opts.noShow ? '⚠️無断キャンセル' : '❌キャンセル'} [A-ONE] `
+      + `${label} ${r.date} ${hhmm(r.start_time)} ${nameWithHonorific(r.contact_name)}`,
     text: [
-      'お客様が予約者ページからキャンセルしました。枠が空きます。',
+      head,
       '',
       ...detailLines(r, 'staff'),
       `お名前: ${r.contact_name}`,
       `電話: ${r.contact_phone ?? '—'}`,
       `メール: ${r.contact_email ?? '—'}`,
+      ...(byStaff && opts.actor ? [`取り消した人: ${opts.actor}`] : []),
+      ...(opts.reason ? [`理由: ${opts.reason}`] : []),
+      ...(opts.feeRate == null
+        ? []
+        : [`キャンセル料: ${opts.feeRate > 0 ? `料金の ${opts.feeRate}%` : 'なし'}`]),
       '',
       '▼ 管理画面',
       `${origin}/admin/day/${r.date}`,

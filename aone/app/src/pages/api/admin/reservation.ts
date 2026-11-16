@@ -1,7 +1,10 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin, json } from '@lib/supabase';
 import { callRpc, keepAlive, originOf, str, mapRpcError, notConfigured } from '@lib/api';
-import { sendMail, confirmMail, cancelMail, changeMail, MAIL_COLUMNS, type ReservationForMail } from '@lib/mail';
+import {
+  sendMail, confirmMail, cancelMail, changeMail, adminCancelMail,
+  MAIL_COLUMNS, type ReservationForMail,
+} from '@lib/mail';
 
 export const prerender = false;
 
@@ -189,7 +192,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
     if (response) return response;
 
-    if (body?.send_mail === true && !data.already) {
+    // 既にキャンセル済みなら何も起きていないので、メールも送らない
+    if (!data.already) {
       // MAIL_COLUMNS は定数なので supabase-js の型推論が効かない。1 か所で受け直す
       const { data: rawRow } = await supabase
         .from('aone_reservations')
@@ -197,11 +201,31 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .eq('id', data.id)
         .single();
       const row = rawRow as unknown as ReservationForMail | null;
-      if (row?.contact_email) {
+
+      // お客様への控えは「送る」にチェックしたときだけ。
+      // 電話で話しながら取り消すことがあり、毎回飛ぶほうが困る (§6.1 と同じ)
+      if (body?.send_mail === true && row?.contact_email) {
         const m = cancelMail(env, row, originOf(request), !!data.cancel_fee, data.cancel_fee_rate ?? 100);
         keepAlive(locals, sendMail(env, {
           to: row.contact_email!, subject: m.subject, text: m.text,
           kind: 'cancel', reservationId: data.id,
+        }));
+      }
+
+      // ★ 管理者宛は、チェックの有無にかかわらず必ず送る (2026-11 オーナー依頼)。
+      //   「何がいつ取り消されたか」を受信箱に残して、あとから確認できるようにする
+      const adminTo = env.MAIL_ADMIN_TO || env.MAIL_REPLY_TO;
+      if (adminTo && row) {
+        const a = adminCancelMail(env, row, originOf(request), {
+          by: 'staff',
+          noShow: body?.no_show === true,
+          actor,
+          reason: str(body?.reason),
+          feeRate: data.cancel_fee_rate ?? null,
+        });
+        keepAlive(locals, sendMail(env, {
+          to: adminTo, subject: a.subject, text: a.text,
+          kind: 'admin', reservationId: data.id,
         }));
       }
     }
