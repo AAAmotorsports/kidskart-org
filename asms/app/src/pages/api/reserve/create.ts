@@ -3,6 +3,7 @@ import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { getLocaleFromRequest, type Locale } from '@lib/i18n';
 import { maskEmailForLog } from '@lib/piiMask';
 import { canonicalOrigin } from '@lib/appOrigin';
+import { normalizeAndValidateEmail } from '@lib/emailNormalize';
 
 export const prerender = false;
 
@@ -105,7 +106,13 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     }
   }
 
-  const guardianEmail = (guardian.email ?? '').trim();
+  // メール正規化: 全角→半角、空白除去、非 ASCII 弾き。Resend が 422 で落として
+  // サンキュー cron を毎日失敗させる事故 (2026-11-22) を入口で防ぐ。
+  const emailCheck = normalizeAndValidateEmail(guardian.email);
+  if (!emailCheck.ok) {
+    return json({ error: emailCheck.message, field: 'guardian.email' }, 400);
+  }
+  const guardianEmail = emailCheck.email;
 
   // --- Turnstile verification (graceful skip when not configured) --------
   // If TURNSTILE_SECRET_KEY isn't set we skip — same reasoning as the

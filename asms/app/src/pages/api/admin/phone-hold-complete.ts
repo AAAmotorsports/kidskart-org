@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { verifySameOrigin } from '@lib/adminAuth';
+import { normalizeAndValidateEmail } from '@lib/emailNormalize';
 
 export const prerender = false;
 
@@ -84,6 +85,13 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!signature || !signature.type) {
     return json({ error: '電子署名が未指定です' }, 400);
   }
+
+  // メール正規化 (iPad で本登録入力時に全角が混ざることが多いので入口で弾く)
+  const emailCheck = normalizeAndValidateEmail(guardian.email);
+  if (!emailCheck.ok) {
+    return json({ error: emailCheck.message, field: 'guardian.email' }, 400);
+  }
+  (guardian as any).email = emailCheck.email;
 
   // --- 1) ホールド予約を取得 + 整合性チェック ----------------------------
   const { data: hold, error: holdErr } = await supabase

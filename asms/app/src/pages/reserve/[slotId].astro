@@ -469,7 +469,9 @@ const termsHtml = terms
               </div>
               <div class="field">
                 <label>{isEn ? 'Email *' : 'メールアドレス *'}</label>
-                <input type="email" name="g_email" required maxlength="120" />
+                <input type="email" id="g_email" name="g_email" required maxlength="120"
+                  autocomplete="email" inputmode="email" />
+                <p class="hint email-hint" id="emailHint" hidden></p>
               </div>
               <div class="field">
                 <label>{isEn ? 'Postal code' : '郵便番号'}</label>
@@ -1247,6 +1249,51 @@ const termsHtml = terms
         const zip = zipInput.value.replace(/[^0-9]/g, '');
         if (zip.length === 7) lookup();
       });
+    }
+
+    // メール入力の自動正規化 (全角→半角、空白除去)。
+    // blur 時に NFKC 変換して書き戻し、非 ASCII が残ったら警告表示。
+    // サーバー側 (/api/reserve/create) にも同じ検証が入っているので
+    // defense in depth。
+    {
+      const emailInput = document.getElementById('g_email') as HTMLInputElement | null;
+      const emailHint = document.getElementById('emailHint');
+      if (emailInput && emailHint) {
+        const check = () => {
+          const raw = emailInput.value;
+          if (!raw) { emailHint.hidden = true; return; }
+          let v = raw;
+          try { v = v.normalize('NFKC'); } catch {}
+          v = v.trim();
+          const changed = v !== raw;
+          if (changed) emailInput.value = v;
+          const hasNonAscii = /[^\x20-\x7E]/.test(v);
+          const basicOk = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/.test(v);
+          if (hasNonAscii) {
+            emailHint.textContent = isEn
+              ? '⚠️ Please remove non-ASCII characters from the email address.'
+              : '⚠️ メールアドレスに全角文字が残っています。半角で入力してください。';
+            emailHint.style.color = 'var(--rose-deep)';
+            emailHint.hidden = false;
+          } else if (!basicOk && v.length > 0) {
+            emailHint.textContent = isEn
+              ? '⚠️ Please check the email format (e.g. taro@example.com).'
+              : '⚠️ メールアドレスの形式を確認してください (例: taro@example.com)';
+            emailHint.style.color = 'var(--rose-deep)';
+            emailHint.hidden = false;
+          } else if (changed) {
+            emailHint.textContent = isEn
+              ? '✅ Converted full-width characters to half-width.'
+              : '✅ 全角を半角に変換しました。';
+            emailHint.style.color = 'var(--lime-deep)';
+            emailHint.hidden = false;
+          } else {
+            emailHint.hidden = true;
+          }
+        };
+        emailInput.addEventListener('blur', check);
+        emailInput.addEventListener('input', () => { emailHint.hidden = true; });
+      }
     }
 
     const modeInputs = form.querySelectorAll<HTMLInputElement>('input[name="sig_mode"]');
