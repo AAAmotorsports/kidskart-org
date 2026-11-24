@@ -264,9 +264,10 @@ const defaultBirth = (() => {
         </div>
         <div class="field">
           <label>{tr('メール', 'Email')} <span class="req">*</span></label>
-          <input type="email" name="g_email" autocomplete="email"
+          <input type="email" id="g_email" name="g_email" autocomplete="email" inputmode="email"
             placeholder={tr('サンキューメール・リマインド配信に使います', 'For thank-you / reminder emails')}
             required />
+          <p class="hint" id="emailHint" hidden></p>
         </div>
         <div class="field">
           <label>{tr('郵便番号', 'Postal code')}</label>
@@ -626,6 +627,40 @@ const defaultBirth = (() => {
         const zip = zipInput.value.replace(/[^0-9]/g, '');
         if (zip.length === 7) lookupZip();
       });
+    }
+  }
+
+  // ---- メール自動正規化 (全角→半角、空白除去) ---------------------------
+  {
+    const emailInput = document.getElementById('g_email');
+    const emailHint = document.getElementById('emailHint');
+    if (emailInput && emailHint) {
+      const check = () => {
+        const raw = emailInput.value;
+        if (!raw) { emailHint.hidden = true; return; }
+        let v = raw;
+        try { v = v.normalize('NFKC'); } catch {}
+        v = v.trim();
+        const changed = v !== raw;
+        if (changed) emailInput.value = v;
+        if (/[^\x20-\x7E]/.test(v)) {
+          emailHint.textContent = '⚠️ メールに全角文字が残っています。半角で入力してください。';
+          emailHint.style.color = 'var(--rose-deep)';
+          emailHint.hidden = false;
+        } else if (!/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/.test(v) && v.length > 0) {
+          emailHint.textContent = '⚠️ メールの形式を確認してください (例: taro@example.com)';
+          emailHint.style.color = 'var(--rose-deep)';
+          emailHint.hidden = false;
+        } else if (changed) {
+          emailHint.textContent = '✅ 全角を半角に変換しました。';
+          emailHint.style.color = 'var(--lime-deep)';
+          emailHint.hidden = false;
+        } else {
+          emailHint.hidden = true;
+        }
+      };
+      emailInput.addEventListener('blur', check);
+      emailInput.addEventListener('input', () => { emailHint.hidden = true; });
     }
   }
 

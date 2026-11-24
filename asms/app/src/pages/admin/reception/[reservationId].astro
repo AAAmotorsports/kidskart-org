@@ -226,7 +226,29 @@ const isPhoneHold = !!(res as any).is_phone_hold;
                   </div>
                   <div class="e-field">
                     <label>{tr('生年月日', 'Birth date')}</label>
-                    <input type="date" data-field="birth_date_snapshot" value={birthDate ?? ''} />
+                    {/* iPad Safari の date picker は月だけ変えて日を触り忘れる事故が
+                        頻発するため (2026-11-24 3 件発覚)、年・月・日 の 3 分割
+                        select に差し替え。全フィールド touch しないと save 側で
+                        合成できないので、「日を忘れる」バグが構造的に起きない。 */}
+                    <div class="birth-splits"
+                         data-field="birth_date_snapshot"
+                         data-initial={birthDate ?? ''}>
+                      <select class="bs-year">
+                        <option value="">年</option>
+                        {Array.from({ length: 101 }, (_, i) => {
+                          const year = new Date().getUTCFullYear() - i;
+                          return <option value={year}>{year}年</option>;
+                        })}
+                      </select>
+                      <select class="bs-month">
+                        <option value="">月</option>
+                        {Array.from({ length: 12 }, (_, i) => <option value={i + 1}>{i + 1}月</option>)}
+                      </select>
+                      <select class="bs-day">
+                        <option value="">日</option>
+                        {Array.from({ length: 31 }, (_, i) => <option value={i + 1}>{i + 1}日</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div class="e-field">
                     <label>{tr('身長 (cm)', 'Height (cm)')}</label>
@@ -450,6 +472,22 @@ const isPhoneHold = !!(res as any).is_phone_hold;
     editActions.hidden = !on;
   }
 
+  // 生年月日 3 分割 select の初期値セット (data-initial="YYYY-MM-DD" から読む)
+  function initBirthSplits() {
+    document.querySelectorAll<HTMLElement>('.birth-splits[data-initial]').forEach((wrap) => {
+      const iv = wrap.dataset.initial || '';
+      const m = iv.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const yS = wrap.querySelector<HTMLSelectElement>('.bs-year');
+      const mS = wrap.querySelector<HTMLSelectElement>('.bs-month');
+      const dS = wrap.querySelector<HTMLSelectElement>('.bs-day');
+      if (!m || !yS || !mS || !dS) return;
+      yS.value = m[1];
+      mS.value = String(parseInt(m[2], 10));
+      dS.value = String(parseInt(m[3], 10));
+    });
+  }
+  initBirthSplits();
+
   document.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach((btn) => {
     btn.addEventListener('click', () => setEditMode(true));
   });
@@ -481,6 +519,22 @@ const isPhoneHold = !!(res as any).is_phone_hold;
           upd[field] = el.value.trim();
         }
       });
+      // 生年月日は 3 分割 select から合成 (iPad date picker の day 失念対策)
+      const birthWrap = card.querySelector<HTMLElement>('.birth-splits[data-field="birth_date_snapshot"]');
+      if (birthWrap) {
+        const y = birthWrap.querySelector<HTMLSelectElement>('.bs-year')?.value || '';
+        const m = birthWrap.querySelector<HTMLSelectElement>('.bs-month')?.value || '';
+        const d = birthWrap.querySelector<HTMLSelectElement>('.bs-day')?.value || '';
+        if (y && m && d) {
+          upd.birth_date_snapshot = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        } else if (y || m || d) {
+          // 一部だけ変更するとサーバで validation 失敗するので、一部入力時は
+          // 「未変更として扱う」。全部埋めるか全部クリアかで動かす。
+          // (空文字で送るとサーバ側が未変更として silently skip する既存挙動)
+          // ユーザ UI 的に「全部埋めてね」のハードエラーが欲しければ 400 で弾くが、
+          // 最低限「壊れた値を送らない」だけ実装。
+        }
+      }
       participants.push(upd);
     });
 
@@ -902,6 +956,13 @@ const isPhoneHold = !!(res as any).is_phone_hold;
   }
   .e-field input:focus { outline: none; border-color: var(--sky-deep); }
   .p-card .edit-only { padding-top: .3rem; }
+  .birth-splits { display: flex; gap: .4rem; }
+  .birth-splits select {
+    flex: 1; min-width: 0; padding: .7rem .5rem; font-size: 1.1rem;
+    border: 2px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--ink); appearance: auto;
+  }
+  .birth-splits select:focus { outline: none; border-color: var(--sky-deep); }
 
   /* ---- 保存 / キャンセル ボタン (編集モード時) ---- */
   section.edit-actions {

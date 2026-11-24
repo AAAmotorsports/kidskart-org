@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { verifySameOrigin } from '@lib/adminAuth';
+import { normalizeAndValidateEmail } from '@lib/emailNormalize';
 
 export const prerender = false;
 
@@ -109,7 +110,12 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     .replace(/[^A-Z0-9_.-]/g, '');
   const validRef = rawRef && /^[A-Z0-9_.-]+$/.test(rawRef) ? rawRef : 'PROXY_ADMIN';
 
-  const guardianEmail = (guardian.email ?? '').trim();
+  // メール正規化 (全角→半角、非 ASCII 弾き)
+  const emailCheck = normalizeAndValidateEmail(guardian.email);
+  if (!emailCheck.ok) {
+    return json({ error: emailCheck.message, field: 'guardian.email' }, 400);
+  }
+  const guardianEmail = emailCheck.email;
 
   // --- Single atomic RPC call --------------------------------------------
   // 管理者代理予約は WEB 予約締切 (開始 3 時間前) を bypass する。

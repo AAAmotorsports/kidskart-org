@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { envFrom, getSupabaseAdmin } from '@lib/supabase';
 import { verifySameOrigin } from '@lib/adminAuth';
+import { normalizeAndValidateEmail } from '@lib/emailNormalize';
 
 export const prerender = false;
 
@@ -78,6 +79,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (k in g) {
         const v = g[k];
         update[k] = typeof v === 'string' ? v.trim() : v == null ? null : String(v);
+      }
+    }
+    // email は正規化 + ASCII 検証 (全角→半角、非 ASCII 弾き)。
+    // 空文字で来たら「クリアしたい」扱いにはせず lookup 無効化のため削除。
+    if ('email' in update) {
+      if (update.email) {
+        const emailCheck = normalizeAndValidateEmail(update.email);
+        if (!emailCheck.ok) {
+          return json({ error: emailCheck.message, field: 'guardian.email' }, 400);
+        }
+        update.email = emailCheck.email;
+      } else {
+        // 空文字で来たら UNIQUE 制約 (NOT NULL) 違反になるので編集対象から外す
+        delete update.email;
       }
     }
     if (Object.keys(update).length > 0 && res.guardian_id) {
